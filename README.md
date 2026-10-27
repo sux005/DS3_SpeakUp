@@ -88,6 +88,69 @@ The output directory contains `reference.wav`, `enhanced_model.wav`,
 latency compensation, speech-preservation measurements, warnings, and which signal
 passed the distortion-aware transcription gate.
 
+For local QA with the private `data/raw/SPEAKUP 1.mp4` through `SPEAKUP 6.mp4`
+recordings, run `python scripts/run_real_audio_qa.py`. The command writes one
+ignored `results/real_audio_qa/<clip>/` directory per source file. Each
+`report.json` records the source filename and SHA-256 of the exact input bytes.
+The six-file end-to-end test below checks the same source files using temporary
+outputs. Generated QA artifacts remain ignored by Git.
+
+## Local transcription and accuracy review
+
+Install the optional local ASR dependency with
+`pip install -r requirements-transcription.txt`, then run
+`python scripts/transcribe_local.py`.
+The default `small.en` model downloads once into the ignored `models/` directory.
+The command reads the six original MP4 files and writes one ignored
+`results/local_transcripts/<clip>/transcript.json` per file. Each automatic
+transcript contains the source SHA-256, model details, full text, segments, and
+word start/end times. It is a hypothesis, not verified ground truth.
+
+Run `python scripts/create_review_templates.py` to prefill ignored
+`data/references/SPEAKUP x.json` files with the automatic transcript and its
+word-timestamped segments. Existing reviewed text is preserved. To measure
+transcription accuracy, listen to each source recording, correct the reference
+`text` to the exact words heard, and change `review_status` to `reviewed`:
+
+```json
+{
+  "source_sha256": "copy the hash from the automatic transcript",
+  "review_status": "reviewed",
+  "text": "the exact words confirmed by listening to the recording"
+}
+```
+
+Run the comparison after review:
+
+```bash
+python scripts/check_transcript_accuracy.py \
+  "results/local_transcripts/SPEAKUP 1/transcript.json" \
+  "data/references/SPEAKUP 1.json"
+```
+
+The checker rejects references whose source hash differs. Review word timestamps
+by playing the matching time ranges in the original audio, for example
+`ffplay -ss 10 -t 5 -autoexit "data/raw/SPEAKUP 1.mp4"`. Model word
+probabilities alone do not establish transcription accuracy. The reviewed JSON
+is the reference for rubric evaluation and must be updated deliberately when the
+source recording changes.
+
+### Local test commands
+
+After installing `requirements.txt` and `requirements-transcription.txt` in the
+active Python environment, run the fast unit suite with `python -m pytest -q`.
+The model-backed end-to-end test is opt-in because it processes all six private
+clips and downloads the `small.en` model on first use:
+
+```bash
+SPEAKUP_RUN_LOCAL_E2E=1 python -m pytest -q tests/test_local_audio_e2e.py
+```
+
+This local test runs audio preparation, transcription, and review-template
+generation from each raw file. It validates source hashes, output formats, and
+word timestamp bounds. Spoken-word accuracy still requires the human-reviewed
+reference files and `check_transcript_accuracy.py`.
+
 Create a level-matched listening example with:
 
 ```powershell

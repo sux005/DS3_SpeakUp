@@ -187,6 +187,26 @@ Resources:
         - {Key: Project, Value: SpeakUp}
         - {Key: Environment, Value: !Ref Environment}
 
+  RecordingHashesTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: RetainExceptOnCreate
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${AWS::StackName}-recording-hashes'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: user_id, AttributeType: S}
+        - {AttributeName: project_hash, AttributeType: S}
+      KeySchema:
+        - {AttributeName: user_id, KeyType: HASH}
+        - {AttributeName: project_hash, KeyType: RANGE}
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+      SSESpecification: {SSEEnabled: true}
+      Tags:
+        - {Key: Project, Value: SpeakUp}
+        - {Key: Environment, Value: !Ref Environment}
+
   UserPool:
     Type: AWS::Cognito::UserPool
     DeletionPolicy: RetainExceptOnCreate
@@ -316,7 +336,7 @@ Resources:
               - Sid: ProjectRecords
                 Effect: Allow
                 Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:Query]
-                Resource: [!GetAtt ProjectsTable.Arn, !GetAtt RecordingsTable.Arn, !Sub '${RecordingsTable.Arn}/index/ProjectCreatedAtIndex']
+                Resource: [!GetAtt ProjectsTable.Arn, !GetAtt RecordingsTable.Arn, !GetAtt RecordingHashesTable.Arn, !Sub '${RecordingsTable.Arn}/index/ProjectCreatedAtIndex']
               - Sid: RecordingObjects
                 Effect: Allow
                 Action: [s3:GetObject, s3:PutObject]
@@ -430,6 +450,7 @@ Resources:
         Variables:
           PROJECTS_TABLE: !Ref ProjectsTable
           RECORDINGS_TABLE: !Ref RecordingsTable
+          RECORDING_HASHES_TABLE: !Ref RecordingHashesTable
           DATA_BUCKET: !Ref DataBucket
           STATE_MACHINE_ARN: !Ref ProcessingStateMachine
           URL_EXPIRY_SECONDS: '900'

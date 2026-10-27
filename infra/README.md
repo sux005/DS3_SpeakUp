@@ -42,8 +42,44 @@ real production frontend origin before deploying a production stack.
 - `GET /recordings/{recordingId}`
 - `POST /recordings/{recordingId}/process`
 
-`POST /uploads` returns a 15-minute S3 pre-signed URL for WAV, MP3, or M4A audio.
+`POST /uploads` accepts `project_id`, `content_type`, and `sha256` (the Base64
+encoding of the file's 32-byte SHA-256 digest). It returns a 15-minute S3
+pre-signed URL for WAV, MP3, or M4A audio. The browser must send the returned
+`upload_headers` with its PUT request. S3 validates the checksum before storing
+the file. For example:
+
+```js
+const bytes = await file.arrayBuffer();
+const digest = await crypto.subtle.digest("SHA-256", bytes);
+const sha256 = btoa(String.fromCharCode(...new Uint8Array(digest)));
+const upload = await api.post("/uploads", {
+  project_id: projectId,
+  content_type: file.type,
+  sha256,
+});
+await fetch(upload.upload_url, {
+  method: "PUT",
+  headers: upload.upload_headers,
+  body: file,
+});
+await api.post(`/recordings/${upload.recording_id}/process`, {});
+```
+
+If a previously verified upload with that checksum is already processing or
+complete in the project, `POST /uploads` returns HTTP 409 before uploading.
+The process route verifies S3's stored checksum and atomically reserves the
+`user_id` + `project_id` + SHA-256 combination. A second recording with exactly
+the same bytes in that project returns HTTP 409 with `duplicate_recording_id`
+and does not start another workflow. Different bytes, or the same bytes in a
+different project, remain independent. A failed recording releases its checksum
+claim when a new recording with the same bytes is submitted for processing.
+Recordings created before this checksum contract remain processable without
+cross-recording duplicate detection.
+
 The client uploads directly to S3 and then starts processing with the final route.
+Repeated process requests return the same execution instead of starting another one.
+If a start attempt fails, another request can retry that same execution. Completed
+and failed recordings return their current status; this route does not reprocess them.
 
 ## Audio-preparation image
 

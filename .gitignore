@@ -41,3 +41,6 @@ htmlcov/
 
 # Agent files
 /.omx
+
+# Personal work notes
+/WORK_NOTES.md
