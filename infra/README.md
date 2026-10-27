@@ -3,7 +3,8 @@
 `speakup.yaml` defines the development backend in CloudFormation:
 
 - private, encrypted, versioned S3 storage with HTTPS-only access
-- two on-demand DynamoDB tables (`projects` and `recordings`)
+- two on-demand DynamoDB tables (`projects` and `recordings`) with an
+  owner-scoped recording-list GSI
 - a Cognito email user pool and public SPA client
 - an API Gateway HTTP API with Cognito JWT authorization
 - Lambda handlers for metadata, pre-signed uploads, and audio processing
@@ -39,11 +40,51 @@ real production frontend origin before deploying a production stack.
 - `POST /projects`
 - `GET /projects`
 - `POST /uploads`
+- `GET /projects/{projectId}/recordings`
 - `GET /recordings/{recordingId}`
+- `POST /recordings/{recordingId}/confirm-upload`
+- `GET /recordings/{recordingId}/download`
 - `POST /recordings/{recordingId}/process`
+- `DELETE /recordings/{recordingId}`
+- `POST /recordings/{recordingId}/restore`
+- `DELETE /recordings/{recordingId}/permanent`
 
 `POST /uploads` returns a 15-minute S3 pre-signed URL for WAV, MP3, or M4A audio.
-The client uploads directly to S3 and then starts processing with the final route.
+The client uploads directly to S3 with every returned required header, confirms
+the upload, and then starts processing. Download routes return 15-minute,
+owner-checked S3 URLs. Normal deletion is recoverable for 30 days; permanent
+deletion requires the exact recording ID as confirmation.
+
+## Lambda packages
+
+The API and processor import the shared `src/aws_payload` package. Build the
+zip artifacts before uploading deployment objects:
+
+```powershell
+python scripts/build_lambda_packages.py
+```
+
+The command writes `build/lambda/api.zip`, `processor.zip`, and
+`workflow_failure.zip`. Upload them under immutable `deployments/` keys in the
+private deployment bucket and pass those keys to the matching template
+parameters. The audio-preparation worker remains an image because of its native
+dependencies.
+
+## Owner-index migration
+
+The template deliberately retains `ProjectCreatedAtIndex` while it adds
+`OwnerProjectCreatedAtIndex`; deleting the old index in the same change would
+make rollback and backfill verification unsafe. New writes immediately include
+the owner-scoped keys. Backfill legacy rows in dry-run mode first:
+
+```powershell
+python scripts/backfill_recording_owner_index.py `
+  --table speakup-dev-recordings --profile speakup-dev --region us-east-2
+```
+
+After reviewing totals and confirming the new index is ACTIVE, repeat with
+`--apply`. Compare listing results before removing the old GSI in a later,
+explicit CloudFormation change.
 
 ## Audio-preparation image
 
@@ -81,7 +122,8 @@ candidate, conservative dry/wet blend, selected diagnostic signal, and quality r
 ## Cost and privacy notes
 
 The stack uses on-demand/serverless capacity and has no provisioned concurrency.
-Charges are usage-based for S3, DynamoDB, API Gateway, Lambda, Step Functions,
+Charges are usage-based for S3, DynamoDB (including GSI writes and strong
+base-table re-reads after list queries), API Gateway, Lambda, Step Functions,
 Transcribe, Bedrock, and logs. Bedrock output is capped at 800 tokens per recording.
 Step Functions logs errors without execution payloads, so transcripts are not copied
 into workflow logs. Deleted S3 object versions expire after 30 days; abandoned
@@ -104,7 +146,8 @@ aws cloudformation validate-template --template-body file://infra/speakup.yaml -
 ```
 
 CloudFormation service validation also runs when the stack change set is created.
-Use `cfn-lint` and `cfn-guard` in CI once those tools are added to the project.
+Use `cfn-lint` locally. `cfn-guard` remains a recommended CI addition; until it
+is installed, local security/compliance policy evaluation is not claimed.
 
 ## Cleanup
 

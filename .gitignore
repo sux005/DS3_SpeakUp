@@ -38,6 +38,8 @@ models/*
 .pytest_cache/
 .coverage
 htmlcov/
+build/
+.test-tmp/
 
 # Agent files
 /.omx

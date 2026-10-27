@@ -1,6 +1,29 @@
-# DS3 Project Template
+# SpeakUp
 
-A clean starter template for data science and machine learning projects at UC San Diego's DS3.
+SpeakUp is a DS3 public-speaking diagnostics platform. It preserves original
+recordings, prepares speech for analysis, produces timestamped transcripts and
+speech metrics, and stores versioned coaching feedback in a private AWS backend.
+
+## AWS payload API
+
+Backend workflows use `src.aws_payload.SpeakUpPayloadStore` for projects,
+recordings, uploads, audio reads, versioned JSON artifacts, playback URLs, and
+recoverable deletion. S3 stores audio and large payloads; DynamoDB stores
+owner-scoped metadata, lifecycle state, summary metrics, and compact S3
+references. See [the API guide](docs/aws-payload-api.md) and
+[package README](src/aws_payload/README.md).
+
+Build the three zip-based Lambda artifacts with:
+
+```powershell
+python scripts/build_lambda_packages.py
+```
+
+Run the complete local test suite with a workspace-local temporary directory:
+
+```powershell
+python -m pytest -q --basetemp .test-tmp -p no:cacheprovider
+```
 
 ## What this template includes
 
