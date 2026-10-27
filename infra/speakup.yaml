@@ -1,0 +1,647 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  SpeakUp serverless backend - private media storage, authenticated APIs, and an
+  asynchronous transcription, analysis, and AI-feedback workflow.
+
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@3
+  com.aws.cloudformation.Context:
+    arch: HTTP API + Cognito -> Lambda -> DynamoDB/S3; Step Functions -> audio prep -> Transcribe -> metrics -> Bedrock
+    must:
+      - Deploy Regional resources only in the AWS project's selected Region
+      - Keep recordings private; browser access only through short-lived pre-signed URLs
+      - Keep full audio and transcript artifacts in S3, not DynamoDB
+    ref:
+      - at: infra/README.md
+        has: deployment, operations, cost, and cleanup guidance
+        scope: stack
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+  DataBucketName:
+    Type: String
+    Default: speakup-dev-private-110359221190-us-east-2
+    AllowedPattern: '^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$'
+  CorsAllowedOrigin:
+    Type: String
+    Default: http://localhost:3000
+    AllowedPattern: '^https?://[^ ]+$'
+  BedrockModelId:
+    Type: String
+    Default: amazon.nova-lite-v1:0
+    AllowedPattern: '^[A-Za-z0-9._:-]+$'
+  LogRetentionDays:
+    Type: Number
+    Default: 14
+    AllowedValues: [7, 14, 30, 60, 90, 180, 365]
+  MaxAudioDurationSeconds:
+    Type: Number
+    Default: 600
+    MinValue: 1
+    MaxValue: 900
+  MaxAudioUploadBytes:
+    Type: Number
+    Default: 104857600
+    MinValue: 1
+    MaxValue: 536870912
+  ApiCodeS3Key:
+    Type: String
+    AllowedPattern: '^deployments/.+\.zip$'
+  ProcessorCodeS3Key:
+    Type: String
+    AllowedPattern: '^deployments/.+\.zip$'
+  AudioPrepImageUri:
+    Type: String
+    AllowedPattern: '^.+\.dkr\.ecr\..+\.amazonaws\.com\/.+:.+$'
+  FailureCodeS3Key:
+    Type: String
+    AllowedPattern: '^deployments/.+\.zip$'
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  DataBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: authoritative private store for original audio, transcripts, and analysis artifacts
+        must: [Block every form of public access, Enforce TLS and bucket-owner ownership, Preserve data on stack deletion]
+        mutable: change-with-constraints
+        mutability: {BucketName: must-never-change}
+    Properties:
+      BucketName: !Ref DataBucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      OwnershipControls:
+        Rules: [{ObjectOwnership: BucketOwnerEnforced}]
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration: {Status: Enabled}
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, PUT, POST, HEAD]
+            AllowedOrigins: [!Ref CorsAllowedOrigin]
+            ExposedHeaders: [ETag]
+            MaxAge: 600
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortAbandonedMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload: {DaysAfterInitiation: 7}
+          - Id: RemoveDeletedObjectVersions
+            Status: Enabled
+            NoncurrentVersionExpiration: {NoncurrentDays: 30}
+      Tags:
+        - {Key: Project, Value: SpeakUp}
+        - {Key: Environment, Value: !Ref Environment}
+        - {Key: ManagedBy, Value: CloudFormation}
+
+  DataBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: enforces encrypted transport for every bucket operation
+        must: [Keep the aws:SecureTransport deny for bucket and object ARNs]
+    Properties:
+      Bucket: !Ref DataBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: [!GetAtt DataBucket.Arn, !Sub '${DataBucket.Arn}/*']
+            Condition:
+              Bool: {aws:SecureTransport: 'false'}
+
+  ProjectsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: RetainExceptOnCreate
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: project metadata keyed by owner and project for ownership-scoped queries
+        must: [Partition key remains user_id and sort key remains project_id, Preserve data on stack deletion]
+        mutable: change-with-constraints
+    Properties:
+      TableName: !Sub '${AWS::StackName}-projects'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: user_id, AttributeType: S}
+        - {AttributeName: project_id, AttributeType: S}
+      KeySchema:
+        - {AttributeName: user_id, KeyType: HASH}
+        - {AttributeName: project_id, KeyType: RANGE}
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+      SSESpecification: {SSEEnabled: true}
+      Tags:
+        - {Key: Project, Value: SpeakUp}
+        - {Key: Environment, Value: !Ref Environment}
+
+  RecordingsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: RetainExceptOnCreate
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: recording state, metrics, feedback, and S3 references; GSI lists attempts by project
+        must: [Partition key remains user_id and sort key remains recording_id, Verify ownership before GSI results, Keep full transcripts in S3]
+        mutable: change-with-constraints
+    Properties:
+      TableName: !Sub '${AWS::StackName}-recordings'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: user_id, AttributeType: S}
+        - {AttributeName: recording_id, AttributeType: S}
+        - {AttributeName: project_id, AttributeType: S}
+        - {AttributeName: created_at, AttributeType: S}
+      KeySchema:
+        - {AttributeName: user_id, KeyType: HASH}
+        - {AttributeName: recording_id, KeyType: RANGE}
+      GlobalSecondaryIndexes:
+        - IndexName: ProjectCreatedAtIndex
+          KeySchema:
+            - {AttributeName: project_id, KeyType: HASH}
+            - {AttributeName: created_at, KeyType: RANGE}
+          Projection: {ProjectionType: ALL}
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+      SSESpecification: {SSEEnabled: true}
+      Tags:
+        - {Key: Project, Value: SpeakUp}
+        - {Key: Environment, Value: !Ref Environment}
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    DeletionPolicy: RetainExceptOnCreate
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: OIDC user directory; no identity pool because browsers call AWS only through the backend
+        must: [Browser app clients never have a client secret, Production requires TOTP MFA]
+        mutable: review-required
+    Properties:
+      UserPoolName: !Sub '${AWS::StackName}-users'
+      UserPoolTier: !If [IsProduction, ESSENTIALS, LITE]
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      DeletionProtection: !If [IsProduction, ACTIVE, INACTIVE]
+      MfaConfiguration: !If [IsProduction, 'ON', OPTIONAL]
+      EnabledMfas: [SOFTWARE_TOKEN_MFA]
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          RequireUppercase: true
+          TemporaryPasswordValidityDays: 7
+      AccountRecoverySetting:
+        RecoveryMechanisms: [{Name: verified_email, Priority: 1}]
+      UserPoolTags: {Project: SpeakUp, Environment: !Ref Environment}
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: public SPA client using SRP and token revocation; production adds refresh-token rotation
+        must: [GenerateSecret stays false, Only development uses ALLOW_REFRESH_TOKEN_AUTH]
+    Properties:
+      ClientName: !Sub '${AWS::StackName}-web'
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      ExplicitAuthFlows: !If
+        - IsProduction
+        - [ALLOW_USER_SRP_AUTH]
+        - [ALLOW_USER_SRP_AUTH, ALLOW_REFRESH_TOKEN_AUTH]
+      EnableTokenRevocation: true
+      PreventUserExistenceErrors: ENABLED
+      RefreshTokenRotation: !If
+        - IsProduction
+        - {Feature: ENABLED, RetryGracePeriodSeconds: 30}
+        - !Ref AWS::NoValue
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      RefreshTokenValidity: !If [IsProduction, 30, 7]
+      TokenValidityUnits: {AccessToken: hours, IdToken: hours, RefreshToken: days}
+
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub '/aws/apigateway/${AWS::StackName}'
+      RetentionInDays: !Ref LogRetentionDays
+      Tags: [{Key: Project, Value: SpeakUp}, {Key: Environment, Value: !Ref Environment}]
+  ApiFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AWS::StackName}-api'
+      RetentionInDays: !Ref LogRetentionDays
+      Tags: [{Key: Project, Value: SpeakUp}, {Key: Environment, Value: !Ref Environment}]
+  ProcessorFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AWS::StackName}-processor'
+      RetentionInDays: !Ref LogRetentionDays
+      Tags: [{Key: Project, Value: SpeakUp}, {Key: Environment, Value: !Ref Environment}]
+  AudioPrepFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AWS::StackName}-audio-prep'
+      RetentionInDays: !Ref LogRetentionDays
+      Tags: [{Key: Project, Value: SpeakUp}, {Key: Environment, Value: !Ref Environment}]
+  FailureFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AWS::StackName}-workflow-failure'
+      RetentionInDays: !Ref LogRetentionDays
+      Tags: [{Key: Project, Value: SpeakUp}, {Key: Environment, Value: !Ref Environment}]
+  StateMachineLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: workflow diagnostics without recording inputs or transcript contents
+        must: [IncludeExecutionData remains false]
+    Properties:
+      LogGroupName: !Sub '/aws/vendedlogs/states/${AWS::StackName}-processing'
+      RetentionInDays: !Ref LogRetentionDays
+      Tags: [{Key: Project, Value: SpeakUp}, {Key: Environment, Value: !Ref Environment}]
+
+  ApiFunctionRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: least-privilege backend access for owner-scoped data, pre-signed URLs, and workflow starts
+        must: [Never grant wildcard data access outside this stack's resources]
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: lambda.amazonaws.com}, Action: 'sts:AssumeRole'}]
+      Policies:
+        - PolicyName: ApiDataAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: WriteLogs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-api:*'
+              - Sid: ProjectRecords
+                Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:Query]
+                Resource: [!GetAtt ProjectsTable.Arn, !GetAtt RecordingsTable.Arn, !Sub '${RecordingsTable.Arn}/index/ProjectCreatedAtIndex']
+              - Sid: RecordingObjects
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource: !Sub '${DataBucket.Arn}/users/*'
+              - Sid: StartProcessing
+                Effect: Allow
+                Action: states:StartExecution
+                Resource: !Ref ProcessingStateMachine
+
+  ProcessorFunctionRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: workflow worker access for Transcribe, metrics, in-Region Bedrock, and result persistence
+        must: [Bedrock stays scoped to the configured in-Region model, S3 stays inside users prefix]
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: lambda.amazonaws.com}, Action: 'sts:AssumeRole'}]
+      Policies:
+        - PolicyName: ProcessingAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: WriteLogs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-processor:*'
+              - Sid: RecordingObjects
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource: !Sub '${DataBucket.Arn}/users/*'
+              - Sid: RecordingState
+                Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:UpdateItem]
+                Resource: !GetAtt RecordingsTable.Arn
+              - Sid: TranscriptionJobs
+                Effect: Allow
+                Action: [transcribe:StartTranscriptionJob, transcribe:GetTranscriptionJob]
+                Resource: '*'
+              - Sid: GenerateFeedback
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource: !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}'
+
+  AudioPrepFunctionRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: isolate native audio deps in an on-demand worker; read original + write versioned prepared artifacts
+        must: [S3 access stays inside users prefix, Never log audio or transcript content]
+        mutable: change-with-constraints
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: lambda.amazonaws.com}, Action: 'sts:AssumeRole'}]
+      Policies:
+        - PolicyName: AudioPreparationAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: WriteLogs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-audio-prep:*'
+              - Sid: RecordingObjects
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource: !Sub '${DataBucket.Arn}/users/*'
+              - Sid: RecordingState
+                Effect: Allow
+                Action: dynamodb:UpdateItem
+                Resource: !GetAtt RecordingsTable.Arn
+              - Sid: WriteTraces
+                Effect: Allow
+                Action: [xray:PutTraceSegments, xray:PutTelemetryRecords]
+                Resource: '*'
+
+  FailureFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: lambda.amazonaws.com}, Action: 'sts:AssumeRole'}]
+      Policies:
+        - PolicyName: FailureLogging
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-workflow-failure:*'
+
+  ApiFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: ApiFunctionLogGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: HTTP backend for metadata, ownership checks, upload URLs, and workflow starts
+        must: [Derive user_id only from JWT claims, Generate S3 object keys server-side, Never return permanent AWS credentials]
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-api'
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: index.handler
+      Role: !GetAtt ApiFunctionRole.Arn
+      MemorySize: 256
+      Timeout: 15
+      TracingConfig: {Mode: Active}
+      Environment:
+        Variables:
+          PROJECTS_TABLE: !Ref ProjectsTable
+          RECORDINGS_TABLE: !Ref RecordingsTable
+          DATA_BUCKET: !Ref DataBucket
+          STATE_MACHINE_ARN: !Ref ProcessingStateMachine
+          URL_EXPIRY_SECONDS: '900'
+      Code: {S3Bucket: !Ref DataBucket, S3Key: !Ref ApiCodeS3Key}
+
+  ProcessorFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: ProcessorFunctionLogGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: workflow stages live in one small worker while Step Functions owns waits and retries
+        must: [Save measurements before AI feedback, Set Bedrock maxTokens explicitly, Never log transcript text]
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-processor'
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: index.handler
+      Role: !GetAtt ProcessorFunctionRole.Arn
+      MemorySize: 512
+      Timeout: 60
+      TracingConfig: {Mode: Active}
+      Environment:
+        Variables:
+          DATA_BUCKET: !Ref DataBucket
+          RECORDINGS_TABLE: !Ref RecordingsTable
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          ENVIRONMENT: !Ref Environment
+      Code: {S3Bucket: !Ref DataBucket, S3Key: !Ref ProcessorCodeS3Key}
+
+  AudioPrepFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: AudioPrepFunctionLogGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: librosa + FFmpeg preprocessing before ASR; separate image keeps native deps out of the small processor fn
+        must: [Preserve original object, Write versioned artifacts, Keep invocation <= 15 min]
+        mutable: change-with-constraints
+        mutability: {MemorySize: review-required, Timeout: review-required}
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-audio-prep'
+      PackageType: Image
+      Architectures: [arm64]
+      Role: !GetAtt AudioPrepFunctionRole.Arn
+      MemorySize: 2048
+      Timeout: 300
+      EphemeralStorage: {Size: 2048}
+      TracingConfig: {Mode: Active}
+      Environment:
+        Variables:
+          DATA_BUCKET: !Ref DataBucket
+          RECORDINGS_TABLE: !Ref RecordingsTable
+          AUDIO_PIPELINE_VERSION: '1.1.0'
+          AUDIO_MAX_DURATION_SECONDS: !Ref MaxAudioDurationSeconds
+          AUDIO_MAX_UPLOAD_BYTES: !Ref MaxAudioUploadBytes
+      Code: {ImageUri: !Ref AudioPrepImageUri}
+
+  FailureFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: FailureFunctionLogGroup
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-workflow-failure'
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: index.handler
+      Role: !GetAtt FailureFunctionRole.Arn
+      MemorySize: 128
+      Timeout: 10
+      Code: {S3Bucket: !Ref DataBucket, S3Key: !Ref FailureCodeS3Key}
+
+  ProcessingStateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: states.amazonaws.com}, Action: 'sts:AssumeRole'}]
+      Policies:
+        - PolicyName: InvokeProcessorAndWriteLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: [!GetAtt AudioPrepFunction.Arn, !GetAtt ProcessorFunction.Arn]
+              - Effect: Allow
+                Action: [logs:CreateLogDelivery, logs:GetLogDelivery, logs:UpdateLogDelivery, logs:DeleteLogDelivery, logs:ListLogDeliveries, logs:PutResourcePolicy, logs:DescribeResourcePolicies, logs:DescribeLogGroups]
+                Resource: '*'
+              - Effect: Allow
+                Action: [xray:PutTraceSegments, xray:PutTelemetryRecords, xray:GetSamplingRules, xray:GetSamplingTargets]
+                Resource: '*'
+
+  ProcessingStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Standard workflow coordinates audio prep, Transcribe polling, deterministic metrics, Bedrock feedback, and retries
+        must: [Pass S3 keys instead of large artifacts, Bound every task retry, Keep execution payloads out of logs]
+        mutable: review-required
+    Properties:
+      StateMachineName: !Sub '${AWS::StackName}-processing'
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt ProcessingStateMachineRole.Arn
+      TracingConfiguration: {Enabled: true}
+      LoggingConfiguration:
+        Level: ERROR
+        IncludeExecutionData: false
+        Destinations:
+          - CloudWatchLogsLogGroup: {LogGroupArn: !GetAtt StateMachineLogGroup.Arn}
+      DefinitionString: !Sub |
+        {
+          "Comment":"SpeakUp audio processing workflow","StartAt":"PreprocessAudio","States":{
+            "PreprocessAudio":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","TimeoutSeconds":330,"Parameters":{"FunctionName":"${AudioPrepFunction.Arn}","Payload":{"user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.audio_s3_key"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["Lambda.ServiceException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"StartTranscription"},
+            "StartTranscription":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","Parameters":{"FunctionName":"${ProcessorFunction.Arn}","Payload":{"action":"start","user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.transcription_audio_s3_key"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["Lambda.ServiceException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"WaitForTranscribe"},
+            "WaitForTranscribe":{"Type":"Wait","Seconds":15,"Next":"CheckTranscription"},
+            "CheckTranscription":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","Parameters":{"FunctionName":"${ProcessorFunction.Arn}","Payload":{"action":"status","user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.audio_s3_key","transcription_job_name.$":"$.transcription_job_name","transcript_s3_key.$":"$.transcript_s3_key"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["Lambda.ServiceException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"TranscriptionStatus"},
+            "TranscriptionStatus":{"Type":"Choice","Choices":[{"Variable":"$.transcribe_status","StringEquals":"COMPLETED","Next":"AnalyzeSpeech"},{"Variable":"$.transcribe_status","StringEquals":"FAILED","Next":"MarkFailed"}],"Default":"WaitForTranscribe"},
+            "AnalyzeSpeech":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","Parameters":{"FunctionName":"${ProcessorFunction.Arn}","Payload":{"action":"analyze","user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.audio_s3_key","transcription_job_name.$":"$.transcription_job_name","transcript_s3_key.$":"$.transcript_s3_key"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["States.ALL"],"IntervalSeconds":2,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"GenerateFeedback"},
+            "GenerateFeedback":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","Parameters":{"FunctionName":"${ProcessorFunction.Arn}","Payload":{"action":"feedback","user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.audio_s3_key","transcript_s3_key.$":"$.transcript_s3_key","analysis_s3_key.$":"$.analysis_s3_key","summary_metrics.$":"$.summary_metrics","transcript_text.$":"$.transcript_text"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["States.ALL"],"IntervalSeconds":3,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"Complete"},
+            "MarkFailed":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","Parameters":{"FunctionName":"${ProcessorFunction.Arn}","Payload":{"action":"fail","user_id.$":"$.user_id","recording_id.$":"$.recording_id","error.$":"States.JsonToString($.error)"}},"OutputPath":"$.Payload","Next":"Failed"},
+            "Complete":{"Type":"Succeed"},"Failed":{"Type":"Fail","Error":"SpeakUpProcessingFailed","Cause":"Audio processing workflow failed"}
+          }
+        }
+
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: lower-cost regional HTTP API; REST-only features are not needed for the MVP
+        must: [Protected routes use Cognito JWT, CORS allows only the configured frontend]
+    Properties:
+      Name: !Sub '${AWS::StackName}-http'
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins: [!Ref CorsAllowedOrigin]
+        AllowHeaders: [authorization, content-type]
+        AllowMethods: [GET, POST, OPTIONS]
+        MaxAge: 600
+      Tags: {Project: SpeakUp, Environment: !Ref Environment}
+  ApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties: {ApiId: !Ref HttpApi, IntegrationType: AWS_PROXY, IntegrationUri: !GetAtt ApiFunction.Arn, IntegrationMethod: POST, PayloadFormatVersion: '2.0', TimeoutInMillis: 15000}
+  JwtAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      ApiId: !Ref HttpApi
+      Name: cognito-jwt
+      AuthorizerType: JWT
+      IdentitySource: ['$request.header.Authorization']
+      JwtConfiguration:
+        Audience: [!Ref UserPoolClient]
+        Issuer: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}'
+  HealthRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: 'GET /health', AuthorizationType: NONE, Target: !Sub 'integrations/${ApiIntegration}'}
+  CreateProjectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: 'POST /projects', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}'}
+  ListProjectsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: 'GET /projects', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}'}
+  CreateUploadRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: 'POST /uploads', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}'}
+  GetRecordingRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: 'GET /recordings/{recordingId}', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}'}
+  ProcessRecordingRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: 'POST /recordings/{recordingId}/process', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}'}
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: '$default'
+      AutoDeploy: true
+      DefaultRouteSettings: {DetailedMetricsEnabled: !If [IsProduction, true, false], ThrottlingBurstLimit: 50, ThrottlingRateLimit: 25}
+      AccessLogSettings:
+        DestinationArn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/apigateway/${AWS::StackName}'
+        Format: '{"requestId":"$context.requestId","routeKey":"$context.routeKey","status":"$context.status","responseLatency":"$context.responseLatency","integrationError":"$context.integrationErrorMessage"}'
+      Tags: {Project: SpeakUp, Environment: !Ref Environment}
+  ApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties: {Action: 'lambda:InvokeFunction', FunctionName: !Ref ApiFunction, Principal: apigateway.amazonaws.com, SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*'}
+
+  WorkflowFailureRule:
+    Type: AWS::Events::Rule
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: captures terminal workflow failures that escape the in-workflow failure path
+        must: [Match only this state machine and terminal failure statuses]
+    Properties:
+      Name: !Sub '${AWS::StackName}-workflow-failures'
+      EventPattern:
+        source: [aws.states]
+        detail-type: ['Step Functions Execution Status Change']
+        detail:
+          stateMachineArn: [!Ref ProcessingStateMachine]
+          status: [FAILED, TIMED_OUT, ABORTED]
+      State: ENABLED
+      Targets: [{Arn: !GetAtt FailureFunction.Arn, Id: WorkflowFailureLogger}]
+  EventBridgeInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties: {Action: 'lambda:InvokeFunction', FunctionName: !Ref FailureFunction, Principal: events.amazonaws.com, SourceArn: !GetAtt WorkflowFailureRule.Arn}
+
+Outputs:
+  Region: {Value: !Ref 'AWS::Region'}
+  ApiEndpoint: {Value: !GetAtt HttpApi.ApiEndpoint}
+  DataBucketName: {Value: !Ref DataBucket}
+  ProjectsTableName: {Value: !Ref ProjectsTable}
+  RecordingsTableName: {Value: !Ref RecordingsTable}
+  UserPoolId: {Value: !Ref UserPool}
+  UserPoolClientId: {Value: !Ref UserPoolClient}
+  CognitoIssuer: {Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}'}
+  ProcessingStateMachineArn: {Value: !Ref ProcessingStateMachine}
+  AudioPrepFunctionName: {Value: !Ref AudioPrepFunction}
+  BedrockModelId: {Value: !Ref BedrockModelId}

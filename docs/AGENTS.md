@@ -152,12 +152,13 @@ that don't apply, e.g. no `frontend/` if there's no UI.]
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # then fill in your own local values — never commit .env
+cp .env.development.example .env.development
 ```
 
-[Add anything project-specific: a database that needs to be running
-locally, an API key required to run anything, a dataset that needs to be
-downloaded first, etc.]
+Use `.env.production.example` as the production schema after the production
+CloudFormation stack is deployed. Never commit `.env.development` or
+`.env.production`, and never put AWS access keys in either file; local AWS CLI
+access uses the short-lived `speakup-dev` profile.
 
 ## Running things
 

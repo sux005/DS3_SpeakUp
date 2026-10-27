@@ -1,0 +1,9 @@
+[
+  {
+    "ResourceType": "AWS::S3::Bucket",
+    "LogicalResourceId": "DataBucket",
+    "ResourceIdentifier": {
+      "BucketName": "speakup-dev-private-110359221190-us-east-2"
+    }
+  }
+]

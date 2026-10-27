@@ -5,6 +5,7 @@ __pycache__/
 *.pyd
 *.egg-info/
 .venv/
+.venv-audio/
 venv/
 
 # Jupyter
@@ -15,6 +16,8 @@ venv/
 .env.local
 .env.*
 !.env.example
+!.env.development.example
+!.env.production.example
 
 # Data and generated artifacts
 data/*
