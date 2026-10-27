@@ -3,7 +3,8 @@
 `speakup.yaml` defines the development backend in CloudFormation:
 
 - private, encrypted, versioned S3 storage with HTTPS-only access
-- two on-demand DynamoDB tables (`projects` and `recordings`)
+- three on-demand DynamoDB tables (`projects`, `recordings`, and
+  `recording-hashes`) with an owner-scoped recording-list GSI
 - a Cognito email user pool and public SPA client
 - an API Gateway HTTP API with Cognito JWT authorization
 - Lambda handlers for metadata, pre-signed uploads, and audio processing
@@ -39,18 +40,22 @@ real production frontend origin before deploying a production stack.
 - `POST /projects`
 - `GET /projects`
 - `POST /uploads`
+- `GET /projects/{projectId}/recordings`
 - `GET /recordings/{recordingId}`
+- `POST /recordings/{recordingId}/confirm-upload`
+- `GET /recordings/{recordingId}/download`
 - `POST /recordings/{recordingId}/process`
+- `DELETE /recordings/{recordingId}`
+- `POST /recordings/{recordingId}/restore`
+- `DELETE /recordings/{recordingId}/permanent`
 
-`POST /uploads` accepts `project_id`, `content_type`, and `sha256` (the Base64
-encoding of the file's 32-byte SHA-256 digest). It returns a 15-minute S3
-pre-signed URL for WAV, MP3, or M4A audio. The browser must send the returned
-`upload_headers` with its PUT request. S3 validates the checksum before storing
-the file. For example:
+`POST /uploads` requires `project_id`, `content_type`, and `sha256` (the Base64
+SHA-256 digest of the original file). It returns a 15-minute S3 pre-signed URL
+for WAV, MP3, or M4A audio. The browser sends every returned `required_headers`
+with its PUT request; S3 verifies the signed checksum. For example:
 
 ```js
-const bytes = await file.arrayBuffer();
-const digest = await crypto.subtle.digest("SHA-256", bytes);
+const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
 const sha256 = btoa(String.fromCharCode(...new Uint8Array(digest)));
 const upload = await api.post("/uploads", {
   project_id: projectId,
@@ -59,27 +64,57 @@ const upload = await api.post("/uploads", {
 });
 await fetch(upload.upload_url, {
   method: "PUT",
-  headers: upload.upload_headers,
+  headers: upload.required_headers,
   body: file,
 });
+await api.post(`/recordings/${upload.recording_id}/confirm-upload`, {});
 await api.post(`/recordings/${upload.recording_id}/process`, {});
 ```
 
-If a previously verified upload with that checksum is already processing or
-complete in the project, `POST /uploads` returns HTTP 409 before uploading.
-The process route verifies S3's stored checksum and atomically reserves the
-`user_id` + `project_id` + SHA-256 combination. A second recording with exactly
-the same bytes in that project returns HTTP 409 with `duplicate_recording_id`
-and does not start another workflow. Different bytes, or the same bytes in a
-different project, remain independent. A failed recording releases its checksum
-claim when a new recording with the same bytes is submitted for processing.
-Recordings created before this checksum contract remain processable without
-cross-recording duplicate detection.
+The process route atomically reserves the checksum for one recording per user
+and project. A second recording with identical bytes returns HTTP 409 with
+`duplicate_recording_id` and does not start another workflow. Different bytes,
+or the same bytes in different projects, remain independent. Upload requests
+with a checksum already reserved by a processing or complete recording return
+409 before uploading. Failed or deleted recordings can be replaced by a new
+recording with the same bytes. Legacy recordings without a checksum remain
+processable without cross-recording duplicate detection.
 
-The client uploads directly to S3 and then starts processing with the final route.
-Repeated process requests return the same execution instead of starting another one.
-If a start attempt fails, another request can retry that same execution. Completed
-and failed recordings return their current status; this route does not reprocess them.
+The client confirms the upload and then starts processing. Repeated process
+requests return the existing Standard workflow execution. Download routes return 15-minute,
+owner-checked S3 URLs. Normal deletion is recoverable for 30 days; permanent
+deletion requires the exact recording ID as confirmation.
+
+## Lambda packages
+
+The API and processor import the shared `src/aws_payload` package. Build the
+zip artifacts before uploading deployment objects:
+
+```powershell
+python scripts/build_lambda_packages.py
+```
+
+The command writes `build/lambda/api.zip`, `processor.zip`, and
+`workflow_failure.zip`. Upload them under immutable `deployments/` keys in the
+private deployment bucket and pass those keys to the matching template
+parameters. The audio-preparation worker remains an image because of its native
+dependencies.
+
+## Owner-index migration
+
+The template deliberately retains `ProjectCreatedAtIndex` while it adds
+`OwnerProjectCreatedAtIndex`; deleting the old index in the same change would
+make rollback and backfill verification unsafe. New writes immediately include
+the owner-scoped keys. Backfill legacy rows in dry-run mode first:
+
+```powershell
+python scripts/backfill_recording_owner_index.py `
+  --table speakup-dev-recordings --profile speakup-dev --region us-east-2
+```
+
+After reviewing totals and confirming the new index is ACTIVE, repeat with
+`--apply`. Compare listing results before removing the old GSI in a later,
+explicit CloudFormation change.
 
 ## Audio-preparation image
 
@@ -117,7 +152,8 @@ candidate, conservative dry/wet blend, selected diagnostic signal, and quality r
 ## Cost and privacy notes
 
 The stack uses on-demand/serverless capacity and has no provisioned concurrency.
-Charges are usage-based for S3, DynamoDB, API Gateway, Lambda, Step Functions,
+Charges are usage-based for S3, DynamoDB (including GSI writes and strong
+base-table re-reads after list queries), API Gateway, Lambda, Step Functions,
 Transcribe, Bedrock, and logs. Bedrock output is capped at 800 tokens per recording.
 Step Functions logs errors without execution payloads, so transcripts are not copied
 into workflow logs. Deleted S3 object versions expire after 30 days; abandoned
@@ -140,7 +176,8 @@ aws cloudformation validate-template --template-body file://infra/speakup.yaml -
 ```
 
 CloudFormation service validation also runs when the stack change set is created.
-Use `cfn-lint` and `cfn-guard` in CI once those tools are added to the project.
+Use `cfn-lint` locally. `cfn-guard` remains a recommended CI addition; until it
+is installed, local security/compliance policy evaluation is not claimed.
 
 ## Cleanup
 

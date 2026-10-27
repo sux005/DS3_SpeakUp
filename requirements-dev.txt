@@ -1,0 +1,2 @@
+-r requirements.txt
+moto[s3,dynamodb]>=5,<6

@@ -111,13 +111,13 @@ if you need tool-specific extras.)
 
 ## Project overview
 
-[One or two sentences: what does this project do, and for whom? e.g.
-"A pipeline that predicts campus dining hall wait times from historical
-swipe data, built for UCSD Housing & Dining."]
+SpeakUp is a DS3 public-speaking diagnostics platform. It prepares recordings
+for analysis, derives transcript-based speech metrics, and stores versioned
+coaching results in a private serverless AWS backend.
 
-**Status:** [prototype / active development / deployed]
-**Primary language(s)/framework(s):** [e.g. Python 3.11, pandas,
-scikit-learn, FastAPI, React]
+**Status:** active development; development AWS stack exists
+**Primary language(s)/framework(s):** Python 3.13 Lambda, boto3, librosa,
+RNNoise, DynamoDB, S3, Step Functions, CloudFormation
 
 ## Repo structure
 
@@ -139,12 +139,9 @@ rather than redefining logic inline.
 │   └── processed/
 ├── results/
 ├── models/
-├── frontend/          # [delete this line if unused] UI/web app code
-└── infra/             # [delete this line if unused] deployment/cloud config
+├── frontend/          # UI/web app work area
+└── infra/             # CloudFormation and Lambda adapters
 ```
-
-[Adjust the tree above to match what you actually have, and delete rows
-that don't apply, e.g. no `frontend/` if there's no UI.]
 
 ## Dev environment / setup
 
@@ -162,10 +159,10 @@ access uses the short-lived `speakup-dev` profile.
 
 ## Running things
 
-- Run the main pipeline: `[e.g. python -m src.pipeline]`
+- Run audio preparation: `python -m src.audio.preprocess <input> <output-dir>`
+- Build Lambda packages: `python scripts/build_lambda_packages.py`
 - Launch notebooks: `jupyter lab notebooks/`
-- [Any other entry point: a Streamlit app, a FastAPI server, a training
-  script — give the exact command.]
+- Validate locally: `python -m pytest -q --basetemp .test-tmp -p no:cacheprovider`
 
 ## Testing
 
@@ -173,25 +170,23 @@ access uses the short-lived `speakup-dev` profile.
   ```bash
   pytest
   ```
-- Some validation also happens inline in notebooks (e.g. sanity-checking
-  shapes/values after a transform) — [say which notebooks, if any, are
-  load-bearing for correctness rather than pure exploration].
+- Notebooks are exploratory and are not load-bearing for correctness.
 - Before opening a PR: run `pytest` and make sure it passes. New logic in
   `src/` should come with a test — either in `tests/` or a clear
   assertion-based check in the relevant notebook.
 
 ## Code style & conventions
 
-- Follow PEP 8. [`ruff check src/` / `flake8 src/` if the team uses a
-  linter — say which one.]
+- Follow PEP 8. The repository does not currently pin a separate linter.
 - Every public function/class in `src/` needs a docstring (what it does,
   params, return value).
 - No magic numbers in logic — use a named constant or a config value, and
   say where the number comes from if it's empirical (e.g. a tuned
   threshold).
-- [Any project-specific conventions: naming schemes for experiment
-  outputs, a required random seed for reproducibility, a specific
-  logging setup, etc.]
+- Build AWS payload keys only through `src/aws_payload/keys.py`; callers never
+  choose buckets, tables, indexes, or raw keys.
+- Keep Regional AWS resources in the project's selected Region, `us-east-2`.
+- Never log audio bytes, transcript text, credentials, or pre-signed URLs.
 
 ## Git / PR workflow
 
@@ -230,15 +225,15 @@ task done. Do this even if the person didn't explicitly ask you to.
 - Never delete or overwrite anything in `data/raw/`.
 - Never install packages beyond what's needed without calling it out and
   updating `requirements.txt`.
-- [Add anything else specific to your project — e.g. "never regenerate
-  `results/` files without being asked, they're checked in as the record
-  of the last approved run."]
+- Never run the owner-index backfill with `--apply`, deploy a stack, or
+  permanently purge recordings without an explicit user request.
 - Never finish a task that changed structure/commands/conventions
   without also updating AGENTS.md — see "Keeping this file up to date"
   above.
 
 ## Useful context
 
-[Anything else an agent (or new teammate) would want to know: links to a
-`DesignDoc.md`, the dataset's source/license, known gotchas, an
-in-progress area of the code that's intentionally unfinished, etc.]
+See `docs/aws-payload-api.md` for the storage contract and staged GSI migration,
+`src/aws_payload/README.md` for the Python API, and `infra/README.md` for
+packaging, deployment, cost, and cleanup. Amazon Transcribe is currently
+blocked while the AWS project remains on the Free plan.

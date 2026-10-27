@@ -160,9 +160,10 @@ Resources:
     UpdateReplacePolicy: Retain
     Metadata:
       com.aws.cloudformation.Context:
-        why: recording state, metrics, feedback, and S3 references; GSI lists attempts by project
-        must: [Partition key remains user_id and sort key remains recording_id, Verify ownership before GSI results, Keep full transcripts in S3]
+        why: recording lifecycle + compact artifact refs; owner-scoped GSI replaces project arrays and prevents cross-owner partitions
+        must: [Partition key remains user_id and sort key remains recording_id, New writes populate both owner GSI attributes, Keep legacy GSI until backfill + cutover verification, Keep full transcripts in S3]
         mutable: change-with-constraints
+        mutability: {GlobalSecondaryIndexes: review-required}
     Properties:
       TableName: !Sub '${AWS::StackName}-recordings'
       BillingMode: PAY_PER_REQUEST
@@ -171,6 +172,8 @@ Resources:
         - {AttributeName: recording_id, AttributeType: S}
         - {AttributeName: project_id, AttributeType: S}
         - {AttributeName: created_at, AttributeType: S}
+        - {AttributeName: owner_project_id, AttributeType: S}
+        - {AttributeName: created_at_recording_id, AttributeType: S}
       KeySchema:
         - {AttributeName: user_id, KeyType: HASH}
         - {AttributeName: recording_id, KeyType: RANGE}
@@ -180,6 +183,13 @@ Resources:
             - {AttributeName: project_id, KeyType: HASH}
             - {AttributeName: created_at, KeyType: RANGE}
           Projection: {ProjectionType: ALL}
+        - IndexName: OwnerProjectCreatedAtIndex
+          KeySchema:
+            - {AttributeName: owner_project_id, KeyType: HASH}
+            - {AttributeName: created_at_recording_id, KeyType: RANGE}
+          Projection:
+            ProjectionType: INCLUDE
+            NonKeyAttributes: [status, updated_at, content_type, schema_version]
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
       SSESpecification: {SSEEnabled: true}
@@ -335,12 +345,17 @@ Resources:
                 Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-api:*'
               - Sid: ProjectRecords
                 Effect: Allow
-                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:Query]
-                Resource: [!GetAtt ProjectsTable.Arn, !GetAtt RecordingsTable.Arn, !GetAtt RecordingHashesTable.Arn, !Sub '${RecordingsTable.Arn}/index/ProjectCreatedAtIndex']
+                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:Query, dynamodb:ConditionCheckItem]
+                Resource: [!GetAtt ProjectsTable.Arn, !GetAtt RecordingsTable.Arn, !GetAtt RecordingHashesTable.Arn, !Sub '${RecordingsTable.Arn}/index/ProjectCreatedAtIndex', !Sub '${RecordingsTable.Arn}/index/OwnerProjectCreatedAtIndex']
               - Sid: RecordingObjects
                 Effect: Allow
-                Action: [s3:GetObject, s3:PutObject]
+                Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject, s3:DeleteObject, s3:DeleteObjectVersion]
                 Resource: !Sub '${DataBucket.Arn}/users/*'
+              - Sid: ListRecordingObjectVersions
+                Effect: Allow
+                Action: s3:ListBucketVersions
+                Resource: !GetAtt DataBucket.Arn
+                Condition: {StringLike: {s3:prefix: 'users/*'}}
               - Sid: StartProcessing
                 Effect: Allow
                 Action: states:StartExecution
@@ -367,7 +382,7 @@ Resources:
                 Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-processor:*'
               - Sid: RecordingObjects
                 Effect: Allow
-                Action: [s3:GetObject, s3:PutObject]
+                Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject]
                 Resource: !Sub '${DataBucket.Arn}/users/*'
               - Sid: RecordingState
                 Effect: Allow
@@ -408,7 +423,7 @@ Resources:
                 Resource: !Sub '${DataBucket.Arn}/users/*'
               - Sid: RecordingState
                 Effect: Allow
-                Action: dynamodb:UpdateItem
+                Action: [dynamodb:GetItem, dynamodb:UpdateItem]
                 Resource: !GetAtt RecordingsTable.Arn
               - Sid: WriteTraces
                 Effect: Allow
@@ -454,6 +469,11 @@ Resources:
           DATA_BUCKET: !Ref DataBucket
           STATE_MACHINE_ARN: !Ref ProcessingStateMachine
           URL_EXPIRY_SECONDS: '900'
+          OWNER_PROJECT_INDEX: OwnerProjectCreatedAtIndex
+          MAX_JSON_PAYLOAD_BYTES: '1048576'
+          MAX_TRANSCRIPT_PAYLOAD_BYTES: '5242880'
+          PAYLOAD_RECOVERY_DAYS: '30'
+          ABANDONED_RETENTION_DAYS: '7'
       Code: {S3Bucket: !Ref DataBucket, S3Key: !Ref ApiCodeS3Key}
 
   ProcessorFunction:
@@ -475,9 +495,15 @@ Resources:
       Environment:
         Variables:
           DATA_BUCKET: !Ref DataBucket
+          PROJECTS_TABLE: !Ref ProjectsTable
           RECORDINGS_TABLE: !Ref RecordingsTable
           BEDROCK_MODEL_ID: !Ref BedrockModelId
           ENVIRONMENT: !Ref Environment
+          OWNER_PROJECT_INDEX: OwnerProjectCreatedAtIndex
+          MAX_JSON_PAYLOAD_BYTES: '1048576'
+          MAX_TRANSCRIPT_PAYLOAD_BYTES: '5242880'
+          PAYLOAD_RECOVERY_DAYS: '30'
+          ABANDONED_RETENTION_DAYS: '7'
       Code: {S3Bucket: !Ref DataBucket, S3Key: !Ref ProcessorCodeS3Key}
 
   AudioPrepFunction:
@@ -501,7 +527,13 @@ Resources:
       Environment:
         Variables:
           DATA_BUCKET: !Ref DataBucket
+          PROJECTS_TABLE: !Ref ProjectsTable
           RECORDINGS_TABLE: !Ref RecordingsTable
+          OWNER_PROJECT_INDEX: OwnerProjectCreatedAtIndex
+          MAX_JSON_PAYLOAD_BYTES: '1048576'
+          MAX_TRANSCRIPT_PAYLOAD_BYTES: '5242880'
+          PAYLOAD_RECOVERY_DAYS: '30'
+          ABANDONED_RETENTION_DAYS: '7'
           AUDIO_PIPELINE_VERSION: '1.1.0'
           AUDIO_MAX_DURATION_SECONDS: !Ref MaxAudioDurationSeconds
           AUDIO_MAX_UPLOAD_BYTES: !Ref MaxAudioUploadBytes
@@ -567,7 +599,7 @@ Resources:
             "CheckTranscription":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","Parameters":{"FunctionName":"${ProcessorFunction.Arn}","Payload":{"action":"status","user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.audio_s3_key","transcription_job_name.$":"$.transcription_job_name","transcript_s3_key.$":"$.transcript_s3_key"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["Lambda.ServiceException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"TranscriptionStatus"},
             "TranscriptionStatus":{"Type":"Choice","Choices":[{"Variable":"$.transcribe_status","StringEquals":"COMPLETED","Next":"AnalyzeSpeech"},{"Variable":"$.transcribe_status","StringEquals":"FAILED","Next":"MarkFailed"}],"Default":"WaitForTranscribe"},
             "AnalyzeSpeech":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","Parameters":{"FunctionName":"${ProcessorFunction.Arn}","Payload":{"action":"analyze","user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.audio_s3_key","transcription_job_name.$":"$.transcription_job_name","transcript_s3_key.$":"$.transcript_s3_key"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["States.ALL"],"IntervalSeconds":2,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"GenerateFeedback"},
-            "GenerateFeedback":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","Parameters":{"FunctionName":"${ProcessorFunction.Arn}","Payload":{"action":"feedback","user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.audio_s3_key","transcript_s3_key.$":"$.transcript_s3_key","analysis_s3_key.$":"$.analysis_s3_key","summary_metrics.$":"$.summary_metrics","transcript_text.$":"$.transcript_text"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["States.ALL"],"IntervalSeconds":3,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"Complete"},
+            "GenerateFeedback":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","Parameters":{"FunctionName":"${ProcessorFunction.Arn}","Payload":{"action":"feedback","user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.audio_s3_key","transcript_s3_key.$":"$.transcript_s3_key","analysis_s3_key.$":"$.analysis_s3_key","summary_metrics.$":"$.summary_metrics"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["States.ALL"],"IntervalSeconds":3,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"Complete"},
             "MarkFailed":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","Parameters":{"FunctionName":"${ProcessorFunction.Arn}","Payload":{"action":"fail","user_id.$":"$.user_id","recording_id.$":"$.recording_id","error.$":"States.JsonToString($.error)"}},"OutputPath":"$.Payload","Next":"Failed"},
             "Complete":{"Type":"Succeed"},"Failed":{"Type":"Fail","Error":"SpeakUpProcessingFailed","Cause":"Audio processing workflow failed"}
           }
@@ -585,7 +617,7 @@ Resources:
       CorsConfiguration:
         AllowOrigins: [!Ref CorsAllowedOrigin]
         AllowHeaders: [authorization, content-type]
-        AllowMethods: [GET, POST, OPTIONS]
+        AllowMethods: [GET, POST, DELETE, OPTIONS]
         MaxAge: 600
       Tags: {Project: SpeakUp, Environment: !Ref Environment}
   ApiIntegration:
@@ -613,12 +645,30 @@ Resources:
   CreateUploadRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties: {ApiId: !Ref HttpApi, RouteKey: 'POST /uploads', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}'}
+  ListProjectRecordingsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: 'GET /projects/{projectId}/recordings', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}'}
   GetRecordingRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties: {ApiId: !Ref HttpApi, RouteKey: 'GET /recordings/{recordingId}', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}'}
+  ConfirmRecordingUploadRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: 'POST /recordings/{recordingId}/confirm-upload', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}'}
+  DownloadRecordingRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: 'GET /recordings/{recordingId}/download', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}'}
   ProcessRecordingRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties: {ApiId: !Ref HttpApi, RouteKey: 'POST /recordings/{recordingId}/process', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}'}
+  DeleteRecordingRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: 'DELETE /recordings/{recordingId}', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}'}
+  RestoreRecordingRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: 'POST /recordings/{recordingId}/restore', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}'}
+  PermanentlyDeleteRecordingRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: 'DELETE /recordings/{recordingId}/permanent', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}'}
   ApiStage:
     Type: AWS::ApiGatewayV2::Stage
     Properties:
@@ -655,14 +705,39 @@ Resources:
     Properties: {Action: 'lambda:InvokeFunction', FunctionName: !Ref FailureFunction, Principal: events.amazonaws.com, SourceArn: !GetAtt WorkflowFailureRule.Arn}
 
 Outputs:
-  Region: {Value: !Ref 'AWS::Region'}
-  ApiEndpoint: {Value: !GetAtt HttpApi.ApiEndpoint}
-  DataBucketName: {Value: !Ref DataBucket}
-  ProjectsTableName: {Value: !Ref ProjectsTable}
-  RecordingsTableName: {Value: !Ref RecordingsTable}
-  UserPoolId: {Value: !Ref UserPool}
-  UserPoolClientId: {Value: !Ref UserPoolClient}
-  CognitoIssuer: {Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}'}
-  ProcessingStateMachineArn: {Value: !Ref ProcessingStateMachine}
-  AudioPrepFunctionName: {Value: !Ref AudioPrepFunction}
-  BedrockModelId: {Value: !Ref BedrockModelId}
+  Region:
+    Description: Selected Region containing every Regional SpeakUp resource.
+    Value: !Ref 'AWS::Region'
+  ApiEndpoint:
+    Description: Base URL for the SpeakUp HTTP API.
+    Value: !GetAtt HttpApi.ApiEndpoint
+  DataBucketName:
+    Description: Private bucket for recordings and versioned artifacts.
+    Value: !Ref DataBucket
+  ProjectsTableName:
+    Description: Owner-scoped project metadata table.
+    Value: !Ref ProjectsTable
+  RecordingsTableName:
+    Description: Recording lifecycle and artifact-reference table.
+    Value: !Ref RecordingsTable
+  RecordingsOwnerIndexName:
+    Description: Owner-scoped project recording-list index.
+    Value: OwnerProjectCreatedAtIndex
+  UserPoolId:
+    Description: Cognito user pool for SpeakUp members.
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Description: Public SPA app client identifier.
+    Value: !Ref UserPoolClient
+  CognitoIssuer:
+    Description: JWT issuer accepted by the HTTP API authorizer.
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}'
+  ProcessingStateMachineArn:
+    Description: Standard workflow coordinating recording diagnostics.
+    Value: !Ref ProcessingStateMachine
+  AudioPrepFunctionName:
+    Description: Image-based audio preparation worker name.
+    Value: !Ref AudioPrepFunction
+  BedrockModelId:
+    Description: In-Region model used for coaching feedback.
+    Value: !Ref BedrockModelId

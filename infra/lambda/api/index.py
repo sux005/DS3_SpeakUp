@@ -1,43 +1,146 @@
-import json
-import os
-import re
-import time
-import uuid
+"""Authenticated HTTP adapter for the internal SpeakUp payload API."""
+
+from __future__ import annotations
+
+from dataclasses import asdict
+from functools import lru_cache
 import base64
 import binascii
+import json
+import logging
+import os
+from typing import Any
+import uuid
 
 import boto3
+from boto3.dynamodb.conditions import Attr
 from botocore.config import Config
 from botocore.exceptions import ClientError
-from boto3.dynamodb.conditions import Attr, Key
+
+from src.aws_payload import Recording, RecordingStatus, SpeakUpPayloadStore
+from src.aws_payload.errors import (
+    IdempotencyConflictError,
+    OwnershipViolationError,
+    PayloadAlreadyExistsError,
+    PayloadIntegrityError,
+    PayloadNotFoundError,
+    PayloadValidationError,
+    WriteConflictError,
+)
+from src.aws_payload.repositories import InvalidCursorError, InvalidTransitionError
 
 
-ddb = boto3.resource("dynamodb")
-projects = ddb.Table(os.environ["PROJECTS_TABLE"])
-recordings = ddb.Table(os.environ["RECORDINGS_TABLE"])
-recording_hashes = ddb.Table(os.environ["RECORDING_HASHES_TABLE"])
-s3 = boto3.client("s3", config=Config(signature_version="s3v4"))
-sfn = boto3.client("stepfunctions")
-bucket = os.environ["DATA_BUCKET"]
-safe_id = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
-content_types = {
-    "audio/wav": "wav",
-    "audio/x-wav": "wav",
-    "audio/mpeg": "mp3",
-    "audio/mp4": "m4a",
-    "audio/x-m4a": "m4a",
-}
+LOGGER = logging.getLogger(__name__)
+LOGGER.setLevel(logging.INFO)
 
 
-def reply(code, body):
+@lru_cache(maxsize=1)
+def payloads() -> SpeakUpPayloadStore:
+    """Reuse the service and its clients across warm invocations."""
+
+    return SpeakUpPayloadStore.from_environment()
+
+
+@lru_cache(maxsize=1)
+def workflow_client() -> Any:
+    """Return a bounded-retry Step Functions client."""
+
+    return boto3.client(
+        "stepfunctions",
+        config=Config(
+            retries={"total_max_attempts": 3, "mode": "adaptive"},
+            connect_timeout=5,
+            read_timeout=15,
+            user_agent_appid="speakup-api/1.0",
+        ),
+    )
+
+
+@lru_cache(maxsize=1)
+def recording_hashes() -> Any:
+    return boto3.resource("dynamodb").Table(os.environ["RECORDING_HASHES_TABLE"])
+
+
+def checksum_hex(value: Any) -> str:
+    if not isinstance(value, str):
+        raise PayloadValidationError("sha256 must be the Base64 SHA-256 of the audio file")
+    try:
+        digest = base64.b64decode(value, validate=True)
+    except (ValueError, binascii.Error) as error:
+        raise PayloadValidationError("sha256 must be the Base64 SHA-256 of the audio file") from error
+    if len(digest) != 32 or base64.b64encode(digest).decode("ascii") != value:
+        raise PayloadValidationError("sha256 must be the Base64 SHA-256 of the audio file")
+    return digest.hex()
+
+
+def hash_key(user_id: str, project_id: str, checksum: str) -> dict[str, str]:
+    return {"user_id": user_id, "project_hash": f"{project_id}#{checksum_hex(checksum)}"}
+
+
+def duplicate_recording_id(store: SpeakUpPayloadStore, user_id: str, project_id: str, checksum: str) -> str | None:
+    existing = recording_hashes().get_item(
+        Key=hash_key(user_id, project_id, checksum), ConsistentRead=True
+    ).get("Item")
+    if not existing:
+        return None
+    recording_id = str(existing["recording_id"])
+    try:
+        prior = store.recordings.get(user_id, recording_id, include_deleted=True)
+    except PayloadNotFoundError:
+        return None
+    if prior["status"] in {"FAILED", "DELETED", "PURGE_PENDING"}:
+        return None
+    return recording_id
+
+
+def claim_recording_hash(store: SpeakUpPayloadStore, recording: Recording) -> str | None:
+    checksum = recording.source_sha256
+    if not checksum:
+        return None  # Legacy reservations have no browser-verified checksum.
+    key = hash_key(recording.user_id, recording.project_id, checksum)
+    table = recording_hashes()
+    try:
+        table.put_item(
+            Item={**key, "recording_id": recording.recording_id},
+            ConditionExpression="attribute_not_exists(project_hash)",
+        )
+        return None
+    except table.meta.client.exceptions.ConditionalCheckFailedException:
+        existing = table.get_item(Key=key, ConsistentRead=True)["Item"]
+        prior_id = str(existing["recording_id"])
+        if prior_id == recording.recording_id:
+            return None
+        try:
+            prior = store.recordings.get(recording.user_id, prior_id, include_deleted=True)
+        except PayloadNotFoundError:
+            prior = None
+        if prior is None or prior["status"] in {"FAILED", "DELETED", "PURGE_PENDING"}:
+            try:
+                table.update_item(
+                    Key=key,
+                    UpdateExpression="SET recording_id=:new",
+                    ConditionExpression=Attr("recording_id").eq(prior_id),
+                    ExpressionAttributeValues={":new": recording.recording_id},
+                )
+                return None
+            except table.meta.client.exceptions.ConditionalCheckFailedException:
+                return str(table.get_item(Key=key, ConsistentRead=True)["Item"]["recording_id"])
+        return prior_id
+
+
+def reply(code: int, body: Any) -> dict[str, Any]:
+    """Build an API Gateway HTTP API JSON response."""
+
     return {
         "statusCode": code,
         "headers": {"content-type": "application/json"},
-        "body": json.dumps(body, default=str),
+        "body": json.dumps(body, default=str, separators=(",", ":")),
     }
 
 
-def identity(event):
+def identity(event: dict[str, Any]) -> str | None:
+    """Return the Cognito subject claim used as the immutable owner ID."""
+
     return (
         event.get("requestContext", {})
         .get("authorizer", {})
@@ -47,291 +150,251 @@ def identity(event):
     )
 
 
-def body_of(event):
+def body_of(event: dict[str, Any]) -> dict[str, Any] | None:
+    """Decode a JSON object request body without accepting arrays or scalars."""
+
     try:
-        return json.loads(event.get("body") or "{}")
+        value = json.loads(event.get("body") or "{}")
     except json.JSONDecodeError:
         return None
+    return value if isinstance(value, dict) else None
 
 
-def valid(value):
-    return isinstance(value, str) and safe_id.fullmatch(value) is not None
-
-
-def sha256_hex(value):
-    if not isinstance(value, str):
-        return None
+def _integer(value: Any, default: int, minimum: int, maximum: int) -> int:
     try:
-        digest = base64.b64decode(value, validate=True)
-    except (ValueError, binascii.Error):
-        return None
-    return digest.hex() if len(digest) == 32 and base64.b64encode(digest).decode() == value else None
-
-
-def hash_key(user_id, project_id, checksum):
-    return {"user_id": user_id, "project_hash": f"{project_id}#{sha256_hex(checksum)}"}
-
-
-def existing_recording_for_hash(user_id, project_id, checksum):
-    existing = recording_hashes.get_item(
-        Key=hash_key(user_id, project_id, checksum), ConsistentRead=True
-    ).get("Item")
-    if not existing:
-        return None
-    recording_id = existing["recording_id"]
-    previous = recordings.get_item(
-        Key={"user_id": user_id, "recording_id": recording_id}, ConsistentRead=True
-    ).get("Item")
-    if not previous or previous["status"] == "FAILED":
-        return None
-    return reply(409, {"message": "Exact audio already submitted for this project", "duplicate_recording_id": recording_id})
-
-
-def claim_recording_hash(item):
-    checksum = item.get("source_sha256")
-    if not checksum:
-        return None  # Recordings created before checksum-backed uploads remain usable.
-    key = hash_key(item["user_id"], item["project_id"], checksum)
-    try:
-        recording_hashes.put_item(
-            Item={**key, "recording_id": item["recording_id"]},
-            ConditionExpression="attribute_not_exists(project_hash)",
+        result = default if value in {None, ""} else int(value)
+    except (TypeError, ValueError) as error:
+        raise PayloadValidationError("Expected an integer value") from error
+    if not minimum <= result <= maximum:
+        raise PayloadValidationError(
+            f"Integer must be between {minimum} and {maximum}"
         )
-        return None
-    except recording_hashes.meta.client.exceptions.ConditionalCheckFailedException:
-        existing = recording_hashes.get_item(Key=key, ConsistentRead=True)["Item"]
-        previous_id = existing["recording_id"]
-        if previous_id == item["recording_id"]:
-            return None
-        previous = recordings.get_item(
-            Key={"user_id": item["user_id"], "recording_id": previous_id},
-            ConsistentRead=True,
-        ).get("Item")
-        if previous and previous["status"] == "FAILED":
-            try:
-                recording_hashes.update_item(
-                    Key=key,
-                    UpdateExpression="SET recording_id=:new",
-                    ConditionExpression=Attr("recording_id").eq(previous_id),
-                    ExpressionAttributeValues={":new": item["recording_id"]},
-                )
-                return None
-            except recording_hashes.meta.client.exceptions.ConditionalCheckFailedException:
-                existing = recording_hashes.get_item(Key=key, ConsistentRead=True)["Item"]
-                previous_id = existing["recording_id"]
-        return reply(409, {"message": "Exact audio already submitted for this project", "duplicate_recording_id": previous_id})
+    return result
 
 
-def processing_reply(item):
-    status = item["status"]
+def _recording_body(recording: Recording) -> dict[str, Any]:
+    return recording.as_item()
+
+
+def _processing_reply(recording: Recording) -> dict[str, Any]:
     return reply(
-        202 if status not in {"COMPLETE", "FAILED"} else 200,
-        {
-            "recording_id": item["recording_id"],
-            "status": status,
-            "execution_arn": item["execution_arn"],
-        },
+        200 if recording.status in {RecordingStatus.COMPLETE, RecordingStatus.FAILED} else 202,
+        _recording_body(recording),
     )
 
 
-def start_claimed_execution(item):
-    if item["status"] in {"COMPLETE", "FAILED"} or item.get(
-        "execution_start_status"
-    ) != "PENDING":
-        return processing_reply(item)
-
+def _start_claimed_execution(store: SpeakUpPayloadStore, recording: Recording) -> dict[str, Any]:
+    if recording.status in {RecordingStatus.COMPLETE, RecordingStatus.FAILED} or recording.execution_start_status != "PENDING":
+        return _processing_reply(recording)
+    client = workflow_client()
     try:
-        sfn.start_execution(
+        client.start_execution(
             stateMachineArn=os.environ["STATE_MACHINE_ARN"],
-            name=item["execution_name"],
+            name=recording.recording_id,
             input=json.dumps(
                 {
-                    "user_id": item["user_id"],
-                    "recording_id": item["recording_id"],
-                    "project_id": item["project_id"],
-                    "audio_s3_key": item["audio_s3_key"],
-                }
+                    "user_id": recording.user_id,
+                    "recording_id": recording.recording_id,
+                    "project_id": recording.project_id,
+                    "audio_s3_key": recording.original_s3_key,
+                },
+                separators=(",", ":"),
             ),
         )
-    except sfn.exceptions.ExecutionAlreadyExists:
-        # The same execution may have finished before a retry reached Step Functions.
+    except client.exceptions.ExecutionAlreadyExists:
         pass
-
-    key = {"user_id": item["user_id"], "recording_id": item["recording_id"]}
     try:
-        recordings.update_item(
-            Key=key,
-            UpdateExpression="SET execution_start_status=:started",
-            ConditionExpression=Attr("execution_arn").eq(item["execution_arn"])
-            & Attr("execution_start_status").eq("PENDING"),
-            ExpressionAttributeValues={":started": "STARTED"},
+        updated = store.recordings.patch(
+            recording.user_id,
+            recording.recording_id,
+            expected_revision=recording.revision,
+            updates={"execution_start_status": "STARTED"},
         )
-    except recordings.meta.client.exceptions.ConditionalCheckFailedException:
-        # Another request already confirmed the same start.
-        pass
-    current = recordings.get_item(Key=key, ConsistentRead=True)["Item"]
-    return processing_reply(current)
+        return _processing_reply(Recording.from_item(updated))
+    except WriteConflictError:
+        return _processing_reply(store.get_recording(recording.user_id, recording.recording_id))
 
 
-def handler(event, context):
+def _dispatch(event: dict[str, Any]) -> dict[str, Any]:
     route = event.get("routeKey", "")
     if route == "GET /health":
         return reply(200, {"service": "speakup", "status": "ok"})
-
     user_id = identity(event)
     if not user_id:
         return reply(401, {"message": "Missing authenticated user"})
-
     body = body_of(event)
     if body is None:
-        return reply(400, {"message": "Request body must be valid JSON"})
-    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        raise PayloadValidationError("Request body must be a JSON object")
+    store = payloads()
 
     if route == "POST /projects":
-        project_id = body.get("project_id") or str(uuid.uuid4())
-        if not valid(project_id):
-            return reply(400, {"message": "Invalid project_id"})
-        item = {
-            "user_id": user_id,
-            "project_id": project_id,
-            "project_title": str(body.get("project_title") or "Untitled project")[:200],
-            "description": str(body.get("description") or "")[:2000],
-            "created_at": now,
-            "updated_at": now,
-            "recording_count": 0,
-        }
-        projects.put_item(
-            Item=item, ConditionExpression="attribute_not_exists(project_id)"
+        project = store.create_project(
+            user_id,
+            project_id=body.get("project_id"),
+            project_title=str(body.get("project_title") or "Untitled project"),
+            description=str(body.get("description") or ""),
         )
-        return reply(201, item)
-
+        return reply(201, asdict(project))
     if route == "GET /projects":
-        result = projects.query(KeyConditionExpression=Key("user_id").eq(user_id))
-        return reply(200, {"items": result.get("Items", [])})
-
+        query = event.get("queryStringParameters") or {}
+        page = store.list_projects(
+            user_id,
+            limit=_integer(query.get("limit"), 50, 1, 100),
+            cursor=query.get("cursor"),
+        )
+        return reply(
+            200,
+            {
+                "items": [asdict(project) for project in page.items],
+                "next_cursor": page.next_cursor,
+            },
+        )
     if route == "POST /uploads":
-        project_id = body.get("project_id")
-        content_type = body.get("content_type")
+        project_id = str(body.get("project_id") or "")
         checksum = body.get("sha256")
-        if not valid(project_id) or content_type not in content_types:
-            return reply(
-                400,
-                {"message": "Valid project_id and WAV, MP3, or M4A content_type required"},
-            )
-        if sha256_hex(checksum) is None:
-            return reply(400, {"message": "sha256 must be the Base64 SHA-256 of the audio file"})
-        project = projects.get_item(
-            Key={"user_id": user_id, "project_id": project_id}, ConsistentRead=True
+        checksum_hex(checksum)
+        store.get_project(user_id, project_id)
+        duplicate_id = duplicate_recording_id(store, user_id, project_id, checksum)
+        if duplicate_id:
+            return reply(409, {"message": "Exact audio already submitted for this project", "duplicate_recording_id": duplicate_id})
+        request_id = str(
+            event.get("requestContext", {}).get("requestId") or uuid.uuid4()
         )
-        if "Item" not in project:
-            return reply(404, {"message": "Project not found"})
-        duplicate = existing_recording_for_hash(user_id, project_id, checksum)
-        if duplicate is not None:
-            return duplicate
-        recording_id = str(uuid.uuid4())
-        key = (
-            f"users/{user_id}/projects/{project_id}/recordings/{recording_id}/"
-            f"original.{content_types[content_type]}"
-        )
-        item = {
-            "user_id": user_id,
-            "recording_id": recording_id,
-            "project_id": project_id,
-            "created_at": now,
-            "updated_at": now,
-            "status": "AWAITING_UPLOAD",
-            "audio_s3_key": key,
-            "content_type": content_type,
-            "source_sha256": checksum,
-        }
-        recordings.put_item(
-            Item=item, ConditionExpression="attribute_not_exists(recording_id)"
-        )
-        url = s3.generate_presigned_url(
-            "put_object",
-            Params={"Bucket": bucket, "Key": key, "ContentType": content_type, "ChecksumSHA256": checksum},
-            ExpiresIn=int(os.environ["URL_EXPIRY_SECONDS"]),
+        recording, intent = store.reserve_upload(
+            user_id,
+            project_id,
+            str(body.get("content_type") or ""),
+            idempotency_key=str(body.get("idempotency_key") or request_id)[:36],
+            recording_id=body.get("recording_id"),
+            source_sha256=checksum,
         )
         return reply(
             201,
             {
-                "recording_id": recording_id,
-                "object_key": key,
-                "upload_url": url,
-                "expires_in": int(os.environ["URL_EXPIRY_SECONDS"]),
-                "upload_headers": {"Content-Type": content_type, "x-amz-checksum-sha256": checksum},
+                "recording": _recording_body(recording),
+                "recording_id": recording.recording_id,
+                "object_key": intent.key,
+                "upload_url": intent.upload_url,
+                "expires_at": intent.expires_at,
+                "required_headers": dict(intent.required_headers),
             },
         )
 
-    recording_id = (event.get("pathParameters") or {}).get("recordingId")
-    if not valid(recording_id):
-        return reply(400, {"message": "Invalid recordingId"})
-    found = recordings.get_item(
-        Key={"user_id": user_id, "recording_id": recording_id}, ConsistentRead=True
-    ).get("Item")
-    if not found:
-        return reply(404, {"message": "Recording not found"})
-
-    if route == "GET /recordings/{recordingId}":
-        return reply(200, found)
-
-    if route == "POST /recordings/{recordingId}/process":
-        if found["status"] != "AWAITING_UPLOAD":
-            return start_claimed_execution(found)
-        try:
-            source = s3.head_object(
-                Bucket=bucket, Key=found["audio_s3_key"],
-                **({"ChecksumMode": "ENABLED"} if found.get("source_sha256") else {}),
-            )
-        except ClientError:
-            return reply(409, {"message": "Upload is not complete"})
-        if found.get("source_sha256"):
-            if source.get("ChecksumSHA256") != found["source_sha256"]:
-                return reply(409, {"message": "Uploaded audio SHA-256 does not match"})
-            duplicate = claim_recording_hash(found)
-            if duplicate is not None:
-                return duplicate
-        execution_name = recording_id
-        state_machine_arn = os.environ["STATE_MACHINE_ARN"]
-        execution_arn = state_machine_arn.replace(
-            ":stateMachine:", ":execution:", 1
-        ) + f":{execution_name}"
-        try:
-            recordings.update_item(
-                Key={"user_id": user_id, "recording_id": recording_id},
-                UpdateExpression=(
-                    "SET #s=:processing, updated_at=:updated, execution_arn=:arn, "
-                    "execution_name=:name, execution_start_status=:pending"
-                ),
-                ConditionExpression=Attr("status").eq("AWAITING_UPLOAD")
-                & Attr("execution_arn").not_exists(),
-                ExpressionAttributeNames={"#s": "status"},
-                ExpressionAttributeValues={
-                    ":processing": "PROCESSING",
-                    ":updated": now,
-                    ":arn": execution_arn,
-                    ":name": execution_name,
-                    ":pending": "PENDING",
-                },
-            )
-        except recordings.meta.client.exceptions.ConditionalCheckFailedException:
-            current = recordings.get_item(
-                Key={"user_id": user_id, "recording_id": recording_id},
-                ConsistentRead=True,
-            ).get("Item")
-            if not current:
-                return reply(404, {"message": "Recording not found"})
-            if current["status"] == "AWAITING_UPLOAD":
-                return reply(409, {"message": "Recording cannot be claimed"})
-            return start_claimed_execution(current)
-        return start_claimed_execution(
+    path = event.get("pathParameters") or {}
+    if route == "GET /projects/{projectId}/recordings":
+        query = event.get("queryStringParameters") or {}
+        page = store.list_recordings(
+            user_id,
+            str(path.get("projectId") or ""),
+            limit=_integer(query.get("limit"), 50, 1, 100),
+            cursor=query.get("cursor"),
+        )
+        return reply(
+            200,
             {
-                **found,
-                "status": "PROCESSING",
-                "execution_arn": execution_arn,
-                "execution_name": execution_name,
-                "execution_start_status": "PENDING",
-            }
+                "items": [_recording_body(item) for item in page.items],
+                "next_cursor": page.next_cursor,
+            },
         )
 
+    recording_id = str(path.get("recordingId") or "")
+    if route == "GET /recordings/{recordingId}":
+        return reply(200, _recording_body(store.get_recording(user_id, recording_id)))
+    if route == "POST /recordings/{recordingId}/confirm-upload":
+        return reply(200, _recording_body(store.confirm_upload(user_id, recording_id)))
+    if route == "GET /recordings/{recordingId}/download":
+        return reply(
+            200,
+            {
+                "recording_id": recording_id,
+                "download_url": store.create_original_download_url(
+                    user_id, recording_id
+                ),
+                "expires_in": store.config.upload_url_ttl_seconds,
+            },
+        )
+    if route == "POST /recordings/{recordingId}/process":
+        recording = store.get_recording(user_id, recording_id)
+        if recording.status in {RecordingStatus.COMPLETE, RecordingStatus.FAILED}:
+            return _processing_reply(recording)
+        if recording.status in {RecordingStatus.PROCESSING, RecordingStatus.TRANSCRIBING, RecordingStatus.ANALYZED}:
+            return _start_claimed_execution(store, recording)
+        if recording.status is RecordingStatus.AWAITING_UPLOAD:
+            recording = store.confirm_upload(user_id, recording_id)
+        duplicate_id = claim_recording_hash(store, recording)
+        if duplicate_id:
+            return reply(409, {"message": "Exact audio already submitted for this project", "duplicate_recording_id": duplicate_id})
+        state_machine_arn = os.environ["STATE_MACHINE_ARN"]
+        execution_arn = state_machine_arn.replace(":stateMachine:", ":execution:", 1) + f":{recording_id}"
+        try:
+            processing = store.transition_recording(
+                user_id,
+                recording_id,
+                RecordingStatus.PROCESSING,
+                expected_revision=recording.revision,
+                updates={"execution_arn": execution_arn, "execution_start_status": "PENDING"},
+            )
+        except (WriteConflictError, InvalidTransitionError):
+            return _start_claimed_execution(store, store.get_recording(user_id, recording_id))
+        return _start_claimed_execution(store, processing)
+
+    current = store.recordings.get(user_id, recording_id, include_deleted=True)
+    expected_revision = _integer(
+        body.get("expected_revision"),
+        int(current.get("revision", 0)),
+        0,
+        2_147_483_647,
+    )
+    if route == "DELETE /recordings/{recordingId}":
+        result = store.soft_delete(
+            user_id, recording_id, expected_revision=expected_revision
+        )
+        return reply(200, _recording_body(result))
+    if route == "POST /recordings/{recordingId}/restore":
+        result = store.recover(
+            user_id, recording_id, expected_revision=expected_revision
+        )
+        return reply(200, _recording_body(result))
+    if route == "DELETE /recordings/{recordingId}/permanent":
+        count = store.permanently_delete(
+            user_id,
+            recording_id,
+            expected_revision=expected_revision,
+            confirmation=str(body.get("confirmation") or ""),
+            purge_token=str(
+                event.get("requestContext", {}).get("requestId") or uuid.uuid4()
+            )[:36],
+        )
+        return reply(200, {"recording_id": recording_id, "deleted_versions": count})
     return reply(404, {"message": "Route not found"})
+
+
+def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
+    """Map domain failures to stable HTTP responses without leaking AWS details."""
+
+    del context
+    try:
+        return _dispatch(event)
+    except (PayloadNotFoundError, OwnershipViolationError):
+        return reply(404, {"message": "Resource not found"})
+    except (
+        PayloadAlreadyExistsError,
+        IdempotencyConflictError,
+        WriteConflictError,
+        InvalidTransitionError,
+        PayloadIntegrityError,
+    ) as error:
+        return reply(409, {"message": str(error)})
+    except (PayloadValidationError, InvalidCursorError, ValueError) as error:
+        return reply(400, {"message": str(error)})
+    except ClientError as error:
+        LOGGER.exception(
+            "AWS backend request failed",
+            extra={
+                "aws_error_code": error.response.get("Error", {}).get("Code"),
+                "aws_request_id": error.response.get("ResponseMetadata", {}).get(
+                    "RequestId"
+                ),
+            },
+        )
+        return reply(503, {"message": "Backend temporarily unavailable"})
