@@ -11,7 +11,9 @@ recordings, uploads, audio reads, versioned JSON artifacts, playback URLs, and
 recoverable deletion. S3 stores audio and large payloads; DynamoDB stores
 owner-scoped metadata, lifecycle state, summary metrics, and compact S3
 references. See [the API guide](docs/aws-payload-api.md) and
-[package README](src/aws_payload/README.md).
+[package README](src/aws_payload/README.md). The
+[complete package reference](docs/aws-payload-package-reference.md) documents
+every supported function, model, parameter, return value, and exception.
 
 Build the three zip-based Lambda artifacts with:
 

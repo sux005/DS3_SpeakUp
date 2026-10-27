@@ -5,6 +5,10 @@ recording lifecycle state, audio, transcripts, analysis, and feedback. Callers
 provide authenticated owner/project/recording IDs; they never provide bucket or
 table names.
 
+For every supported class, function, parameter, return type, exception, and a
+complete lifecycle example, see the
+[full package reference](../../docs/aws-payload-package-reference.md).
+
 ## Quick example
 
 ```python
@@ -38,6 +42,23 @@ The browser sends `upload.required_headers` with its PUT. The backend then calls
 - `s3_store.py`: encrypted object transfer, streaming, signing, and purge.
 - `service.py`: ownership-checking facade used by HTTP and workflow adapters.
 - `factory.py`: reused boto3 clients with bounded adaptive retries/timeouts.
+
+## Public API map
+
+| Need | Recommended call |
+|---|---|
+| Create/read/list projects | `create_project`, `get_project`, `list_projects` |
+| Reserve and confirm original audio | `reserve_upload`, `confirm_upload` |
+| Read/list/update recordings | `get_recording`, `list_recordings`, `transition_recording` |
+| Store/read versioned JSON | `put_json_artifact`, `reconcile_json_artifact`, `get_json_artifact` |
+| Stream/download payloads | `open_payload`, `download_payload` |
+| Create an owner-checked playback URL | `create_original_download_url` |
+| Recoverable/permanent deletion | `soft_delete`, `recover`, `permanently_delete` |
+| Abandoned-record cleanup | `cleanup_expired_recording` |
+
+Application and workflow code should use `SpeakUpPayloadStore`. The S3 and
+DynamoDB adapters are documented for package integrations and tests, but they
+do not independently provide all facade-level ownership checks.
 
 ## Storage contracts
 
