@@ -18,6 +18,7 @@ venv/
 !.env.example
 !.env.development.example
 !.env.production.example
+env.development
 
 # Data and generated artifacts
 data/*
