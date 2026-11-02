@@ -1,0 +1,232 @@
+Project management
+- Create owner-scoped projects.
+- Assign generated or caller-provided project IDs.
+- Store project titles and descriptions.
+- Retrieve individual projects.
+- List all projects belonging to a user.
+- Paginate large project lists.
+- Prevent one user from accessing another user’s projects.
+- Avoid maintaining duplicated recording counts or recording-ID arrays.
+Recording management
+- Create recordings within a verified project.
+- Generate deterministic recording IDs for idempotent requests.
+- Accept caller-provided recording IDs when needed.
+- Retrieve individual recordings.
+- List recordings belonging to a specific project.
+- Return recordings newest-first.
+- Paginate large recording lists.
+- Hide deleted recordings from normal reads and lists.
+- Preserve compatibility with older recording metadata.
+Direct audio uploads
+- Reserve an upload for an original recording.
+- Generate short-lived presigned S3 upload URLs.
+- Support WAV, MP3, and M4A-compatible content types.
+- Return all HTTP headers required for the upload.
+- Prevent accidental overwriting of existing original audio.
+- Require SSE-S3 encryption on uploaded audio.
+- Attach owner, project, recording, and payload metadata to uploaded objects.
+- Confirm that an upload actually reached S3.
+- Verify that the uploaded object matches the reservation.
+- Verify the uploaded content type and ownership scope.
+- Safely retry upload reservations and confirmations.
+Recording lifecycle
+- Track recordings through these states:
+  - Awaiting upload
+  - Uploaded
+  - Processing
+  - Transcribing
+  - Analyzed
+  - Complete
+  - Failed
+  - Deleted
+  - Pending permanent deletion
+- Enforce which state transitions are legal.
+- Restart failed recordings by transitioning them back to processing.
+- Attach small workflow metadata during transitions.
+- Prevent concurrent workers from silently overwriting one another.
+- Detect stale writes using revision numbers.
+- Return the new revision after every successful mutation.
+Diagnostic artifact storage
+- Store transcripts.
+- Store speech-analysis results.
+- Store coaching feedback.
+- Store preprocessing reports.
+- Store audio-preparation artifacts.
+- Store artifact manifests.
+- Support additional producer-specific versioned artifacts.
+- Identify which tool or pipeline produced each artifact.
+- Record the producer version for reproducibility.
+- Organize artifacts using deterministic S3 paths.
+- Attach compact artifact references to recording metadata.
+- Retrieve artifacts by recording and payload type.
+JSON payload handling
+- Automatically wrap application data in a versioned SpeakUp envelope.
+- Canonically encode JSON for deterministic storage.
+- Enforce top-level JSON objects.
+- Enforce configurable payload-size limits.
+- Allow a larger configurable limit for transcripts.
+- Reject duplicate JSON keys.
+- Reject NaN, infinity, and other non-finite values.
+- Reject unsupported Python values.
+- Reject excessively nested JSON.
+- Require strict UTF-8.
+- Verify the stored payload type and schema version.
+- Verify SHA-256 checksums when reading.
+- Return both envelope metadata and application data.
+- Prevent different content from replacing an immutable artifact.
+- Treat an identical repeated artifact write as a safe retry.
+Interrupted-write recovery
+- Detect an artifact that reached S3 but was not attached to DynamoDB.
+- Reconcile the existing S3 object with recording metadata.
+- Validate the existing object before attaching it.
+- Return None when there is nothing to reconcile.
+- Preserve optimistic-concurrency protection during reconciliation.
+Audio and payload retrieval
+- Generate short-lived download/playback URLs for original audio.
+- Require an ownership check before generating a playback URL.
+- Stream payloads directly into backend workflows.
+- Automatically close S3 streams after use.
+- Download complete payloads to local files.
+- Use managed multipart-aware S3 transfers.
+- Retrieve a specific S3 object version when recorded.
+- Prevent references from escaping their recording’s storage scope.
+File artifact uploads
+- Upload backend-generated audio artifacts.
+- Calculate file checksums before upload.
+- Store content type, producer, producer version, and recording metadata.
+- Use managed S3 upload transfers.
+- Return a complete payload reference after upload.
+Soft deletion and recovery
+- Soft-delete recordings immediately.
+- Remove deleted recordings from project listings.
+- Preserve their S3 data during the recovery period.
+- Preserve the recording’s previous lifecycle state.
+- Configure the recovery-window duration.
+- Recover recordings before the deadline.
+- Restore recovered recordings to project listings.
+- Restore their previous lifecycle state.
+- Prevent recovery after the deadline.
+Permanent deletion
+- Require a prior soft deletion.
+- Require explicit confirmation matching the recording ID.
+- Use a stable purge token to make deletion retryable.
+- Mark deletion as pending before removing data.
+- Delete every S3 object version under the recording.
+- Delete every S3 delete marker under the recording.
+- Delete objects in bounded batches.
+- Verify that S3 did not report partial deletion failures.
+- Remove DynamoDB metadata only after S3 cleanup succeeds.
+- Continue an interrupted permanent deletion safely.
+- Return the number of S3 entries removed.
+- Prevent a purge from crossing into another recording’s prefix.
+Abandoned-record cleanup
+- Identify one known abandoned or failed recording for cleanup.
+- Apply a configurable minimum retention period.
+- Ignore active, completed, or recently updated recordings.
+- Soft-delete eligible recordings before purging them.
+- Generate a deterministic cleanup token.
+- Permanently remove eligible metadata and payloads.
+- Safely retry interrupted cleanup operations.
+- Avoid expensive DynamoDB table scans.
+- Leave scheduling and candidate selection to the surrounding backend workflow.
+Ownership and isolation
+- Scope projects by authenticated user ID.
+- Scope recordings by authenticated user ID.
+- Scope recording listings by both owner and project.
+- Validate all user, project, and recording identifiers.
+- Validate every generated or supplied storage key.
+- Reject unsafe path segments and traversal patterns.
+- Strongly verify ownership before returning payloads.
+- Make differently owned resources appear unavailable.
+- Prevent clients from choosing buckets, tables, indexes, or arbitrary keys.
+Idempotency
+- Safely retry recording creation.
+- Derive a deterministic recording ID from an idempotency key.
+- Verify that retried input matches the original request.
+- Reject reuse of an idempotency key with different input.
+- Safely retry upload confirmation.
+- Safely retry identical JSON writes.
+- Reconcile partially completed artifact writes.
+- Safely resume staged permanent deletion.
+- Safely retry abandoned-record cleanup.
+Concurrency protection
+- Assign a revision number to mutable metadata.
+- Require the expected revision for mutations.
+- Increment the revision after successful updates.
+- Reject writes based on stale reads.
+- Protect lifecycle transitions from races.
+- Protect artifact-reference updates from races.
+- Protect deletion and recovery from races.
+- Protect final metadata deletion with status, revision, and purge-token conditions.
+Pagination and listing correctness
+- Provide opaque continuation cursors.
+- Bind cursors to their original owner or project query.
+- Reject malformed or cross-scope cursors.
+- Enforce bounded page sizes.
+- Query DynamoDB rather than scanning it.
+- Use an owner-and-project-scoped GSI for recording lists.
+- Strongly re-read GSI results from the base table.
+- Filter recently deleted or stale index results.
+Storage integrity
+- Preserve original recordings rather than overwriting them.
+- Use deterministic, versioned artifact locations.
+- Store SHA-256 hashes for generated artifacts.
+- Store content length and content type.
+- Preserve S3 version IDs and ETags when available.
+- Detect mismatched stored metadata.
+- Detect incorrect payload types.
+- Detect corrupted JSON content.
+- Detect attempts to access objects outside the recording scope.
+- Detect incomplete S3 purge results.
+AWS client management
+- Reuse shared S3 and DynamoDB clients.
+- Use the standard AWS credential chain.
+- Avoid embedding AWS credentials in configuration.
+- Configure connection and read timeouts.
+- Configure adaptive AWS SDK retries.
+- Configure bounded connection pooling.
+- Use SigV4 for S3 requests.
+- Use DynamoDB’s native Python type interface.
+- Allow fake clients and repositories to be injected for testing.
+Configuration
+- Load configuration directly or from environment variables.
+- Validate the selected AWS Region.
+- Validate S3 bucket names.
+- Validate DynamoDB table and index names.
+- Configure upload/download URL expiration.
+- Configure deletion recovery duration.
+- Configure abandoned-record retention.
+- Configure JSON and transcript size limits.
+- Configure SDK retry, timeout, and connection-pool behavior.
+- Fail before making AWS calls when configuration is invalid.
+Stable error handling
+- Expose a common PayloadError base type.
+- Distinguish configuration errors.
+- Distinguish caller validation errors.
+- Distinguish unsafe identifier errors.
+- Distinguish malformed JSON.
+- Distinguish oversized payloads.
+- Distinguish missing resources.
+- Distinguish immutable-object collisions.
+- Distinguish stale-write conflicts.
+- Distinguish idempotency conflicts.
+- Distinguish ownership violations.
+- Distinguish stored-data integrity failures.
+- Allow unexpected AWS SDK failures to reach the workflow boundary for appropriate retry or logging.
+Backward compatibility
+- Read legacy audio_s3_key recording fields.
+- Normalize legacy COMPLETED status to COMPLETE.
+- Continue writing the temporary legacy audio-key alias during migration.
+- Read legacy preprocessing artifact paths.
+- Ignore obsolete project recording counters and recording arrays.
+- Apply defaults when reading older schema versions.
+Security and cost controls
+- Keep all buckets and tables behind the internal backend API.
+- Encrypt S3 objects using SSE-S3.
+- Avoid customer-managed KMS request costs for the current threat model.
+- Use short-lived presigned URLs.
+- Prevent accidental public object access through the API.
+- Avoid logging audio, transcripts, credentials, or presigned URLs.
+- Avoid table scans for normal listing and cleanup.
+- Avoid an always-running cleanup service.
+- Support on-demand, backend-driven workflows.
