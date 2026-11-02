@@ -297,20 +297,41 @@ def process_audio_file(
     input_path = Path(input_path)
     output_directory = Path(output_directory)
     output_directory.mkdir(parents=True, exist_ok=True)
-    audio, sample_rate = decode_audio(input_path)
+    config = config or AudioPrepConfig()
+    audio, sample_rate = decode_audio(
+        input_path,
+        max_duration_seconds=config.max_duration_seconds,
+        max_channels=config.max_channels,
+        max_decoded_bytes=config.max_decoded_bytes,
+    )
     prepared = prepare_audio(audio, sample_rate, config, source_metadata)
 
     reference_path = output_directory / "reference.wav"
     model_path = output_directory / "enhanced_model.wav"
     blended_path = output_directory / "enhanced_blended.wav"
     diagnostic_path = output_directory / "diagnostic.wav"
-    enhanced_path = output_directory / "enhanced.wav"
     report_path = output_directory / "report.json"
     write_pcm16(reference_path, prepared.reference, prepared.sample_rate)
     write_pcm16(model_path, prepared.enhanced_model, prepared.sample_rate)
     write_pcm16(blended_path, prepared.enhanced_blended, prepared.sample_rate)
     write_pcm16(diagnostic_path, prepared.diagnostic, prepared.sample_rate)
-    write_pcm16(enhanced_path, prepared.diagnostic, prepared.sample_rate)
+    # ``enhanced`` is a legacy name for the diagnostic candidate. Preserve the
+    # legacy filename through a hard link instead of encoding identical bytes a
+    # second time. All artifacts are created in one temporary filesystem.
+    enhanced_path = output_directory / "enhanced.wav"
+    if enhanced_path.exists() or enhanced_path.is_symlink():
+        enhanced_path.unlink()
+    try:
+        enhanced_path.hardlink_to(diagnostic_path)
+    except OSError:
+        # Some local filesystems do not permit hard links. A relative symlink
+        # preserves the compatibility path without copying the audio bytes.
+        try:
+            enhanced_path.symlink_to(diagnostic_path.name)
+        except OSError as symlink_error:
+            raise OSError(
+                "Unable to create the legacy enhanced.wav alias"
+            ) from symlink_error
     report_path.write_text(
         json.dumps(prepared.report, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

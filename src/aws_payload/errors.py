@@ -53,3 +53,7 @@ class PayloadIntegrityError(PayloadError):
 
 class BackendUnavailableError(PayloadError):
     """Raised when an AWS backend cannot complete an otherwise valid request."""
+
+
+class ActiveWorkflowLimitError(PayloadError):
+    """Raised when an owner has reached the active workflow admission limit."""

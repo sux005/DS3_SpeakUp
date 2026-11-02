@@ -47,7 +47,17 @@ Parameters:
     Type: Number
     Default: 104857600
     MinValue: 1
-    MaxValue: 536870912
+    MaxValue: 524288000
+  MaxActiveWorkflows:
+    Type: Number
+    Default: 3
+    MinValue: 1
+    MaxValue: 100
+  BedrockMaxInputChars:
+    Type: Number
+    Default: 80000
+    MinValue: 4000
+    MaxValue: 200000
   ApiCodeS3Key:
     Type: String
     AllowedPattern: '^deployments/.+\.zip$'
@@ -56,13 +66,48 @@ Parameters:
     AllowedPattern: '^deployments/.+\.zip$'
   AudioPrepImageUri:
     Type: String
-    AllowedPattern: '^.+\.dkr\.ecr\..+\.amazonaws\.com\/.+:.+$'
+    AllowedPattern: '^.+\.dkr\.ecr\..+\.amazonaws\.com\/.+@sha256:[0-9a-f]{64}$'
   FailureCodeS3Key:
     Type: String
     AllowedPattern: '^deployments/.+\.zip$'
+  ApiCodeS3Version:
+    Type: String
+    AllowedPattern: '^[A-Za-z0-9._-]+$'
+  ProcessorCodeS3Version:
+    Type: String
+    AllowedPattern: '^[A-Za-z0-9._-]+$'
+  FailureCodeS3Version:
+    Type: String
+    AllowedPattern: '^[A-Za-z0-9._-]+$'
+  MaintenanceCodeS3Key:
+    Type: String
+    AllowedPattern: '^deployments/.+\.zip$'
+  MaintenanceCodeS3Version:
+    Type: String
+    AllowedPattern: '^[A-Za-z0-9._-]+$'
+  AlarmTopicArn:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^arn:[^:]+:sns:[^:]+:[0-9]{12}:.+$'
+  EnforceWorkflowAdmissions:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
 
 Conditions:
   IsProduction: !Equals [!Ref Environment, prod]
+  HasAlarmTopic: !Not [!Equals [!Ref AlarmTopicArn, '']]
+
+Rules:
+  ProductionParameters:
+    RuleCondition: !Equals [!Ref Environment, prod]
+    Assertions:
+      - Assert: !Not [!Equals [!Select [0, !Split ["://", !Ref CorsAllowedOrigin]], http]]
+        AssertDescription: Production CORS origins must use HTTPS.
+      - Assert: !Not [!Equals [!Ref DataBucketName, speakup-dev-private-110359221190-us-east-2]]
+        AssertDescription: Production must not use the development data bucket.
+      - Assert: !Not [!Equals [!Ref AlarmTopicArn, '']]
+        AssertDescription: Production requires an alarm notification topic.
 
 Resources:
   DataBucket:
@@ -149,6 +194,7 @@ Resources:
         - {AttributeName: project_id, KeyType: RANGE}
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+      DeletionProtectionEnabled: !If [IsProduction, true, false]
       SSESpecification: {SSEEnabled: true}
       Tags:
         - {Key: Project, Value: SpeakUp}
@@ -174,6 +220,8 @@ Resources:
         - {AttributeName: created_at, AttributeType: S}
         - {AttributeName: owner_project_id, AttributeType: S}
         - {AttributeName: created_at_recording_id, AttributeType: S}
+        - {AttributeName: maintenance_partition, AttributeType: S}
+        - {AttributeName: maintenance_due_at_recording_id, AttributeType: S}
       KeySchema:
         - {AttributeName: user_id, KeyType: HASH}
         - {AttributeName: recording_id, KeyType: RANGE}
@@ -190,8 +238,76 @@ Resources:
           Projection:
             ProjectionType: INCLUDE
             NonKeyAttributes: [status, updated_at, content_type, schema_version]
+        - IndexName: MaintenanceDueIndex
+          KeySchema:
+            - {AttributeName: maintenance_partition, KeyType: HASH}
+            - {AttributeName: maintenance_due_at_recording_id, KeyType: RANGE}
+          Projection:
+            ProjectionType: INCLUDE
+            NonKeyAttributes: [project_id, status, updated_at, recovery_until, revision, execution_arn]
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+      DeletionProtectionEnabled: !If [IsProduction, true, false]
+      SSESpecification: {SSEEnabled: true}
+      Tags:
+        - {Key: Project, Value: SpeakUp}
+        - {Key: Environment, Value: !Ref Environment}
+
+  RecordingHashesTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: RetainExceptOnCreate
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${AWS::StackName}-recording-hashes'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: user_id, AttributeType: S}
+        - {AttributeName: project_hash, AttributeType: S}
+      KeySchema:
+        - {AttributeName: user_id, KeyType: HASH}
+        - {AttributeName: project_hash, KeyType: RANGE}
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+      DeletionProtectionEnabled: !If [IsProduction, true, false]
+      SSESpecification: {SSEEnabled: true}
+      Tags:
+        - {Key: Project, Value: SpeakUp}
+        - {Key: Environment, Value: !Ref Environment}
+
+  WorkflowAdmissionsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: RetainExceptOnCreate
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: per-user active workflow admission counter
+        must: [Use conditional transactions for increments and decrements, Never expose counters to clients]
+    Properties:
+      TableName: !Sub '${AWS::StackName}-workflow-admissions'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: user_id, AttributeType: S}
+      KeySchema:
+        - {AttributeName: user_id, KeyType: HASH}
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+      DeletionProtectionEnabled: !If [IsProduction, true, false]
+      SSESpecification: {SSEEnabled: true}
+      Tags:
+        - {Key: Project, Value: SpeakUp}
+        - {Key: Environment, Value: !Ref Environment}
+
+  WorkflowReconcileCursorTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: RetainExceptOnCreate
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${AWS::StackName}-workflow-reconcile-cursors'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: cursor_id, AttributeType: S}
+      KeySchema:
+        - {AttributeName: cursor_id, KeyType: HASH}
       SSESpecification: {SSEEnabled: true}
       Tags:
         - {Key: Project, Value: SpeakUp}
@@ -291,6 +407,14 @@ Resources:
       LogGroupName: !Sub '/aws/lambda/${AWS::StackName}-workflow-failure'
       RetentionInDays: !Ref LogRetentionDays
       Tags: [{Key: Project, Value: SpeakUp}, {Key: Environment, Value: !Ref Environment}]
+  MaintenanceFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AWS::StackName}-maintenance'
+      RetentionInDays: !Ref LogRetentionDays
+      Tags: [{Key: Project, Value: SpeakUp}, {Key: Environment, Value: !Ref Environment}]
   StateMachineLogGroup:
     Type: AWS::Logs::LogGroup
     DeletionPolicy: Delete
@@ -325,8 +449,12 @@ Resources:
                 Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-api:*'
               - Sid: ProjectRecords
                 Effect: Allow
-                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:Query, dynamodb:ConditionCheckItem]
-                Resource: [!GetAtt ProjectsTable.Arn, !GetAtt RecordingsTable.Arn, !Sub '${RecordingsTable.Arn}/index/ProjectCreatedAtIndex', !Sub '${RecordingsTable.Arn}/index/OwnerProjectCreatedAtIndex']
+                Action: [dynamodb:GetItem, dynamodb:BatchGetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:Query, dynamodb:ConditionCheckItem]
+                Resource: [!GetAtt ProjectsTable.Arn, !GetAtt RecordingsTable.Arn, !GetAtt RecordingHashesTable.Arn, !Sub '${RecordingsTable.Arn}/index/OwnerProjectCreatedAtIndex']
+              - Sid: WorkflowAdmissions
+                Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:UpdateItem]
+                Resource: !GetAtt WorkflowAdmissionsTable.Arn
               - Sid: RecordingObjects
                 Effect: Allow
                 Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject, s3:DeleteObject, s3:DeleteObjectVersion]
@@ -340,6 +468,14 @@ Resources:
                 Effect: Allow
                 Action: states:StartExecution
                 Resource: !Ref ProcessingStateMachine
+              - Sid: InspectProcessingExecution
+                Effect: Allow
+                Action: states:DescribeExecution
+                Resource: !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:${AWS::StackName}-processing:*'
+              - Sid: WriteTraces
+                Effect: Allow
+                Action: [xray:PutTraceSegments, xray:PutTelemetryRecords]
+                Resource: '*'
 
   ProcessorFunctionRole:
     Type: AWS::IAM::Role
@@ -368,6 +504,10 @@ Resources:
                 Effect: Allow
                 Action: [dynamodb:GetItem, dynamodb:UpdateItem]
                 Resource: !GetAtt RecordingsTable.Arn
+              - Sid: WorkflowAdmissions
+                Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:UpdateItem]
+                Resource: !GetAtt WorkflowAdmissionsTable.Arn
               - Sid: TranscriptionJobs
                 Effect: Allow
                 Action: [transcribe:StartTranscriptionJob, transcribe:GetTranscriptionJob]
@@ -376,6 +516,10 @@ Resources:
                 Effect: Allow
                 Action: bedrock:InvokeModel
                 Resource: !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}'
+              - Sid: WriteTraces
+                Effect: Allow
+                Action: [xray:PutTraceSegments, xray:PutTelemetryRecords]
+                Resource: '*'
 
   AudioPrepFunctionRole:
     Type: AWS::IAM::Role
@@ -399,7 +543,7 @@ Resources:
                 Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-audio-prep:*'
               - Sid: RecordingObjects
                 Effect: Allow
-                Action: [s3:GetObject, s3:PutObject]
+                Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject]
                 Resource: !Sub '${DataBucket.Arn}/users/*'
               - Sid: RecordingState
                 Effect: Allow
@@ -424,6 +568,49 @@ Resources:
               - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-workflow-failure:*'
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:UpdateItem, dynamodb:Scan, dynamodb:Query]
+                Resource: [!GetAtt RecordingsTable.Arn, !Sub '${RecordingsTable.Arn}/index/MaintenanceDueIndex']
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:UpdateItem]
+                Resource: !GetAtt WorkflowAdmissionsTable.Arn
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:DeleteItem, dynamodb:Scan]
+                Resource: !GetAtt WorkflowReconcileCursorTable.Arn
+              - Effect: Allow
+                Action: states:DescribeExecution
+                Resource: !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:${AWS::StackName}-processing:*'
+
+  MaintenanceFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: lambda.amazonaws.com}, Action: 'sts:AssumeRole'}]
+      Policies:
+        - PolicyName: MaintenanceAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-maintenance:*'
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:UpdateItem, dynamodb:DeleteItem]
+                Resource: [!GetAtt RecordingsTable.Arn, !Sub '${RecordingsTable.Arn}/index/MaintenanceDueIndex']
+              - Effect: Allow
+                Action: [dynamodb:DeleteItem]
+                Resource: !GetAtt RecordingHashesTable.Arn
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:PutItem]
+                Resource: !GetAtt WorkflowReconcileCursorTable.Arn
+              - Effect: Allow
+                Action: [s3:ListBucketVersions]
+                Resource: !GetAtt DataBucket.Arn
+                Condition: {StringLike: {s3:prefix: 'users/*'}}
+              - Effect: Allow
+                Action: [s3:GetObjectVersion, s3:DeleteObjectVersion]
+                Resource: !Sub '${DataBucket.Arn}/users/*'
 
   ApiFunction:
     Type: AWS::Lambda::Function
@@ -439,12 +626,16 @@ Resources:
       Handler: index.handler
       Role: !GetAtt ApiFunctionRole.Arn
       MemorySize: 256
-      Timeout: 15
+      Timeout: 25
       TracingConfig: {Mode: Active}
       Environment:
         Variables:
           PROJECTS_TABLE: !Ref ProjectsTable
           RECORDINGS_TABLE: !Ref RecordingsTable
+          RECORDING_HASHES_TABLE: !Ref RecordingHashesTable
+          WORKFLOW_ADMISSIONS_TABLE: !Ref WorkflowAdmissionsTable
+          MAX_ACTIVE_WORKFLOWS: !Ref MaxActiveWorkflows
+          ENFORCE_WORKFLOW_ADMISSIONS: !Ref EnforceWorkflowAdmissions
           DATA_BUCKET: !Ref DataBucket
           STATE_MACHINE_ARN: !Ref ProcessingStateMachine
           URL_EXPIRY_SECONDS: '900'
@@ -453,7 +644,12 @@ Resources:
           MAX_TRANSCRIPT_PAYLOAD_BYTES: '5242880'
           PAYLOAD_RECOVERY_DAYS: '30'
           ABANDONED_RETENTION_DAYS: '7'
-      Code: {S3Bucket: !Ref DataBucket, S3Key: !Ref ApiCodeS3Key}
+          AUDIO_MAX_DURATION_SECONDS: !Ref MaxAudioDurationSeconds
+          AUDIO_MAX_UPLOAD_BYTES: !Ref MaxAudioUploadBytes
+          AWS_CONNECT_TIMEOUT_SECONDS: '1'
+          AWS_READ_TIMEOUT_SECONDS: '3'
+          AWS_TOTAL_MAX_ATTEMPTS: '2'
+      Code: {S3Bucket: !Ref DataBucket, S3Key: !Ref ApiCodeS3Key, S3ObjectVersion: !Ref ApiCodeS3Version}
 
   ProcessorFunction:
     Type: AWS::Lambda::Function
@@ -469,21 +665,30 @@ Resources:
       Handler: index.handler
       Role: !GetAtt ProcessorFunctionRole.Arn
       MemorySize: 512
-      Timeout: 60
+      Timeout: 90
       TracingConfig: {Mode: Active}
       Environment:
         Variables:
           DATA_BUCKET: !Ref DataBucket
           PROJECTS_TABLE: !Ref ProjectsTable
           RECORDINGS_TABLE: !Ref RecordingsTable
+          RECORDING_HASHES_TABLE: !Ref RecordingHashesTable
+          WORKFLOW_ADMISSIONS_TABLE: !Ref WorkflowAdmissionsTable
+          MAX_ACTIVE_WORKFLOWS: !Ref MaxActiveWorkflows
+          ENFORCE_WORKFLOW_ADMISSIONS: !Ref EnforceWorkflowAdmissions
           BEDROCK_MODEL_ID: !Ref BedrockModelId
+          BEDROCK_MAX_INPUT_CHARS: !Ref BedrockMaxInputChars
+          PROCESSOR_BUILD_ID: !Sub '${ProcessorCodeS3Key}:${ProcessorCodeS3Version}'
           ENVIRONMENT: !Ref Environment
           OWNER_PROJECT_INDEX: OwnerProjectCreatedAtIndex
           MAX_JSON_PAYLOAD_BYTES: '1048576'
           MAX_TRANSCRIPT_PAYLOAD_BYTES: '5242880'
           PAYLOAD_RECOVERY_DAYS: '30'
           ABANDONED_RETENTION_DAYS: '7'
-      Code: {S3Bucket: !Ref DataBucket, S3Key: !Ref ProcessorCodeS3Key}
+          AWS_CONNECT_TIMEOUT_SECONDS: '3'
+          AWS_READ_TIMEOUT_SECONDS: '20'
+          AWS_TOTAL_MAX_ATTEMPTS: '2'
+      Code: {S3Bucket: !Ref DataBucket, S3Key: !Ref ProcessorCodeS3Key, S3ObjectVersion: !Ref ProcessorCodeS3Version}
 
   AudioPrepFunction:
     Type: AWS::Lambda::Function
@@ -508,12 +713,16 @@ Resources:
           DATA_BUCKET: !Ref DataBucket
           PROJECTS_TABLE: !Ref ProjectsTable
           RECORDINGS_TABLE: !Ref RecordingsTable
+          WORKFLOW_ADMISSIONS_TABLE: !Ref WorkflowAdmissionsTable
+          MAX_ACTIVE_WORKFLOWS: !Ref MaxActiveWorkflows
+          ENFORCE_WORKFLOW_ADMISSIONS: !Ref EnforceWorkflowAdmissions
           OWNER_PROJECT_INDEX: OwnerProjectCreatedAtIndex
           MAX_JSON_PAYLOAD_BYTES: '1048576'
           MAX_TRANSCRIPT_PAYLOAD_BYTES: '5242880'
           PAYLOAD_RECOVERY_DAYS: '30'
           ABANDONED_RETENTION_DAYS: '7'
           AUDIO_PIPELINE_VERSION: '1.1.0'
+          AUDIO_BUILD_DIGEST: !Ref AudioPrepImageUri
           AUDIO_MAX_DURATION_SECONDS: !Ref MaxAudioDurationSeconds
           AUDIO_MAX_UPLOAD_BYTES: !Ref MaxAudioUploadBytes
       Code: {ImageUri: !Ref AudioPrepImageUri}
@@ -528,8 +737,53 @@ Resources:
       Handler: index.handler
       Role: !GetAtt FailureFunctionRole.Arn
       MemorySize: 128
-      Timeout: 10
-      Code: {S3Bucket: !Ref DataBucket, S3Key: !Ref FailureCodeS3Key}
+      Timeout: 120
+      Environment:
+        Variables:
+          DATA_BUCKET: !Ref DataBucket
+          PROJECTS_TABLE: !Ref ProjectsTable
+          RECORDINGS_TABLE: !Ref RecordingsTable
+          WORKFLOW_ADMISSIONS_TABLE: !Ref WorkflowAdmissionsTable
+          MAX_ACTIVE_WORKFLOWS: !Ref MaxActiveWorkflows
+          ENFORCE_WORKFLOW_ADMISSIONS: !Ref EnforceWorkflowAdmissions
+          RECONCILE_CURSOR_TABLE: !Ref WorkflowReconcileCursorTable
+          MAINTENANCE_INDEX_NAME: MaintenanceDueIndex
+          MAINTENANCE_SHARD_COUNT: '8'
+          MAINTENANCE_DISCOVERY_MODE: dual
+          RECONCILE_RECHECK_SECONDS: '300'
+          CLEANUP_RETRY_SECONDS: '600'
+          CLEANUP_RECHECK_SECONDS: '600'
+          OWNER_PROJECT_INDEX: OwnerProjectCreatedAtIndex
+          STALE_WORKFLOW_MINUTES: '30'
+          RECONCILE_SCAN_LIMIT: '100'
+      Code: {S3Bucket: !Ref DataBucket, S3Key: !Ref FailureCodeS3Key, S3ObjectVersion: !Ref FailureCodeS3Version}
+
+  MaintenanceFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: MaintenanceFunctionLogGroup
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-maintenance'
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: index.handler
+      Role: !GetAtt MaintenanceFunctionRole.Arn
+      MemorySize: 256
+      Timeout: 120
+      Environment:
+        Variables:
+          DATA_BUCKET: !Ref DataBucket
+          PROJECTS_TABLE: !Ref ProjectsTable
+          RECORDINGS_TABLE: !Ref RecordingsTable
+          RECORDING_HASHES_TABLE: !Ref RecordingHashesTable
+          RECONCILE_CURSOR_TABLE: !Ref WorkflowReconcileCursorTable
+          OWNER_PROJECT_INDEX: OwnerProjectCreatedAtIndex
+          MAINTENANCE_INDEX_NAME: MaintenanceDueIndex
+          MAINTENANCE_SHARD_COUNT: '8'
+          MAINTENANCE_DISCOVERY_MODE: dual
+          CLEANUP_RETRY_SECONDS: '600'
+          CLEANUP_RECHECK_SECONDS: '600'
+          ABANDONED_RETENTION_DAYS: '7'
+      Code: {S3Bucket: !Ref DataBucket, S3Key: !Ref MaintenanceCodeS3Key, S3ObjectVersion: !Ref MaintenanceCodeS3Version}
 
   ProcessingStateMachineRole:
     Type: AWS::IAM::Role
@@ -575,11 +829,11 @@ Resources:
             "PreprocessAudio":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","TimeoutSeconds":330,"Parameters":{"FunctionName":"${AudioPrepFunction.Arn}","Payload":{"user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.audio_s3_key"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["Lambda.ServiceException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"StartTranscription"},
             "StartTranscription":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","Parameters":{"FunctionName":"${ProcessorFunction.Arn}","Payload":{"action":"start","user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.transcription_audio_s3_key"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["Lambda.ServiceException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"WaitForTranscribe"},
             "WaitForTranscribe":{"Type":"Wait","Seconds":15,"Next":"CheckTranscription"},
-            "CheckTranscription":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","Parameters":{"FunctionName":"${ProcessorFunction.Arn}","Payload":{"action":"status","user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.audio_s3_key","transcription_job_name.$":"$.transcription_job_name","transcript_s3_key.$":"$.transcript_s3_key"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["Lambda.ServiceException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"TranscriptionStatus"},
-            "TranscriptionStatus":{"Type":"Choice","Choices":[{"Variable":"$.transcribe_status","StringEquals":"COMPLETED","Next":"AnalyzeSpeech"},{"Variable":"$.transcribe_status","StringEquals":"FAILED","Next":"MarkFailed"}],"Default":"WaitForTranscribe"},
+            "CheckTranscription":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","Parameters":{"FunctionName":"${ProcessorFunction.Arn}","Payload":{"action":"status","user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.audio_s3_key","transcription_job_name.$":"$.transcription_job_name","transcript_s3_key.$":"$.transcript_s3_key","poll_attempts.$":"$.poll_attempts"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["Lambda.ServiceException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"TranscriptionStatus"},
+            "TranscriptionStatus":{"Type":"Choice","Choices":[{"Variable":"$.transcribe_status","StringEquals":"COMPLETED","Next":"AnalyzeSpeech"},{"Variable":"$.transcribe_status","StringEquals":"FAILED","Next":"MarkFailed"},{"Variable":"$.poll_attempts","NumericGreaterThanEquals":80,"Next":"MarkFailed"}],"Default":"WaitForTranscribe"},
             "AnalyzeSpeech":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","Parameters":{"FunctionName":"${ProcessorFunction.Arn}","Payload":{"action":"analyze","user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.audio_s3_key","transcription_job_name.$":"$.transcription_job_name","transcript_s3_key.$":"$.transcript_s3_key"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["States.ALL"],"IntervalSeconds":2,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"GenerateFeedback"},
             "GenerateFeedback":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","Parameters":{"FunctionName":"${ProcessorFunction.Arn}","Payload":{"action":"feedback","user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.audio_s3_key","transcript_s3_key.$":"$.transcript_s3_key","analysis_s3_key.$":"$.analysis_s3_key","summary_metrics.$":"$.summary_metrics"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["States.ALL"],"IntervalSeconds":3,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"Complete"},
-            "MarkFailed":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","Parameters":{"FunctionName":"${ProcessorFunction.Arn}","Payload":{"action":"fail","user_id.$":"$.user_id","recording_id.$":"$.recording_id","error.$":"States.JsonToString($.error)"}},"OutputPath":"$.Payload","Next":"Failed"},
+            "MarkFailed":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","Parameters":{"FunctionName":"${ProcessorFunction.Arn}","Payload":{"action":"fail","user_id.$":"$.user_id","project_id.$":"$.project_id","recording_id.$":"$.recording_id","execution_arn.$":"$$.Execution.Id","error.$":"States.JsonToString($.error)"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["States.ALL"],"IntervalSeconds":2,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Next":"Failed"},
             "Complete":{"Type":"Succeed"},"Failed":{"Type":"Fail","Error":"SpeakUpProcessingFailed","Cause":"Audio processing workflow failed"}
           }
         }
@@ -601,7 +855,7 @@ Resources:
       Tags: {Project: SpeakUp, Environment: !Ref Environment}
   ApiIntegration:
     Type: AWS::ApiGatewayV2::Integration
-    Properties: {ApiId: !Ref HttpApi, IntegrationType: AWS_PROXY, IntegrationUri: !GetAtt ApiFunction.Arn, IntegrationMethod: POST, PayloadFormatVersion: '2.0', TimeoutInMillis: 15000}
+    Properties: {ApiId: !Ref HttpApi, IntegrationType: AWS_PROXY, IntegrationUri: !GetAtt ApiFunction.Arn, IntegrationMethod: POST, PayloadFormatVersion: '2.0', TimeoutInMillis: 29000}
   JwtAuthorizer:
     Type: AWS::ApiGatewayV2::Authorizer
     Properties:
@@ -615,6 +869,9 @@ Resources:
   HealthRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties: {ApiId: !Ref HttpApi, RouteKey: 'GET /health', AuthorizationType: NONE, Target: !Sub 'integrations/${ApiIntegration}'}
+  AccountLimitsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: 'GET /account/limits', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}'}
   CreateProjectRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties: {ApiId: !Ref HttpApi, RouteKey: 'POST /projects', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}'}
@@ -678,10 +935,179 @@ Resources:
           stateMachineArn: [!Ref ProcessingStateMachine]
           status: [FAILED, TIMED_OUT, ABORTED]
       State: ENABLED
-      Targets: [{Arn: !GetAtt FailureFunction.Arn, Id: WorkflowFailureLogger}]
+      Targets:
+        - Arn: !GetAtt FailureFunction.Arn
+          Id: WorkflowFailureLogger
+          DeadLetterConfig: {Arn: !GetAtt WorkflowFailureDeadLetterQueue.Arn}
+          RetryPolicy: {MaximumEventAgeInSeconds: 86400, MaximumRetryAttempts: 8}
+  WorkflowFailureReconcileRule:
+    Type: AWS::Events::Rule
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: periodically repairs stale recordings when workflow status events are missed
+        must: [Keep the scan bounded, never mark a running execution failed]
+    Properties:
+      Name: !Sub '${AWS::StackName}-workflow-reconcile'
+      ScheduleExpression: rate(5 minutes)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt FailureFunction.Arn
+          Id: WorkflowFailureReconciler
+          Input: '{"action":"reconcile"}'
+          DeadLetterConfig: {Arn: !GetAtt WorkflowFailureDeadLetterQueue.Arn}
+          RetryPolicy: {MaximumEventAgeInSeconds: 86400, MaximumRetryAttempts: 8}
+  MaintenanceCleanupRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${AWS::StackName}-maintenance-cleanup'
+      ScheduleExpression: rate(5 minutes)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt MaintenanceFunction.Arn
+          Id: MaintenanceCleanup
+          Input: '{"action":"cleanup"}'
+          DeadLetterConfig: {Arn: !GetAtt WorkflowFailureDeadLetterQueue.Arn}
+          RetryPolicy: {MaximumEventAgeInSeconds: 86400, MaximumRetryAttempts: 8}
+  WorkflowFailureDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+  WorkflowFailureDeadLetterQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues: [!Ref WorkflowFailureDeadLetterQueue]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: events.amazonaws.com}
+            Action: sqs:SendMessage
+            Resource: !GetAtt WorkflowFailureDeadLetterQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: [!GetAtt WorkflowFailureRule.Arn, !GetAtt WorkflowFailureReconcileRule.Arn, !GetAtt MaintenanceCleanupRule.Arn]
+  WorkflowFailureDeadLetterAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Workflow failure recovery events are accumulating in the dead-letter queue.
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions: [{Name: QueueName, Value: !GetAtt WorkflowFailureDeadLetterQueue.QueueName}]
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref 'AWS::NoValue']
+  WorkflowFailureFunctionErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Workflow recovery Lambda invocation failed.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{Name: FunctionName, Value: !Ref FailureFunction}]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref 'AWS::NoValue']
+  ApiFunctionErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: SpeakUp API Lambda errors detected.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{Name: FunctionName, Value: !Ref ApiFunction}]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref 'AWS::NoValue']
+  ProcessorFunctionErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: SpeakUp processor Lambda errors detected.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{Name: FunctionName, Value: !Ref ProcessorFunction}]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref 'AWS::NoValue']
+  AudioPrepFunctionErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: SpeakUp audio preparation Lambda errors detected.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{Name: FunctionName, Value: !Ref AudioPrepFunction}]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref 'AWS::NoValue']
+  ProcessingStateMachineFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: SpeakUp processing state machine failures detected.
+      Namespace: AWS/States
+      MetricName: ExecutionsFailed
+      Dimensions: [{Name: StateMachineArn, Value: !Ref ProcessingStateMachine}]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref 'AWS::NoValue']
+  RecordingsTableThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: SpeakUp recordings table throttling detected.
+      Namespace: AWS/DynamoDB
+      MetricName: ThrottledRequests
+      Dimensions: [{Name: TableName, Value: !Ref RecordingsTable}]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref 'AWS::NoValue']
+  MaintenanceFunctionErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: SpeakUp maintenance cleanup Lambda invocation failed.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{Name: FunctionName, Value: !Ref MaintenanceFunction}]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref 'AWS::NoValue']
   EventBridgeInvokePermission:
     Type: AWS::Lambda::Permission
     Properties: {Action: 'lambda:InvokeFunction', FunctionName: !Ref FailureFunction, Principal: events.amazonaws.com, SourceArn: !GetAtt WorkflowFailureRule.Arn}
+  EventBridgeReconcileInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties: {Action: 'lambda:InvokeFunction', FunctionName: !Ref FailureFunction, Principal: events.amazonaws.com, SourceArn: !GetAtt WorkflowFailureReconcileRule.Arn}
+  MaintenanceInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties: {Action: 'lambda:InvokeFunction', FunctionName: !Ref MaintenanceFunction, Principal: events.amazonaws.com, SourceArn: !GetAtt MaintenanceCleanupRule.Arn}
 
 Outputs:
   Region:

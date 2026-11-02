@@ -16,6 +16,7 @@ class AudioPrepConfig:
     target_sample_rate: int = 16_000
     max_duration_seconds: float = 600.0
     max_channels: int = 8
+    max_decoded_bytes: int = 268_435_456
     highpass_hz: float = 70.0
     highpass_order: int = 4
     hum_candidates_hz: tuple[float, ...] = (50.0, 60.0)
@@ -74,3 +75,12 @@ class AudioPrepConfig:
             self.as_dict(), sort_keys=True, separators=(",", ":")
         ).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()[:16]
+
+    def artifact_version(self) -> str:
+        """Return the immutable producer identity used in artifact keys."""
+
+        build_identity = os.getenv("AUDIO_BUILD_DIGEST", "").strip()
+        if not build_identity:
+            return self.pipeline_version
+        digest = hashlib.sha256(build_identity.encode("utf-8")).hexdigest()[:24]
+        return f"{self.pipeline_version}-{digest}"

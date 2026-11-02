@@ -1,7 +1,7 @@
 from pathlib import Path
 import zipfile
 
-from scripts.build_lambda_packages import build_package
+from scripts.build_lambda_packages import build_all, build_package
 
 
 def test_package_contains_handler_and_shared_payload_source(tmp_path):
@@ -16,3 +16,18 @@ def test_package_contains_handler_and_shared_payload_source(tmp_path):
     assert "src/__init__.py" in names
     # The foundation agent creates this package during the same implementation.
     assert "src/aws_payload/__init__.py" in names
+
+
+def test_failure_package_contains_payload_store(tmp_path):
+    packages = build_all(tmp_path)
+    failure_package = next(path for path in packages if path.name == "workflow_failure.zip")
+    with zipfile.ZipFile(failure_package) as archive:
+        names = set(archive.namelist())
+    assert "src/aws_payload/service.py" in names
+
+
+def test_processor_package_contains_rubric(tmp_path):
+    packages = build_all(tmp_path)
+    processor_package = next(path for path in packages if path.name == "processor.zip")
+    with zipfile.ZipFile(processor_package) as archive:
+        assert "src/scoring/rubric.py" in archive.namelist()

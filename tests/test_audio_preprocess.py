@@ -3,12 +3,41 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+import sys
 
 import numpy as np
 import pytest
 import soundfile as sf
 
 from src.audio.config import AudioPrepConfig
+from src.audio.io import AudioDecodeError, _run_ffmpeg_bounded
+
+
+def test_ffmpeg_stream_is_stopped_before_filling_disk(tmp_path):
+    output = tmp_path / "decoded.wav"
+    command = [
+        sys.executable, "-c",
+        "import sys; sys.stdout.buffer.write(b'x' * 20000)",
+    ]
+    with pytest.raises(AudioDecodeError, match="memory limit"):
+        _run_ffmpeg_bounded(command, output, max_bytes=1024)
+    assert output.stat().st_size <= 1024 + 4096
+
+
+def test_artifact_version_includes_deployment_build_digest(monkeypatch):
+    config = AudioPrepConfig()
+    monkeypatch.setenv("AUDIO_BUILD_DIGEST", "sha256:abc123/unsafe")
+    import hashlib
+    expected = hashlib.sha256(b"sha256:abc123/unsafe").hexdigest()[:24]
+    assert config.artifact_version() == f"1.1.0-{expected}"
+
+
+def test_artifact_version_keeps_local_compatibility_without_digest(monkeypatch):
+    config = AudioPrepConfig()
+    monkeypatch.delenv("AUDIO_BUILD_DIGEST", raising=False)
+    assert config.artifact_version() == config.pipeline_version
+from src.audio.io import AudioDecodeError, decode_audio
 from src.audio.preprocess import prepare_audio, process_audio_file
 
 
@@ -92,6 +121,24 @@ def test_duration_limit_is_enforced() -> None:
         prepare_audio(np.zeros(3_200, dtype=np.float32), 16_000, config)
 
 
+def test_decode_rejects_expanded_audio_before_reading_all_samples(tmp_path) -> None:
+    """Container metadata is checked before a large decoded array is allocated."""
+
+    source_path = tmp_path / "long.wav"
+    sf.write(source_path, np.zeros(16_000 * 2, dtype=np.float32), 16_000)
+
+    with pytest.raises(AudioDecodeError, match="duration limit"):
+        decode_audio(source_path, max_duration_seconds=0.1)
+
+
+def test_decode_rejects_channel_expansion(tmp_path) -> None:
+    source_path = tmp_path / "many-channels.wav"
+    sf.write(source_path, np.zeros((100, 2), dtype=np.float32), 16_000)
+
+    with pytest.raises(AudioDecodeError, match="channels"):
+        decode_audio(source_path, max_channels=1)
+
+
 def test_process_audio_file_writes_reproducible_artifacts(tmp_path) -> None:
     source_path = tmp_path / "source.wav"
     output_path = tmp_path / "prepared"
@@ -112,6 +159,51 @@ def test_process_audio_file_writes_reproducible_artifacts(tmp_path) -> None:
     }
     assert artifacts["enhanced_model"].exists()
     assert artifacts["enhanced_blended"].exists()
+    assert artifacts["enhanced"].name == "enhanced.wav"
+    assert artifacts["enhanced"].stat().st_ino == artifacts["diagnostic"].stat().st_ino
+
+
+def test_process_audio_file_does_not_encode_legacy_enhanced_alias_twice(
+    tmp_path, monkeypatch
+) -> None:
+    source_path = tmp_path / "source.wav"
+    output_path = tmp_path / "prepared"
+    sf.write(source_path, degraded_signal(), 16_000, subtype="PCM_16")
+    calls = []
+
+    from src.audio import preprocess
+
+    original_write = preprocess.write_pcm16
+
+    def record_write(path, audio, sample_rate):
+        calls.append(Path(path).name)
+        return original_write(path, audio, sample_rate)
+
+    monkeypatch.setattr(preprocess, "write_pcm16", record_write)
+    artifacts = process_audio_file(
+        source_path,
+        output_path,
+        AudioPrepConfig(enhancement_backend="none"),
+    )
+
+    assert calls.count("diagnostic.wav") == 1
+    assert "enhanced.wav" not in calls
+    assert artifacts["enhanced"].name == "enhanced.wav"
+    assert artifacts["enhanced"].stat().st_ino == artifacts["diagnostic"].stat().st_ino
+
+
+def test_process_audio_file_replaces_legacy_alias_on_rerun(tmp_path) -> None:
+    source_path = tmp_path / "source.wav"
+    output_path = tmp_path / "prepared"
+    sf.write(source_path, degraded_signal(), 16_000, subtype="PCM_16")
+    config = AudioPrepConfig(enhancement_backend="none")
+
+    first = process_audio_file(source_path, output_path, config)
+    first_bytes = first["enhanced"].read_bytes()
+    second = process_audio_file(source_path, output_path, config)
+
+    assert second["enhanced"].read_bytes() == first_bytes
+    assert second["enhanced"].stat().st_ino == second["diagnostic"].stat().st_ino
 
 
 def test_continuous_speech_falls_back_without_an_enhancer() -> None:

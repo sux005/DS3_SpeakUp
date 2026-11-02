@@ -12,6 +12,7 @@ from typing import Any, BinaryIO, Iterator, Mapping
 from botocore.exceptions import ClientError
 
 from src.aws_payload.config import PayloadConfig
+from src.aws_payload.checksum import sha256_base64_to_hex
 from src.aws_payload.errors import (
     PayloadAlreadyExistsError,
     PayloadIntegrityError,
@@ -29,8 +30,14 @@ from src.aws_payload.serialization import dumps_canonical_json, loads_json_objec
 
 
 _AUDIO_TYPES = frozenset(
-    {"audio/wav", "audio/x-wav", "audio/mpeg", "audio/mp4", "audio/x-m4a"}
+    {
+        "audio/wav", "audio/x-wav", "audio/mpeg", "audio/mp4",
+        "audio/x-m4a", "audio/webm", "audio/ogg",
+    }
 )
+
+
+_checksum_hex = sha256_base64_to_hex
 
 
 def _etag(response: Mapping[str, Any]) -> str | None:
@@ -59,6 +66,8 @@ class S3PayloadStore:
         project_id: str,
         recording_id: str,
         content_type: str,
+        source_sha256: str | None = None,
+        expected_content_length: int | None = None,
     ) -> UploadIntent:
         """Create a conditional, SSE-S3 pre-signed PUT for original audio."""
 
@@ -66,6 +75,17 @@ class S3PayloadStore:
             raise PayloadValidationError(
                 "Original upload content type is not supported"
             )
+        if expected_content_length is not None and not (
+            isinstance(expected_content_length, int)
+            and not isinstance(expected_content_length, bool)
+            and 1 <= expected_content_length <= self.config.max_audio_upload_bytes
+        ):
+            raise PayloadValidationError(
+                "expected_content_length must be between 1 and the configured upload limit"
+            )
+        checksum = _checksum_hex(source_sha256)
+        if source_sha256 is not None and checksum is None:
+            raise PayloadValidationError("source_sha256 must be Base64 SHA-256")
         key = original_audio_key(user_id, project_id, recording_id, content_type)
         headers = (
             ("Content-Type", content_type),
@@ -76,21 +96,28 @@ class S3PayloadStore:
             ("x-amz-meta-recording-id", recording_id),
             ("x-amz-meta-payload-type", PayloadType.ORIGINAL_AUDIO.value),
         )
+        if source_sha256:
+            headers += (("x-amz-checksum-sha256", source_sha256),)
+        params = {
+            "Bucket": self.config.data_bucket,
+            "Key": key,
+            "ContentType": content_type,
+            "ServerSideEncryption": "AES256",
+            "IfNoneMatch": "*",
+            "Metadata": {
+                "owner-id": user_id,
+                "project-id": project_id,
+                "recording-id": recording_id,
+                "payload-type": PayloadType.ORIGINAL_AUDIO.value,
+            },
+        }
+        if expected_content_length is not None:
+            params["ContentLength"] = expected_content_length
+        if source_sha256:
+            params["ChecksumSHA256"] = source_sha256
         url = self._client.generate_presigned_url(
             "put_object",
-            Params={
-                "Bucket": self.config.data_bucket,
-                "Key": key,
-                "ContentType": content_type,
-                "ServerSideEncryption": "AES256",
-                "IfNoneMatch": "*",
-                "Metadata": {
-                    "owner-id": user_id,
-                    "project-id": project_id,
-                    "recording-id": recording_id,
-                    "payload-type": PayloadType.ORIGINAL_AUDIO.value,
-                },
-            },
+            Params=params,
             ExpiresIn=self.config.upload_url_ttl_seconds,
         )
         expires = datetime.now(timezone.utc) + timedelta(
@@ -104,6 +131,8 @@ class S3PayloadStore:
             content_type=content_type,
             expires_at=expires.isoformat(timespec="seconds").replace("+00:00", "Z"),
             upload_url=url,
+            expected_content_length=expected_content_length,
+            max_content_length=self.config.max_audio_upload_bytes,
             required_headers=headers,
         )
 
@@ -114,6 +143,8 @@ class S3PayloadStore:
         recording_id: str,
         key: str,
         content_type: str,
+        expected_sha256: str | None = None,
+        expected_content_length: int | None = None,
     ) -> PayloadRef:
         """Verify a reserved original exists and return its immutable reference."""
 
@@ -121,13 +152,24 @@ class S3PayloadStore:
         expected = original_audio_key(user_id, project_id, recording_id, content_type)
         if key != expected:
             raise PayloadValidationError("Uploaded object does not match reservation")
-        head = self._head(key)
+        expected_hex = _checksum_hex(expected_sha256)
+        if expected_sha256 is not None and expected_hex is None:
+            raise PayloadValidationError("expected_sha256 must be Base64 SHA-256")
+        head = self._head(key, checksum_mode=bool(expected_sha256))
+        actual_length = int(head.get("ContentLength", 0))
+        if actual_length < 1 or actual_length > self.config.max_audio_upload_bytes:
+            raise PayloadIntegrityError("Uploaded object exceeds the configured size limit")
+        if expected_content_length is not None and actual_length != expected_content_length:
+            raise PayloadIntegrityError("Uploaded content length does not match reservation")
         actual_type = str(head.get("ContentType", ""))
         if actual_type != content_type:
             raise PayloadIntegrityError(
                 "Uploaded content type does not match reservation"
             )
         metadata = head.get("Metadata", {})
+        actual_checksum = head.get("ChecksumSHA256")
+        if expected_sha256 and actual_checksum != expected_sha256:
+            raise PayloadIntegrityError("Uploaded checksum does not match reservation")
         return PayloadRef(
             user_id=user_id,
             project_id=project_id,
@@ -135,8 +177,8 @@ class S3PayloadStore:
             key=key,
             payload_type=PayloadType.ORIGINAL_AUDIO,
             content_type=actual_type,
-            content_length=int(head["ContentLength"]),
-            sha256=str(metadata.get("sha256", "")),
+            content_length=actual_length,
+            sha256=str(metadata.get("sha256") or _checksum_hex(actual_checksum) or ""),
             producer="client-upload",
             producer_version="1",
             etag=_etag(head),
@@ -261,23 +303,39 @@ class S3PayloadStore:
             artifact_name=artifact_name,
             content_type=content_type,
         )
-        self._client.upload_file(
-            str(path),
-            self.config.data_bucket,
-            key,
-            ExtraArgs={
-                "ContentType": content_type,
-                "ServerSideEncryption": "AES256",
-                "Metadata": {
-                    "sha256": digest,
-                    "payload-type": payload_type.value,
-                    "producer": producer,
-                    "producer-version": producer_version,
-                    "recording-id": recording_id,
-                },
-            },
-        )
-        head = self._head(key)
+        metadata = {
+            "sha256": digest,
+            "payload-type": payload_type.value,
+            "producer": producer,
+            "producer-version": producer_version,
+            "recording-id": recording_id,
+        }
+        size = path.stat().st_size
+        try:
+            with path.open("rb") as body:
+                response = self._client.put_object(
+                    Bucket=self.config.data_bucket,
+                    Key=key,
+                    Body=body,
+                    ContentLength=size,
+                    ContentType=content_type,
+                    ServerSideEncryption="AES256",
+                    IfNoneMatch="*",
+                    Metadata=metadata,
+                )
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") not in {
+                "PreconditionFailed", "ConditionalRequestConflict", "412", "409"
+            }:
+                raise
+            response = self._head(key)
+            if (
+                int(response.get("ContentLength", -1)) != size
+                or any(response.get("Metadata", {}).get(k) != v for k, v in metadata.items())
+            ):
+                raise PayloadAlreadyExistsError(
+                    "Immutable audio artifact already exists with different content"
+                ) from error
         return PayloadRef(
             user_id=user_id,
             project_id=project_id,
@@ -285,12 +343,12 @@ class S3PayloadStore:
             key=key,
             payload_type=payload_type,
             content_type=content_type,
-            content_length=int(head["ContentLength"]),
+            content_length=size,
             sha256=digest,
             producer=producer,
             producer_version=producer_version,
-            etag=_etag(head),
-            version_id=head.get("VersionId"),
+            etag=_etag(response),
+            version_id=response.get("VersionId"),
         )
 
     def get_json(self, reference: PayloadRef) -> dict[str, Any]:
@@ -303,6 +361,8 @@ class S3PayloadStore:
             else self.config.max_json_payload_bytes
         )
         head = self._head(reference.key)
+        if str(head.get("ContentType", "")) != "application/json":
+            raise PayloadIntegrityError("Stored JSON content type is inconsistent")
         if int(head["ContentLength"]) > limit:
             raise PayloadIntegrityError("Stored JSON exceeds its payload limit")
         with self.open_stream(reference) as body:
@@ -345,20 +405,44 @@ class S3PayloadStore:
         metadata = head.get("Metadata", {})
         if metadata.get("payload-type") != payload_type.value:
             raise PayloadIntegrityError("Existing JSON payload type is inconsistent")
-        return PayloadRef(
+        if metadata.get("producer") != producer or metadata.get("producer-version") != producer_version:
+            raise PayloadIntegrityError("Existing JSON artifact identity is inconsistent")
+        digest = str(metadata.get("sha256", "")).lower()
+        if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest.lower()):
+            raise PayloadIntegrityError("Existing JSON artifact checksum is missing or invalid")
+        content_length = int(head.get("ContentLength", 0))
+        if str(head.get("ContentType", "")) != "application/json":
+            raise PayloadIntegrityError("Existing JSON content type is inconsistent")
+        limit = (
+            self.config.max_transcript_payload_bytes
+            if payload_type is PayloadType.TRANSCRIPT
+            else self.config.max_json_payload_bytes
+        )
+        if content_length < 1 or content_length > limit:
+            raise PayloadIntegrityError("Existing JSON artifact exceeds its payload limit")
+        reference = PayloadRef(
             user_id=user_id,
             project_id=project_id,
             recording_id=recording_id,
             key=key,
             payload_type=payload_type,
             content_type="application/json",
-            content_length=int(head["ContentLength"]),
-            sha256=str(metadata.get("sha256", "")),
+            content_length=content_length,
+            sha256=digest,
             producer=producer,
             producer_version=producer_version,
             etag=_etag(head),
             version_id=head.get("VersionId"),
         )
+        document = self.get_json(reference)
+        envelope = document
+        if (
+            envelope.get("producer") != producer
+            or envelope.get("producer_version") != producer_version
+            or envelope.get("payload_type") != payload_type.value
+        ):
+            raise PayloadIntegrityError("Existing JSON artifact envelope is inconsistent")
+        return reference
 
     @contextmanager
     def open_stream(self, reference: PayloadRef) -> Iterator[BinaryIO]:
@@ -443,9 +527,12 @@ class S3PayloadStore:
                 deleted += len(batch)
         return deleted
 
-    def _head(self, key: str) -> Mapping[str, Any]:
+    def _head(self, key: str, *, checksum_mode: bool = False) -> Mapping[str, Any]:
         try:
-            return self._client.head_object(Bucket=self.config.data_bucket, Key=key)
+            params = {"Bucket": self.config.data_bucket, "Key": key}
+            if checksum_mode:
+                params["ChecksumMode"] = "ENABLED"
+            return self._client.head_object(**params)
         except ClientError as error:
             if self._is_missing(error):
                 raise PayloadNotFoundError("Payload object not found") from error

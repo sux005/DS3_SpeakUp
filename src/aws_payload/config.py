@@ -12,6 +12,7 @@ from src.aws_payload.errors import PayloadConfigurationError
 
 DEFAULT_MAX_JSON_PAYLOAD_BYTES = 1_048_576
 DEFAULT_MAX_TRANSCRIPT_PAYLOAD_BYTES = 5_242_880
+DEFAULT_MAX_AUDIO_UPLOAD_BYTES = 52_428_800
 
 _REGION = re.compile(r"^[a-z]{2}(?:-gov)?-[a-z]+-\d$")
 _BUCKET = re.compile(
@@ -48,6 +49,15 @@ def _integer(
     return value
 
 
+def _boolean(environment: Mapping[str, str], name: str, default: bool) -> bool:
+    raw = environment.get(name)
+    if raw is None or raw == "":
+        return default
+    if raw.lower() not in {"true", "false"}:
+        raise PayloadConfigurationError(f"{name} must be true or false")
+    return raw.lower() == "true"
+
+
 @dataclass(frozen=True)
 class PayloadConfig:
     """Resource names and bounded settings for one AWS environment.
@@ -60,16 +70,21 @@ class PayloadConfig:
     data_bucket: str
     projects_table: str
     recordings_table: str
+    workflow_admissions_table: str | None = None
+    max_active_workflows: int = 3
+    enforce_workflow_admissions: bool = False
     owner_project_index: str = "OwnerProjectCreatedAtIndex"
     upload_url_ttl_seconds: int = 900
     recovery_days: int = 30
     abandoned_retention_days: int = 7
     max_json_payload_bytes: int = DEFAULT_MAX_JSON_PAYLOAD_BYTES
     max_transcript_payload_bytes: int = DEFAULT_MAX_TRANSCRIPT_PAYLOAD_BYTES
+    max_audio_upload_bytes: int = DEFAULT_MAX_AUDIO_UPLOAD_BYTES
     connect_timeout_seconds: int = 5
     read_timeout_seconds: int = 60
     sdk_total_max_attempts: int = 3
     sdk_max_pool_connections: int = 10
+    recording_hashes_table: str | None = None
 
     def __post_init__(self) -> None:
         """Reject invalid resource identifiers and unbounded settings."""
@@ -85,6 +100,14 @@ class PayloadConfig:
         ):
             if not _DYNAMODB_NAME.fullmatch(value):
                 raise PayloadConfigurationError(f"{name} is not a valid DynamoDB name")
+        if self.workflow_admissions_table is not None and not _DYNAMODB_NAME.fullmatch(
+            self.workflow_admissions_table
+        ):
+            raise PayloadConfigurationError("workflow_admissions_table is not a valid DynamoDB name")
+        if self.recording_hashes_table is not None and not _DYNAMODB_NAME.fullmatch(
+            self.recording_hashes_table
+        ):
+            raise PayloadConfigurationError("recording_hashes_table is not a valid DynamoDB name")
         bounds = (
             ("upload_url_ttl_seconds", self.upload_url_ttl_seconds, 60, 3600),
             ("recovery_days", self.recovery_days, 1, 365),
@@ -101,10 +124,12 @@ class PayloadConfig:
                 self.max_json_payload_bytes,
                 52_428_800,
             ),
+            ("max_audio_upload_bytes", self.max_audio_upload_bytes, 1, 524_288_000),
             ("connect_timeout_seconds", self.connect_timeout_seconds, 1, 30),
             ("read_timeout_seconds", self.read_timeout_seconds, 1, 300),
             ("sdk_total_max_attempts", self.sdk_total_max_attempts, 1, 10),
             ("sdk_max_pool_connections", self.sdk_max_pool_connections, 1, 100),
+            ("max_active_workflows", self.max_active_workflows, 1, 100),
         )
         for name, value, minimum, maximum in bounds:
             if not minimum <= value <= maximum:
@@ -138,11 +163,24 @@ class PayloadConfig:
             max_json,
             52_428_800,
         )
+        max_audio = _integer(
+            values,
+            "AUDIO_MAX_UPLOAD_BYTES",
+            DEFAULT_MAX_AUDIO_UPLOAD_BYTES,
+            1,
+            524_288_000,
+        )
         return cls(
             region=region.strip(),
             data_bucket=_required(values, "DATA_BUCKET"),
             projects_table=_required(values, "PROJECTS_TABLE"),
             recordings_table=_required(values, "RECORDINGS_TABLE"),
+            recording_hashes_table=(values.get("RECORDING_HASHES_TABLE") or None),
+            workflow_admissions_table=(values.get("WORKFLOW_ADMISSIONS_TABLE") or None),
+            max_active_workflows=_integer(values, "MAX_ACTIVE_WORKFLOWS", 3, 1, 100),
+            enforce_workflow_admissions=_boolean(
+                values, "ENFORCE_WORKFLOW_ADMISSIONS", False
+            ),
             owner_project_index=values.get(
                 "OWNER_PROJECT_INDEX", "OwnerProjectCreatedAtIndex"
             ).strip(),
@@ -155,6 +193,7 @@ class PayloadConfig:
             ),
             max_json_payload_bytes=max_json,
             max_transcript_payload_bytes=max_transcript,
+            max_audio_upload_bytes=max_audio,
             connect_timeout_seconds=_integer(
                 values, "AWS_CONNECT_TIMEOUT_SECONDS", 5, 1, 30
             ),

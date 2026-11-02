@@ -11,9 +11,10 @@ from typing import Any, BinaryIO, Mapping
 import uuid
 
 from src.aws_payload.config import PayloadConfig
-from src.aws_payload.errors import PayloadValidationError
+from src.aws_payload.checksum import sha256_base64_to_hex
+from src.aws_payload.errors import OwnershipViolationError, PayloadValidationError
 from src.aws_payload.factory import AwsClientFactory
-from src.aws_payload.keys import validate_identifier
+from src.aws_payload.keys import artifact_key, require_owned_key, validate_identifier
 from src.aws_payload.models import (
     PayloadRef,
     PayloadType,
@@ -26,6 +27,7 @@ from src.aws_payload.repositories import (
     ProjectRepository,
     RecordingRepository,
     RepositoryPage,
+    WorkflowAdmissionRepository,
 )
 from src.aws_payload.s3_store import S3PayloadStore
 from src.aws_payload.serialization import make_envelope
@@ -60,8 +62,47 @@ class SpeakUpPayloadStore:
             transaction_client=self.factory.dynamodb_resource.meta.client,
             index_name=config.owner_project_index,
             recovery_days=config.recovery_days,
+            abandoned_retention_days=config.abandoned_retention_days,
+            admission_table=self.factory.workflow_admissions_table,
+            max_active_workflows=config.max_active_workflows,
+            enforce_admission_limit=config.enforce_workflow_admissions,
         )
         self.objects = objects or S3PayloadStore(config, self.factory.s3_client)
+
+    def _delete_recording_hash_claim(self, recording: Mapping[str, Any]) -> None:
+        """Delete only the checksum claim that still names this recording."""
+
+        factory = getattr(self, "factory", None)
+        table = getattr(factory, "recording_hashes_table", None)
+        source_sha256 = recording.get("source_sha256")
+        project_id = recording.get("project_id")
+        user_id = recording.get("user_id")
+        recording_id = recording.get("recording_id")
+        digest = sha256_base64_to_hex(source_sha256)
+        if table is None or not all(
+            isinstance(value, str) and value
+            for value in (digest, project_id, user_id, recording_id)
+        ):
+            return
+        conditional_error = getattr(
+            getattr(getattr(table, "meta", None), "client", None),
+            "exceptions",
+            None,
+        )
+        conditional_error = getattr(
+            conditional_error, "ConditionalCheckFailedException", None
+        )
+        try:
+            table.delete_item(
+                Key={"user_id": user_id, "project_hash": f"{project_id}#{digest}"},
+                ConditionExpression="recording_id = :recording_id",
+                ExpressionAttributeValues={":recording_id": recording_id},
+            )
+        except Exception as error:
+            if conditional_error is not None and isinstance(error, conditional_error):
+                # The claim is absent or already belongs to a replacement recording.
+                return
+            raise
 
     @classmethod
     def from_environment(cls) -> "SpeakUpPayloadStore":
@@ -94,6 +135,18 @@ class SpeakUpPayloadStore:
         validate_identifier(project_id, "project_id")
         return Project.from_item(self.projects.get(user_id, project_id))
 
+    def workflow_limits(self, user_id: str) -> dict[str, int]:
+        """Return strongly read owner-specific admission usage for the API."""
+
+        validate_identifier(user_id, "user_id")
+        table = self.factory.workflow_admissions_table
+        if table is None:
+            limit = self.config.max_active_workflows
+            return {"active": 0, "limit": limit, "remaining": limit}
+        return WorkflowAdmissionRepository(
+            table, limit=self.config.max_active_workflows
+        ).snapshot(user_id)
+
     def list_projects(
         self, user_id: str, *, limit: int = 50, cursor: str | None = None
     ) -> RepositoryPage[Project]:
@@ -113,8 +166,15 @@ class SpeakUpPayloadStore:
         *,
         idempotency_key: str,
         recording_id: str | None = None,
+        source_sha256: str | None = None,
+        content_length: int | None = None,
     ) -> tuple[Recording, UploadIntent]:
-        """Create metadata transactionally and return its short-lived upload URL."""
+        """Create metadata transactionally and return its short-lived upload URL.
+
+        ``content_length`` is optional for compatibility with older callers;
+        when supplied it is signed into the upload request and checked again
+        during confirmation.
+        """
 
         self.get_project(user_id, project_id)
         if not isinstance(idempotency_key, str) or not 1 <= len(idempotency_key) <= 36:
@@ -132,11 +192,26 @@ class SpeakUpPayloadStore:
                 f"speakup:{user_id}:{project_id}:{idempotency_key}",
             )
         )
-        recording_value = validate_identifier(
-            recording_id or derived_id, "recording_id"
-        )
+        if recording_id is not None and recording_id != derived_id:
+            raise PayloadValidationError(
+                "recording_id must match the deterministic idempotency reservation"
+            )
+        recording_value = validate_identifier(derived_id, "recording_id")
+        if content_length is not None and not (
+            isinstance(content_length, int)
+            and not isinstance(content_length, bool)
+            and 1 <= content_length <= self.config.max_audio_upload_bytes
+        ):
+            raise PayloadValidationError(
+                "content_length must be between 1 and the configured upload limit"
+            )
         intent = self.objects.create_upload_intent(
-            user_id, project_id, recording_value, content_type
+            user_id,
+            project_id,
+            recording_value,
+            content_type,
+            source_sha256,
+            content_length,
         )
         now = utc_timestamp()
         record = Recording(
@@ -146,7 +221,9 @@ class SpeakUpPayloadStore:
             created_at=now,
             updated_at=now,
             content_type=content_type,
+            content_length=content_length,
             original_s3_key=intent.key,
+            source_sha256=source_sha256,
         )
         fingerprint = hashlib.sha256(
             json.dumps(
@@ -155,6 +232,8 @@ class SpeakUpPayloadStore:
                     "project_id": project_id,
                     "recording_id": recording_value,
                     "content_type": content_type,
+                    "content_length": content_length,
+                    "source_sha256": source_sha256,
                 },
                 sort_keys=True,
                 separators=(",", ":"),
@@ -180,6 +259,8 @@ class SpeakUpPayloadStore:
             recording_id,
             recording.original_s3_key,
             recording.content_type,
+            recording.source_sha256,
+            recording.content_length,
         )
         updated = self.recordings.transition(
             user_id,
@@ -191,6 +272,7 @@ class SpeakUpPayloadStore:
                 "payload_refs": {PayloadType.ORIGINAL_AUDIO.value: reference.as_dict()},
                 "content_length": reference.content_length,
                 "original_etag": reference.etag or "",
+                "source_sha256": recording.source_sha256 or reference.sha256 or "",
             },
         )
         return Recording.from_item(updated)
@@ -333,7 +415,9 @@ class SpeakUpPayloadStore:
             from src.aws_payload.errors import PayloadNotFoundError
 
             raise PayloadNotFoundError("Recording does not reference that payload")
-        return self.objects.get_json(self._payload_ref(raw))
+        return self.objects.get_json(
+            self._payload_ref_for_recording(raw, recording, expected_payload_type=payload_type)
+        )
 
     def create_original_download_url(
         self, user_id: str, recording_id: str, *, expires_in: int | None = None
@@ -343,7 +427,9 @@ class SpeakUpPayloadStore:
         recording = self.get_recording(user_id, recording_id)
         raw = recording.payload_refs.get(PayloadType.ORIGINAL_AUDIO.value)
         reference = (
-            self._payload_ref(raw)
+            self._payload_ref_for_recording(
+                raw, recording, expected_payload_type=PayloadType.ORIGINAL_AUDIO
+            )
             if isinstance(raw, Mapping)
             else self.objects.confirm_original(
                 user_id,
@@ -366,7 +452,9 @@ class SpeakUpPayloadStore:
             from src.aws_payload.errors import PayloadNotFoundError
 
             raise PayloadNotFoundError("Recording does not reference that payload")
-        return self.objects.open_stream(self._payload_ref(raw))
+        return self.objects.open_stream(
+            self._payload_ref_for_recording(raw, recording, expected_payload_type=payload_type)
+        )
 
     def download_payload(
         self,
@@ -383,7 +471,11 @@ class SpeakUpPayloadStore:
             from src.aws_payload.errors import PayloadNotFoundError
 
             raise PayloadNotFoundError("Recording does not reference that payload")
-        self.objects.download_file(self._payload_ref(raw), destination)
+        self.objects.download_file(
+            self._payload_ref_for_recording(
+                raw, recording, expected_payload_type=payload_type
+            ), destination
+        )
 
     def soft_delete(
         self, user_id: str, recording_id: str, *, expected_revision: int
@@ -436,6 +528,7 @@ class SpeakUpPayloadStore:
         deleted = self.objects.purge_recording(
             user_id, str(current["project_id"]), recording_id
         )
+        self._delete_recording_hash_claim(staged)
         self.recordings.finalize_permanent_delete(
             user_id,
             recording_id,
@@ -451,43 +544,58 @@ class SpeakUpPayloadStore:
         *,
         now: datetime | None = None,
     ) -> int | None:
-        """Purge one abandoned/failed recording after the seven-day default."""
+        """Purge one expired recording without exposing a new recovery window."""
 
         current = self.recordings.get(user_id, recording_id, include_deleted=True)
-        if current.get("status") not in {
+        status = str(current.get("status"))
+        if status not in {
             RecordingStatus.AWAITING_UPLOAD.value,
             RecordingStatus.FAILED.value,
+            RecordingStatus.DELETED.value,
+            RecordingStatus.PURGE_PENDING.value,
         }:
             return None
-        reference_time = datetime.fromisoformat(
-            str(current.get("updated_at", current["created_at"])).replace(
-                "Z", "+00:00"
-            )
-        )
         clock = now or datetime.now(timezone.utc)
-        if reference_time > clock - timedelta(
-            days=self.config.abandoned_retention_days
-        ):
+        if status == RecordingStatus.DELETED.value:
+            due = datetime.fromisoformat(str(current["recovery_until"]).replace("Z", "+00:00"))
+        elif status in {RecordingStatus.AWAITING_UPLOAD.value, RecordingStatus.FAILED.value}:
+            updated = str(current.get("updated_at") or current["created_at"])
+            due = datetime.fromisoformat(updated.replace("Z", "+00:00")) + timedelta(
+                days=self.config.abandoned_retention_days
+            )
+        else:
+            due = clock
+        if due > clock:
             return None
-        deleted = self.recordings.soft_delete(
-            user_id,
-            recording_id,
-            expected_revision=int(current.get("revision", 0)),
-            now=clock,
-        )
-        token = str(
-            uuid.uuid5(
+        token = (
+            str(current["purge_token"])
+            if status == RecordingStatus.PURGE_PENDING.value
+            else str(uuid.uuid5(
                 uuid.NAMESPACE_URL,
                 f"speakup-cleanup:{user_id}:{recording_id}",
+            ))
+        )
+        staged = (
+            current
+            if status == RecordingStatus.PURGE_PENDING.value
+            else self.recordings.stage_retention_purge(
+                user_id, recording_id,
+                expected_revision=int(current.get("revision", 0)),
+                purge_token=token,
+                now=clock,
             )
         )
-        return self.permanently_delete(
+        deleted = self.objects.purge_recording(
+            user_id, str(staged["project_id"]), recording_id
+        )
+        self._delete_recording_hash_claim(staged)
+        self.recordings.finalize_permanent_delete(
             user_id,
             recording_id,
-            expected_revision=int(deleted["revision"]),
-            confirmation=recording_id,
+            expected_revision=int(staged["revision"]),
             purge_token=token,
         )
+        return deleted
 
     @staticmethod
     def _payload_ref(raw: Mapping[str, Any]) -> PayloadRef:
@@ -506,3 +614,57 @@ class SpeakUpPayloadStore:
             etag=raw.get("etag"),
             version_id=raw.get("version_id"),
         )
+
+    @classmethod
+    def _payload_ref_for_recording(
+        cls,
+        raw: Mapping[str, Any],
+        recording: Recording,
+        *,
+        expected_payload_type: PayloadType,
+    ) -> PayloadRef:
+        """Bind a stored reference to the requested persisted recording."""
+
+        reference = cls._payload_ref(raw)
+        if (
+            reference.user_id != recording.user_id
+            or reference.project_id != recording.project_id
+            or reference.recording_id != recording.recording_id
+        ):
+            raise OwnershipViolationError(
+                "Stored payload reference does not match the requested recording"
+            )
+        if reference.payload_type is not expected_payload_type:
+            raise OwnershipViolationError(
+                "Stored payload reference does not match the requested payload"
+            )
+        require_owned_key(
+            reference.key, recording.user_id, recording.project_id,
+            recording.recording_id,
+        )
+        if expected_payload_type is PayloadType.ORIGINAL_AUDIO:
+            if (
+                reference.key != recording.original_s3_key
+                or reference.content_type != recording.content_type
+            ):
+                raise OwnershipViolationError("Stored original audio identity is inconsistent")
+        else:
+            contracts = {
+                PayloadType.TRANSCRIPT: ("speakup-transcript-normalizer", "transcript"),
+                PayloadType.SPEECH_ANALYSIS: ("speakup-speech-analysis", "speech_analysis"),
+                PayloadType.FEEDBACK: ("speakup-coach", "feedback"),
+                PayloadType.PREPROCESS_REPORT: ("audio-prep", "report"),
+            }
+            contract = contracts.get(expected_payload_type)
+            if contract is not None:
+                producer, artifact_name = contract
+                if reference.producer != producer or reference.content_type != "application/json":
+                    raise OwnershipViolationError("Stored artifact identity is inconsistent")
+                expected_key = artifact_key(
+                    recording.user_id, recording.project_id, recording.recording_id,
+                    producer=producer, producer_version=reference.producer_version,
+                    artifact_name=artifact_name, content_type="application/json",
+                )
+                if reference.key != expected_key:
+                    raise OwnershipViolationError("Stored artifact key is inconsistent")
+        return reference

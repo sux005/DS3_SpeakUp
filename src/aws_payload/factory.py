@@ -66,3 +66,17 @@ class AwsClientFactory:
         """Return the configured recordings table."""
 
         return self.dynamodb_resource.Table(self.config.recordings_table)
+
+    @cached_property
+    def workflow_admissions_table(self) -> Any | None:
+        """Return the per-owner workflow admission table when configured."""
+
+        name = self.config.workflow_admissions_table
+        return self.dynamodb_resource.Table(name) if name else None
+
+    @cached_property
+    def recording_hashes_table(self) -> Any | None:
+        """Return the checksum-claim table when configured."""
+
+        name = self.config.recording_hashes_table
+        return self.dynamodb_resource.Table(name) if name else None

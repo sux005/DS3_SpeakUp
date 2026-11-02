@@ -18,6 +18,7 @@ venv/
 !.env.example
 !.env.development.example
 !.env.production.example
+env.development
 
 # Data and generated artifacts
 data/*
@@ -40,6 +41,13 @@ models/*
 htmlcov/
 build/
 .test-tmp/
+.review-tmp/
+.review-test-tmp/
 
 # Agent files
 /.omx
+
+# Personal work notes
+/WORK_NOTES.md
+/work_notes.md
+/code_review.md

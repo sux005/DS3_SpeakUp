@@ -25,6 +25,8 @@ recording, upload = payloads.reserve_upload(
     project.project_id,
     "audio/wav",
     idempotency_key=request_id,
+    source_sha256=sha256_b64,
+    content_length=file_size,
 )
 ```
 
@@ -38,6 +40,7 @@ The browser sends `upload.required_headers` with its PUT. The backend then calls
 - `models.py`: typed projects, recordings, payload references, and statuses.
 - `keys.py`: the only functions allowed to construct storage and GSI keys.
 - `serialization.py`: canonical UTF-8 JSON and versioned envelopes.
+- `checksum.py`: canonical Base64 SHA-256 parsing shared with the HTTP API.
 - `repositories.py`: owner-scoped DynamoDB access, revisions, and deletion.
 - `s3_store.py`: encrypted object transfer, streaming, signing, and purge.
 - `service.py`: ownership-checking facade used by HTTP and workflow adapters.
@@ -90,18 +93,28 @@ also carry an idempotency key and fingerprint. Immutable JSON writes use an S3
 conditional PUT; a retry accepts an existing object only when its checksum and
 payload type match.
 
+Project rows contain metadata only; they have no `recording_count` or recording
+ID list. Each recording stores its `project_id`, and the owner-scoped recording
+index supports project recording lists.
+
 ## Deletion
 
 A normal delete removes the GSI attributes and marks the row `DELETED`, hiding
 it immediately while preserving a 30-day recovery window. Permanent deletion
 requires the recording ID as confirmation, stages `PURGE_PENDING`, deletes every
 S3 version and delete marker under the exact validated recording prefix, and
-only then removes DynamoDB metadata.
+only then removes DynamoDB metadata. Before finalizing either permanent or
+scheduled deletion, the service conditionally removes the checksum claim if it
+still names that recording; a claim replaced by a newer recording is retained.
+If claim deletion fails, the `PURGE_PENDING` row remains for retry.
 
-`cleanup_expired_recording` gives a backend maintenance workflow an idempotent
-way to purge one `AWAITING_UPLOAD` or `FAILED` record after seven days. It does
-not scan the table or create an always-on scheduler; the caller supplies the
-owner/recording pair from its bounded work queue.
+`cleanup_expired_recording` purges one expired `AWAITING_UPLOAD` or `FAILED`
+record after the configured seven-day default, or a soft-deleted record after
+its configured 30-day default recovery window. The scheduled maintenance
+Lambda in `infra/lambda/retention_cleanup` queries the sparse
+`MaintenanceDueIndex` in bounded batches and supplies each owner/recording pair.
+Legacy abandoned rows receive a migration-time grace period when the index is
+backfilled. No local test or documentation step invokes the live cleanup Lambda.
 
 ## Security and cost
 

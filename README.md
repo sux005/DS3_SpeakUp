@@ -1,8 +1,10 @@
 # SpeakUp
 
-SpeakUp is a DS3 public-speaking diagnostics platform. It preserves original
-recordings, prepares speech for analysis, produces timestamped transcripts and
-speech metrics, and stores versioned coaching feedback in a private AWS backend.
+SpeakUp is a DS3 public-speaking diagnostics platform. Its backend stores
+original recordings without rewriting them during processing, prepares speech
+for analysis, produces timestamped transcripts and speech metrics, and stores
+versioned coaching feedback in private AWS resources. The frontend has not been
+implemented yet.
 
 ## AWS payload API
 
@@ -15,52 +17,50 @@ references. See [the API guide](docs/aws-payload-api.md) and
 [complete package reference](docs/aws-payload-package-reference.md) documents
 every supported function, model, parameter, return value, and exception.
 
-Build the three zip-based Lambda artifacts with:
+Build the four zip-based Lambda artifacts (`api`, `processor`,
+`workflow_failure`, and `maintenance`) with:
 
 ```powershell
 python scripts/build_lambda_packages.py
 ```
 
-Run the complete local test suite with a workspace-local temporary directory:
+Run the local test suite with an ignored temporary directory:
 
 ```powershell
 python -m pytest -q --basetemp .test-tmp -p no:cacheprovider
 ```
 
-## What this template includes
-
-- A sensible folder structure for notebooks, source code, data, and outputs
-- A Python environment file for quick setup
-- A .gitignore tailored for secrets, notebooks, and generated artifacts
-- A small starter package and test example
-
-## Suggested repository structure
+## Repository structure
 
 ```text
 .
 ├── README.md
-├── .env.example
+├── .env.development.example
 ├── .gitignore
 ├── requirements.txt
+├── requirements-dev.txt
+├── docs/                    # API contracts and design notes
+├── infra/                   # CloudFormation and Lambda handlers
+├── scripts/                 # Packaging, migrations, and local QA
+├── src/
+│   ├── audio/               # Audio preparation
+│   ├── aws_payload/         # Backend storage and lifecycle API
+│   └── transcription/       # Optional local ASR
+├── tests/
 ├── notebooks/
 │   └── README.md
-├── src/
-│   ├── __init__.py
-│   └── example.py
 ├── frontend/
-│   └── README.md
-├── infra/
 │   └── README.md
 ├── data/
 │   ├── raw/
 │   └── processed/
 ├── results/
-├── models/
-└── tests/
+└── models/
 ```
 
-- `frontend/` is for UI/UX code and web app assets.
-- `infra/` is for deployment scripts, cloud config, and infrastructure as code for AWS/GCP.
+`frontend/` currently contains only its README. The backend HTTP contract is in
+[docs/aws-payload-api.md](docs/aws-payload-api.md); deployment and migration
+instructions are in [infra/README.md](infra/README.md).
 
 ## Quick start
 
@@ -69,9 +69,9 @@ python -m pytest -q --basetemp .test-tmp -p no:cacheprovider
    python3 -m venv .venv
    source .venv/bin/activate
    ```
-2. Install dependencies:
+2. Install dependencies (use `requirements-dev.txt` for the optional Moto tests):
    ```bash
-   pip install -r requirements.txt
+   pip install -r requirements-dev.txt
    ```
 3. Copy the example environment file:
    ```bash
@@ -85,7 +85,8 @@ python -m pytest -q --basetemp .test-tmp -p no:cacheprovider
 
    Do not place AWS access keys in an env file. For local AWS CLI access, use the
    short-lived `speakup-dev` profile documented in `infra/README.md`.
-4. Start working in notebooks or in the src package.
+4. Run the local tests with the command above. Live AWS tests require explicit
+   opt-in and credentials; ordinary test runs do not contact AWS.
 
 ## Audio preparation
 
@@ -112,6 +113,72 @@ The output directory contains `reference.wav`, `enhanced_model.wav`,
 `report.json`. The report records the pipeline version, exact configuration,
 latency compensation, speech-preservation measurements, warnings, and which signal
 passed the distortion-aware transcription gate.
+
+For local QA with the private `data/raw/SPEAKUP 1.mp4` through `SPEAKUP 6.mp4`
+recordings, run `python scripts/run_real_audio_qa.py`. The command writes one
+ignored `results/real_audio_qa/<clip>/` directory per source file. Each
+`report.json` records the source filename and SHA-256 of the exact input bytes.
+The runner skips identical source bytes within a batch and reuses a prior
+result only when its report matches the source and processing configuration and
+all expected artifacts exist. Changed inputs or incomplete outputs are rerun.
+The six-file end-to-end test below checks the same source files using temporary
+outputs. Generated QA artifacts remain ignored by Git.
+
+## Local transcription and accuracy review
+
+Install the optional local ASR dependency with
+`pip install -r requirements-transcription.txt`, then run
+`python scripts/transcribe_local.py`.
+The default `small.en` model downloads once into the ignored `models/` directory.
+The command reads the six original MP4 files and writes one ignored
+`results/local_transcripts/<clip>/transcript.json` per file. Each automatic
+transcript contains the source SHA-256, model details, full text, segments, and
+word start/end times. It is a hypothesis, not verified ground truth.
+
+Run `python scripts/create_review_templates.py` to prefill ignored
+`data/references/SPEAKUP x.json` files with the automatic transcript and its
+word-timestamped segments. Existing reviewed text is preserved. To measure
+transcription accuracy, listen to each source recording, correct the reference
+`text` to the exact words heard, and change `review_status` to `reviewed`:
+
+```json
+{
+  "source_sha256": "copy the hash from the automatic transcript",
+  "review_status": "reviewed",
+  "text": "the exact words confirmed by listening to the recording"
+}
+```
+
+Run the comparison after review:
+
+```bash
+python scripts/check_transcript_accuracy.py \
+  "results/local_transcripts/SPEAKUP 1/transcript.json" \
+  "data/references/SPEAKUP 1.json"
+```
+
+The checker rejects references whose source hash differs. Review word timestamps
+by playing the matching time ranges in the original audio, for example
+`ffplay -ss 10 -t 5 -autoexit "data/raw/SPEAKUP 1.mp4"`. Model word
+probabilities alone do not establish transcription accuracy. The reviewed JSON
+is the reference for rubric evaluation and must be updated deliberately when the
+source recording changes.
+
+### Local test commands
+
+After installing `requirements.txt` and `requirements-transcription.txt` in the
+active Python environment, run the fast unit suite with `python -m pytest -q`.
+The model-backed end-to-end test is opt-in because it processes all six private
+clips and downloads the `small.en` model on first use:
+
+```bash
+SPEAKUP_RUN_LOCAL_E2E=1 python -m pytest -q tests/test_local_audio_e2e.py
+```
+
+This local test runs audio preparation, transcription, and review-template
+generation from each raw file. It validates source hashes, output formats, and
+word timestamp bounds. Spoken-word accuracy still requires the human-reviewed
+reference files and `check_transcript_accuracy.py`.
 
 Create a level-matched listening example with:
 
@@ -219,15 +286,3 @@ git push origin feature/data-cleaning
 ```
 
 Then open a Pull Request on GitHub and wait for approval from the appropriate project manager or mentor.
-
-## Notes for DS3 projects
-
-This template is intentionally simple so students can focus on the science instead of setup. As projects grow, teams can add:
-
-- experiment tracking
-- model checkpoints
-- deployment scripts
-- cloud infrastructure (AWS/GCP) in `infra/`
-- frontend UI/UX code in `frontend/`
-- CI checks
-- docs pages

@@ -13,11 +13,13 @@ import json
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import hashlib
 from typing import Any, Generic, Mapping, Protocol, Sequence, TypeVar
 
 from boto3.dynamodb.conditions import Attr, Key
 
 from src.aws_payload.errors import (
+    ActiveWorkflowLimitError,
     IdempotencyConflictError,
     PayloadError,
     PayloadNotFoundError,
@@ -25,13 +27,16 @@ from src.aws_payload.errors import (
     WriteConflictError,
 )
 from src.aws_payload.keys import created_at_recording_id, owner_project_id
+from src.aws_payload.policy import ACTIVE_WORKFLOW_STATUSES
 
 
 OWNER_PROJECT_INDEX = "OwnerProjectCreatedAtIndex"
+MAINTENANCE_SHARD_COUNT = 8
 SCHEMA_VERSION = 1
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 100
 DEFAULT_RECOVERY_DAYS = 30
+DEFAULT_ABANDONED_RETENTION_DAYS = 7
 _FIELD_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
 _PROTECTED_RECORDING_FIELDS = {
     "user_id",
@@ -143,6 +148,50 @@ def format_timestamp(value: datetime) -> str:
     )
 
 
+def maintenance_shard(user_id: str, recording_id: str) -> int:
+    """Choose a stable shard for bounded maintenance queries."""
+
+    digest = hashlib.sha256(f"{user_id}\x00{recording_id}".encode()).digest()
+    return int.from_bytes(digest[:2], "big") % MAINTENANCE_SHARD_COUNT
+
+
+def maintenance_values(
+    user_id: str,
+    recording_id: str,
+    status: str,
+    updated_at: str,
+    *,
+    recovery_until: str | None = None,
+    recovery_days: int = 30,
+    abandoned_retention_days: int = DEFAULT_ABANDONED_RETENTION_DAYS,
+    stale_minutes: int = 30,
+) -> dict[str, str]:
+    """Return the sparse maintenance-index keys for a recording state."""
+
+    now = _parse_timestamp(updated_at)
+    if status in ACTIVE_WORKFLOW_STATUSES:
+        kind = "WORKFLOW"
+        due = now + timedelta(minutes=max(1, stale_minutes))
+    elif status == "DELETED" and recovery_until:
+        kind = "CLEANUP"
+        due = _parse_timestamp(recovery_until)
+    elif status == "PURGE_PENDING":
+        kind = "CLEANUP"
+        due = now
+    elif status in {"AWAITING_UPLOAD", "FAILED"}:
+        kind = "CLEANUP"
+        due = now + timedelta(days=max(1, abandoned_retention_days))
+    else:
+        return {}
+    shard = maintenance_shard(user_id, recording_id)
+    return {
+        "maintenance_partition": f"{kind}#{shard}",
+        "maintenance_due_at_recording_id": (
+            f"{format_timestamp(due)}#RECORDING#{recording_id}"
+        ),
+    }
+
+
 def _parse_timestamp(value: str) -> datetime:
     try:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -213,10 +262,47 @@ def _page_size(value: int) -> int:
 
 def _conditional_failure(exc: BaseException) -> bool:
     response = getattr(exc, "response", {})
-    return response.get("Error", {}).get("Code") in {
-        "ConditionalCheckFailedException",
-        "TransactionCanceledException",
-    }
+    return response.get("Error", {}).get("Code") == "ConditionalCheckFailedException"
+
+
+def _transaction_condition_failure(exc: BaseException) -> bool:
+    """Return true only when a transaction cancellation includes a condition failure."""
+
+    response = getattr(exc, "response", {})
+    error = response.get("Error", {})
+    if error.get("Code") != "TransactionCanceledException":
+        return False
+    # Botocore places CancellationReasons beside Error in the response.
+    reasons = response.get("CancellationReasons")
+    return isinstance(reasons, list) and any(
+        isinstance(reason, Mapping)
+        and reason.get("Code") == "ConditionalCheckFailed"
+        for reason in reasons
+    )
+
+
+def _native_item(item: Mapping[str, Any]) -> dict[str, Any]:
+    """Accept either resource-native or low-level DynamoDB item mappings."""
+
+    if not item or not all(isinstance(key, str) for key in item):
+        return dict(item)
+    attribute_types = {"S", "N", "BOOL", "NULL", "M", "L", "SS", "NS", "BS"}
+    if not all(
+        isinstance(value, dict)
+        and len(value) == 1
+        and next(iter(value)) in attribute_types
+        for value in item.values()
+    ):
+        return dict(item)
+    try:
+        from boto3.dynamodb.types import TypeDeserializer
+
+        return {
+            key: TypeDeserializer().deserialize(value)
+            for key, value in item.items()
+        }
+    except (TypeError, ValueError, KeyError):
+        return dict(item)
 
 
 class ProjectRepository:
@@ -282,12 +368,87 @@ class ProjectRepository:
         }
         if start_key:
             params["ExclusiveStartKey"] = start_key
-        response = self._table.query(**params)
-        items = tuple(_normalise_project(item) for item in response.get("Items", ()))
-        last_key = response.get("LastEvaluatedKey")
+        visible: list[dict[str, Any]] = []
+        last_key = start_key
+        while len(visible) < limit:
+            response = self._table.query(**params)
+            visible.extend(
+                _normalise_project(item)
+                for item in response.get("Items", ())
+            )
+            last_key = response.get("LastEvaluatedKey")
+            if not last_key:
+                break
+            params["ExclusiveStartKey"] = last_key
         return RepositoryPage(
-            items, _encode_cursor(scope, last_key) if last_key else None
+            tuple(visible[:limit]), _encode_cursor(scope, last_key) if last_key else None
         )
+
+
+class WorkflowAdmissionRepository:
+    """Atomically enforce an owner-scoped active workflow limit."""
+
+    def __init__(self, table: TableLike, *, limit: int = 3) -> None:
+        if isinstance(limit, bool) or limit < 1:
+            raise ValueError("workflow limit must be positive")
+        self._table = table
+        self._limit = limit
+
+    @property
+    def limit(self) -> int:
+        return self._limit
+
+    def claim(self, user_id: str, recording_id: str) -> None:
+        """Claim one active slot; repeated claims for the same recording succeed."""
+
+        try:
+            self._table.update_item(
+                Key={"user_id": user_id},
+                UpdateExpression=(
+                    "ADD active_recording_ids :ids"
+                ),
+                ConditionExpression=(
+                    "attribute_not_exists(active_recording_ids) OR "
+                    "contains(active_recording_ids, :recording_id) OR "
+                    "size(active_recording_ids) < :limit"
+                ),
+                ExpressionAttributeValues={
+                    ":ids": {recording_id},
+                    ":limit": self._limit,
+                    ":recording_id": recording_id,
+                },
+            )
+        except Exception as exc:
+            if _conditional_failure(exc):
+                existing = self._table.get_item(Key={"user_id": user_id}).get("Item", {})
+                if recording_id in set(existing.get("active_recording_ids", ())):
+                    return
+                raise ActiveWorkflowLimitError(
+                    "active workflow limit reached"
+                ) from exc
+            raise
+
+    def release(self, user_id: str, recording_id: str) -> None:
+        """Release a slot idempotently when a workflow becomes terminal."""
+
+        try:
+            self._table.update_item(
+                Key={"user_id": user_id},
+                UpdateExpression="DELETE active_recording_ids :ids",
+                ConditionExpression="contains(active_recording_ids, :recording_id)",
+                ExpressionAttributeValues={
+                    ":ids": {recording_id},
+                    ":recording_id": recording_id,
+                },
+            )
+        except Exception as exc:
+            if not _conditional_failure(exc):
+                raise
+
+    def snapshot(self, user_id: str) -> dict[str, int]:
+        item = self._table.get_item(Key={"user_id": user_id}, ConsistentRead=True).get("Item", {})
+        active = len(set(item.get("active_recording_ids", ())))
+        return {"active": active, "limit": self._limit, "remaining": max(0, self._limit - active)}
 
 
 class RecordingRepository:
@@ -301,6 +462,11 @@ class RecordingRepository:
         transaction_client: Any | None = None,
         index_name: str = OWNER_PROJECT_INDEX,
         recovery_days: int = DEFAULT_RECOVERY_DAYS,
+        stale_workflow_minutes: int = 30,
+        abandoned_retention_days: int = DEFAULT_ABANDONED_RETENTION_DAYS,
+        admission_table: TableLike | None = None,
+        max_active_workflows: int = 3,
+        enforce_admission_limit: bool = True,
     ) -> None:
         if recovery_days < 1:
             raise ValueError("recovery_days must be positive")
@@ -309,6 +475,11 @@ class RecordingRepository:
         self._client = transaction_client or recordings_table.meta.client
         self._index_name = index_name
         self._recovery_days = recovery_days
+        self._stale_workflow_minutes = max(1, stale_workflow_minutes)
+        self._abandoned_retention_days = max(1, abandoned_retention_days)
+        self._admission_table = admission_table
+        self._max_active_workflows = max(1, max_active_workflows)
+        self._enforce_admission_limit = enforce_admission_limit
 
     def create(
         self,
@@ -320,8 +491,11 @@ class RecordingRepository:
         """Create a recording transactionally after verifying project ownership.
 
         A replay using the same recording ID, idempotency key, and fingerprint
-        returns the existing record.  Reusing either identifier with different
-        input is a conflict rather than an accidental duplicate upload.
+        returns the existing record. Reusing either identifier with different
+        input is a conflict rather than an accidental duplicate upload. The
+        conditional write is deliberately the idempotency boundary; omitting
+        DynamoDB's request token avoids a ten-minute token mismatch when the
+        caller retries with a newly generated timestamp.
         """
 
         item = dict(recording)
@@ -345,6 +519,15 @@ class RecordingRepository:
             }
         )
         item.setdefault("status", "AWAITING_UPLOAD")
+        item.update(
+            maintenance_values(
+                item["user_id"], item["recording_id"], item["status"],
+                item.get("updated_at", item["created_at"]),
+                recovery_days=self._recovery_days,
+                abandoned_retention_days=self._abandoned_retention_days,
+                stale_minutes=self._stale_workflow_minutes,
+            )
+        )
         try:
             self._client.transact_write_items(
                 TransactItems=[
@@ -373,10 +556,9 @@ class RecordingRepository:
                         }
                     },
                 ],
-                ClientRequestToken=idempotency_key[:36],
             )
         except Exception as exc:
-            if not _conditional_failure(exc):
+            if not _transaction_condition_failure(exc):
                 raise
             existing = self._get_optional(item["user_id"], item["recording_id"])
             if existing is None:
@@ -437,25 +619,84 @@ class RecordingRepository:
         }
         if start_key:
             params["ExclusiveStartKey"] = start_key
-        response = self._recordings.query(**params)
         items: list[dict[str, Any]] = []
-        for projected in response.get("Items", ()):
-            recording_id = projected.get("recording_id")
-            if not recording_id:
-                continue
-            current = self._get_optional(user_id, recording_id)
-            if (
-                current
-                and current.get("project_id") == project_id
-                and not current.get("deleted_at")
-                and current.get("status") not in {"DELETED", "PURGE_PENDING"}
-            ):
-                items.append(current)
-        last_key = response.get("LastEvaluatedKey")
+        last_key = start_key
+        while len(items) < limit:
+            remaining = limit - len(items)
+            params["Limit"] = remaining
+            response = self._recordings.query(**params)
+            projected_items = [
+                item for item in response.get("Items", ())
+                if item.get("recording_id")
+            ]
+            current_items = self._get_many(
+                user_id,
+                [str(item["recording_id"]) for item in projected_items],
+            )
+            for current in current_items:
+                if (
+                    current.get("project_id") == project_id
+                    and not current.get("deleted_at")
+                    and current.get("status") not in {"DELETED", "PURGE_PENDING"}
+                ):
+                    items.append(current)
+                    if len(items) >= limit:
+                        break
+            last_key = response.get("LastEvaluatedKey")
+            if not last_key or not projected_items:
+                break
+            params["ExclusiveStartKey"] = last_key
         return RepositoryPage(
             tuple(items),
             _encode_cursor(cursor_scope, last_key) if last_key else None,
         )
+
+    def _get_many(self, user_id: str, recording_ids: Sequence[str]) -> list[dict[str, Any]]:
+        """Strongly reread a bounded page with one batch request when available."""
+
+        if not recording_ids:
+            return []
+        batch_get = getattr(self._client, "batch_get_item", None)
+        if batch_get is None:
+            return [
+                current
+                for recording_id in recording_ids
+                if (current := self._get_optional(user_id, recording_id)) is not None
+            ]
+        table_name = self._recordings.name
+        request = {
+            table_name: {
+                "Keys": [
+                    {"user_id": user_id, "recording_id": recording_id}
+                    for recording_id in recording_ids
+                ],
+                "ConsistentRead": True,
+            }
+        }
+        collected: list[Mapping[str, Any]] = []
+        pending = request
+        for _ in range(3):
+            response = batch_get(RequestItems=pending)
+            collected.extend(response.get("Responses", {}).get(table_name, ()))
+            pending = response.get("UnprocessedKeys") or {}
+            if not pending:
+                break
+        by_id: dict[str, dict[str, Any]] = {}
+        for raw_item in collected:
+            if not isinstance(raw_item, Mapping):
+                continue
+            item = _native_item(raw_item)
+            recording_id = item.get("recording_id")
+            if recording_id:
+                by_id[str(recording_id)] = _normalise_recording(item)
+        if pending:
+            for recording_id in recording_ids:
+                if recording_id in by_id:
+                    continue
+                current = self._get_optional(user_id, recording_id)
+                if current is not None:
+                    by_id[recording_id] = current
+        return [by_id[recording_id] for recording_id in recording_ids if recording_id in by_id]
 
     def transition(
         self,
@@ -475,14 +716,41 @@ class RecordingRepository:
             raise InvalidTransitionError(
                 f"recording cannot transition from {from_status} to {to_status}"
             )
+        maintenance = maintenance_values(
+            user_id, recording_id, to_status, updated_at,
+            recovery_days=self._recovery_days,
+            abandoned_retention_days=self._abandoned_retention_days,
+            stale_minutes=self._stale_workflow_minutes,
+        )
+        remove_maintenance = () if maintenance else (
+            "maintenance_partition", "maintenance_due_at_recording_id"
+        )
+        if self._admission_table is not None and (
+            (from_status not in ACTIVE_WORKFLOW_STATUSES and to_status in ACTIVE_WORKFLOW_STATUSES)
+            or (from_status in ACTIVE_WORKFLOW_STATUSES and to_status not in ACTIVE_WORKFLOW_STATUSES)
+        ):
+            return self._transactional_transition(
+                current,
+                expected_revision=expected_revision,
+                set_values={
+                    "status": to_status,
+                    "updated_at": updated_at,
+                    **maintenance,
+                    **(updates or {}),
+                },
+                remove_fields=remove_maintenance,
+                claim=from_status not in ACTIVE_WORKFLOW_STATUSES,
+            )
         return self._update_recording(
             current,
             expected_revision=expected_revision,
             set_values={
                 "status": to_status,
                 "updated_at": updated_at,
+                **maintenance,
                 **(updates or {}),
             },
+            remove_fields=remove_maintenance,
         )
 
     def patch(
@@ -496,6 +764,13 @@ class RecordingRepository:
         """Update non-lifecycle metadata under the optimistic revision lock."""
 
         current = self.get(user_id, recording_id, include_deleted=True)
+        if set(updates) & (_PROTECTED_RECORDING_FIELDS | {
+            "purge_started_at", "maintenance_partition",
+            "maintenance_due_at_recording_id",
+        }):
+            raise InvalidTransitionError(
+                "lifecycle fields must use a lifecycle operation"
+            )
         if current.get("status") in {"DELETED", "PURGE_PENDING"}:
             raise InvalidTransitionError("deleted recording metadata is immutable")
         return self._update_recording(
@@ -519,7 +794,18 @@ class RecordingRepository:
             return current
         if current.get("status") == "PURGE_PENDING":
             raise InvalidTransitionError("permanent deletion is already pending")
+        if current.get("status") in ACTIVE_WORKFLOW_STATUSES:
+            raise InvalidTransitionError(
+                "processing recording cannot be deleted until its workflow is terminal"
+            )
         clock = now or utc_now()
+        maintenance = maintenance_values(
+            user_id, recording_id, "DELETED", format_timestamp(clock),
+            recovery_until=format_timestamp(clock + timedelta(days=self._recovery_days)),
+            recovery_days=self._recovery_days,
+            abandoned_retention_days=self._abandoned_retention_days,
+            stale_minutes=self._stale_workflow_minutes,
+        )
         return self._update_recording(
             current,
             expected_revision=expected_revision,
@@ -531,6 +817,7 @@ class RecordingRepository:
                     clock + timedelta(days=self._recovery_days)
                 ),
                 "updated_at": format_timestamp(clock),
+                **maintenance,
             },
             remove_fields=("owner_project_id", "created_at_recording_id"),
         )
@@ -552,6 +839,13 @@ class RecordingRepository:
         if _parse_timestamp(current["recovery_until"]) < clock:
             raise RecoveryExpiredError("recording recovery window has expired")
         restored_status = str(current.get("status_before_delete") or "FAILED")
+        restored_updated = format_timestamp(clock)
+        maintenance = maintenance_values(
+            user_id, recording_id, restored_status, restored_updated,
+            recovery_days=self._recovery_days,
+            abandoned_retention_days=self._abandoned_retention_days,
+            stale_minutes=self._stale_workflow_minutes,
+        )
         return self._update_recording(
             current,
             expected_revision=expected_revision,
@@ -561,7 +855,8 @@ class RecordingRepository:
                 "created_at_recording_id": recording_created_key(
                     current["created_at"], recording_id
                 ),
-                "updated_at": format_timestamp(clock),
+                "updated_at": restored_updated,
+                **maintenance,
             },
             remove_fields=("deleted_at", "recovery_until", "status_before_delete"),
         )
@@ -587,6 +882,13 @@ class RecordingRepository:
         if current.get("status") != "DELETED":
             raise InvalidTransitionError("recording must be soft-deleted first")
         clock = now or utc_now()
+        purge_updated = format_timestamp(clock)
+        maintenance = maintenance_values(
+            user_id, recording_id, "PURGE_PENDING", purge_updated,
+            recovery_days=self._recovery_days,
+            abandoned_retention_days=self._abandoned_retention_days,
+            stale_minutes=self._stale_workflow_minutes,
+        )
         return self._update_recording(
             current,
             expected_revision=expected_revision,
@@ -594,7 +896,59 @@ class RecordingRepository:
                 "status": "PURGE_PENDING",
                 "purge_token": purge_token,
                 "purge_started_at": format_timestamp(clock),
-                "updated_at": format_timestamp(clock),
+                "updated_at": purge_updated,
+                **maintenance,
+            },
+        )
+
+    def stage_retention_purge(
+        self,
+        user_id: str,
+        recording_id: str,
+        *,
+        expected_revision: int,
+        purge_token: str,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Stage an expired abandoned or deleted recording for purge."""
+
+        if not purge_token:
+            raise ValueError("purge_token is required")
+        current = self.get(user_id, recording_id, include_deleted=True)
+        status = str(current.get("status"))
+        if status == "PURGE_PENDING":
+            if current.get("purge_token") == purge_token:
+                return current
+            raise RecordConflictError("a different permanent deletion is pending")
+        if status in ACTIVE_WORKFLOW_STATUSES or status not in {
+            "AWAITING_UPLOAD", "FAILED", "DELETED"
+        }:
+            raise InvalidTransitionError("recording is not eligible for retention purge")
+        clock = now or utc_now()
+        if status == "DELETED":
+            due = _parse_timestamp(str(current.get("recovery_until", "")))
+        else:
+            due = _parse_timestamp(str(current.get("updated_at", ""))) + timedelta(
+                days=self._abandoned_retention_days
+            )
+        if due > clock:
+            raise InvalidTransitionError("recording retention period has not expired")
+        updated = format_timestamp(clock)
+        maintenance = maintenance_values(
+            user_id, recording_id, "PURGE_PENDING", updated,
+            recovery_days=self._recovery_days,
+            abandoned_retention_days=self._abandoned_retention_days,
+            stale_minutes=self._stale_workflow_minutes,
+        )
+        return self._update_recording(
+            current,
+            expected_revision=expected_revision,
+            set_values={
+                "status": "PURGE_PENDING",
+                "purge_token": purge_token,
+                "purge_started_at": updated,
+                "updated_at": updated,
+                **maintenance,
             },
         )
 
@@ -650,6 +1004,8 @@ class RecordingRepository:
             "created_at_recording_id",
             "purge_token",
             "purge_started_at",
+            "maintenance_partition",
+            "maintenance_due_at_recording_id",
         }
         invalid -= allowed_internal
         if invalid:
@@ -690,8 +1046,9 @@ class RecordingRepository:
                     Attr("user_id").exists()
                     & Attr("recording_id").exists()
                     & (
-                        Attr("revision").eq(expected_revision)
-                        | Attr("revision").not_exists()
+                        (Attr("revision").eq(expected_revision) | Attr("revision").not_exists())
+                        if expected_revision == 0
+                        else Attr("revision").eq(expected_revision)
                     )
                 ),
                 ExpressionAttributeNames=names,
@@ -712,9 +1069,119 @@ class RecordingRepository:
         merged["revision"] = expected_revision + 1
         return _normalise_recording(merged)
 
+    def _transactional_transition(
+        self,
+        current: Mapping[str, Any],
+        *,
+        expected_revision: int,
+        set_values: Mapping[str, Any],
+        remove_fields: Sequence[str],
+        claim: bool,
+    ) -> dict[str, Any]:
+        """Update recording state and admission membership in one transaction."""
+
+        if int(current.get("revision", 0)) != expected_revision:
+            raise RevisionConflictError("recording revision is stale")
+        names = {"#revision": "revision"}
+        values: dict[str, Any] = {
+            ":expected_revision": expected_revision,
+            ":next_revision": expected_revision + 1,
+        }
+        setters = ["#revision = :next_revision"]
+        for index, (field, value) in enumerate(set_values.items()):
+            names[f"#set{index}"] = field
+            values[f":set{index}"] = value
+            setters.append(f"#set{index} = :set{index}")
+        expression = "SET " + ", ".join(setters)
+        if remove_fields:
+            for index, field in enumerate(remove_fields):
+                names[f"#remove{index}"] = field
+            expression += " REMOVE " + ", ".join(
+                f"#remove{index}" for index in range(len(remove_fields))
+            )
+        admission_values: dict[str, Any] = {
+            ":ids": {current["recording_id"]},
+            ":recording_id": current["recording_id"],
+        }
+        if claim:
+            admission_expression = "ADD active_recording_ids :ids"
+            if self._enforce_admission_limit:
+                admission_values[":limit"] = self._max_active_workflows
+                admission_condition = (
+                    "attribute_not_exists(active_recording_ids) OR "
+                    "contains(active_recording_ids, :recording_id) OR "
+                    "size(active_recording_ids) < :limit"
+                )
+            else:
+                admission_condition = (
+                    "attribute_not_exists(active_recording_ids) OR "
+                    "NOT contains(active_recording_ids, :recording_id)"
+                )
+        else:
+            admission_expression = "DELETE active_recording_ids :ids"
+            admission_condition = None
+        revision_condition = (
+            "(revision = :expected_revision OR attribute_not_exists(revision))"
+            if expected_revision == 0
+            else "revision = :expected_revision"
+        )
+        try:
+            self._client.transact_write_items(
+                TransactItems=[
+                    {
+                        "Update": {
+                            "TableName": self._recordings.name,
+                            "Key": {"user_id": current["user_id"], "recording_id": current["recording_id"]},
+                            "UpdateExpression": expression,
+                            "ConditionExpression": (
+                                "attribute_exists(user_id) AND attribute_exists(recording_id) AND "
+                                + revision_condition
+                            ),
+                            "ExpressionAttributeNames": names,
+                            "ExpressionAttributeValues": values,
+                        }
+                    },
+                    {
+                        "Update": {
+                            "TableName": self._admission_table.name,
+                            "Key": {"user_id": current["user_id"]},
+                            "UpdateExpression": admission_expression,
+                            **({"ConditionExpression": admission_condition} if admission_condition else {}),
+                            "ExpressionAttributeValues": admission_values,
+                        }
+                    },
+                ]
+            )
+        except Exception as exc:
+            response = getattr(exc, "response", {})
+            if response.get("Error", {}).get("Code") != "TransactionCanceledException":
+                raise
+            reasons = response.get("CancellationReasons", [])
+            recording_reason = reasons[0] if len(reasons) > 0 else {}
+            admission_reason = reasons[1] if len(reasons) > 1 else {}
+            if (
+                isinstance(recording_reason, Mapping)
+                and recording_reason.get("Code") == "ConditionalCheckFailed"
+            ):
+                raise RevisionConflictError("recording transition was superseded") from exc
+            if (
+                claim
+                and isinstance(admission_reason, Mapping)
+                and admission_reason.get("Code") == "ConditionalCheckFailed"
+            ):
+                raise ActiveWorkflowLimitError("active workflow limit reached") from exc
+            raise
+        merged = dict(current)
+        merged.update(set_values)
+        for field in remove_fields:
+            merged.pop(field, None)
+        merged["revision"] = expected_revision + 1
+        return _normalise_recording(merged)
+
 
 __all__ = [
     "DEFAULT_PAGE_SIZE",
+    "DEFAULT_ABANDONED_RETENTION_DAYS",
     "DEFAULT_RECOVERY_DAYS",
     "IdempotencyConflictError",
     "InvalidCursorError",
@@ -724,6 +1191,7 @@ __all__ = [
     "RecordConflictError",
     "RecordNotFoundError",
     "RecordingRepository",
+    "WorkflowAdmissionRepository",
     "RecoveryExpiredError",
     "RepositoryError",
     "RepositoryPage",

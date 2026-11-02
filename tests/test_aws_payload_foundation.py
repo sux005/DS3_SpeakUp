@@ -1,8 +1,11 @@
 import json
+from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
 from src.aws_payload.config import PayloadConfig
+from src.aws_payload.checksum import sha256_base64_to_hex
 from src.aws_payload.errors import (
     IdentifierValidationError,
     JsonValidationError,
@@ -15,7 +18,245 @@ from src.aws_payload.keys import (
     owner_project_id,
     require_owned_key,
 )
-from src.aws_payload.models import PayloadType
+from src.aws_payload.models import PayloadType, Recording
+
+
+@pytest.mark.parametrize("status,updated_at,recovery_until", [
+    ("FAILED", "2026-01-01T00:00:00Z", None),
+    ("DELETED", "2026-02-01T00:00:00Z", "2026-02-08T00:00:00Z"),
+    ("PURGE_PENDING", "2026-02-01T00:00:00Z", None),
+])
+def test_retention_cleanup_stages_directly_before_purge(status, updated_at, recovery_until):
+    from src.aws_payload.service import SpeakUpPayloadStore
+
+    calls = []
+    current = {
+        "user_id": "user-1", "project_id": "project-1", "recording_id": "recording-1",
+        "status": status, "updated_at": updated_at, "created_at": updated_at,
+        "revision": 4, "purge_token": "existing-token",
+    }
+    if recovery_until:
+        current["recovery_until"] = recovery_until
+    recordings = SimpleNamespace(
+        get=lambda *args, **kwargs: current,
+        stage_retention_purge=lambda *args, **kwargs: (
+            calls.append("stage") or {**current, "status": "PURGE_PENDING", "revision": 5}
+        ),
+        finalize_permanent_delete=lambda *args, **kwargs: calls.append("finalize"),
+    )
+    objects = SimpleNamespace(
+        purge_recording=lambda *args: calls.append("purge") or 2
+    )
+    store = SimpleNamespace(
+        config=SimpleNamespace(abandoned_retention_days=7),
+        recordings=recordings, objects=objects,
+        _delete_recording_hash_claim=lambda recording: None,
+    )
+    result = SpeakUpPayloadStore.cleanup_expired_recording(
+        store, "user-1", "recording-1",
+        now=datetime(2026, 2, 10, tzinfo=timezone.utc),
+    )
+    assert result == 2
+    assert calls == (["purge", "finalize"] if status == "PURGE_PENDING" else ["stage", "purge", "finalize"])
+
+
+def _recording_with_source_hash(recording_id="recording-1"):
+    import base64
+    import hashlib
+
+    return {
+        "user_id": "user-1",
+        "project_id": "project-1",
+        "recording_id": recording_id,
+        "source_sha256": base64.b64encode(hashlib.sha256(b"audio").digest()).decode("ascii"),
+    }
+
+
+def test_hash_claim_cleanup_uses_conditional_recording_match():
+    from src.aws_payload.service import SpeakUpPayloadStore
+
+    calls = []
+    table = SimpleNamespace(
+        meta=SimpleNamespace(client=SimpleNamespace(exceptions=SimpleNamespace())),
+        delete_item=lambda **kwargs: calls.append(kwargs),
+    )
+    store = SimpleNamespace(factory=SimpleNamespace(recording_hashes_table=table))
+
+    SpeakUpPayloadStore._delete_recording_hash_claim(store, _recording_with_source_hash())
+
+    assert calls[0]["Key"]["user_id"] == "user-1"
+    assert calls[0]["Key"]["project_hash"].startswith("project-1#")
+    assert calls[0]["ConditionExpression"] == "recording_id = :recording_id"
+    assert calls[0]["ExpressionAttributeValues"] == {":recording_id": "recording-1"}
+
+
+def test_hash_claim_cleanup_ignores_absent_or_replaced_claim():
+    from src.aws_payload.service import SpeakUpPayloadStore
+
+    class ConditionalCheckFailed(Exception):
+        pass
+
+    table = SimpleNamespace(
+        meta=SimpleNamespace(
+            client=SimpleNamespace(
+                exceptions=SimpleNamespace(
+                    ConditionalCheckFailedException=ConditionalCheckFailed
+                )
+            )
+        ),
+        delete_item=lambda **kwargs: (_ for _ in ()).throw(ConditionalCheckFailed()),
+    )
+    store = SimpleNamespace(factory=SimpleNamespace(recording_hashes_table=table))
+
+    SpeakUpPayloadStore._delete_recording_hash_claim(store, _recording_with_source_hash())
+
+
+def test_cleanup_keeps_pending_metadata_when_hash_claim_delete_fails():
+    from src.aws_payload.service import SpeakUpPayloadStore
+
+    current = {
+        **_recording_with_source_hash(),
+        "status": "FAILED",
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z",
+        "revision": 4,
+    }
+    calls = []
+    recordings = SimpleNamespace(
+        get=lambda *args, **kwargs: current,
+        stage_retention_purge=lambda *args, **kwargs: (
+            calls.append("stage") or {**current, "status": "PURGE_PENDING", "revision": 5}
+        ),
+        finalize_permanent_delete=lambda *args, **kwargs: calls.append("finalize"),
+    )
+    objects = SimpleNamespace(purge_recording=lambda *args: calls.append("purge") or 1)
+    table = SimpleNamespace(
+        meta=SimpleNamespace(client=SimpleNamespace(exceptions=SimpleNamespace())),
+        delete_item=lambda **kwargs: (_ for _ in ()).throw(RuntimeError("DynamoDB unavailable")),
+    )
+    store = SimpleNamespace(
+        config=SimpleNamespace(abandoned_retention_days=7),
+        recordings=recordings,
+        objects=objects,
+        factory=SimpleNamespace(recording_hashes_table=table),
+    )
+    store._delete_recording_hash_claim = lambda recording: SpeakUpPayloadStore._delete_recording_hash_claim(store, recording)
+
+    with pytest.raises(RuntimeError, match="DynamoDB unavailable"):
+        SpeakUpPayloadStore.cleanup_expired_recording(
+            store, "user-1", "recording-1",
+            now=datetime(2026, 2, 10, tzinfo=timezone.utc),
+        )
+
+    assert calls == ["stage", "purge"]
+
+
+def test_internal_upload_reservation_rejects_client_chosen_recording_id():
+    from src.aws_payload.errors import PayloadValidationError
+    from src.aws_payload.service import SpeakUpPayloadStore
+
+    store = SimpleNamespace(get_project=lambda *args: object())
+    with pytest.raises(PayloadValidationError, match="deterministic idempotency"):
+        SpeakUpPayloadStore.reserve_upload(
+            store, "user-1", "project-1", "audio/wav",
+            idempotency_key="request-1", recording_id="client-chosen-id",
+        )
+
+
+@pytest.mark.parametrize("value", [None, "", "not-base64", "YWJj", "A" * 44])
+def test_sha256_base64_parser_rejects_noncanonical_values(value):
+    assert sha256_base64_to_hex(value) is None
+
+
+def test_sha256_base64_parser_returns_hex_for_canonical_digest():
+    import base64
+    import hashlib
+
+    digest = hashlib.sha256(b"audio bytes").digest()
+    encoded = base64.b64encode(digest).decode("ascii")
+    assert sha256_base64_to_hex(encoded) == digest.hex()
+    assert sha256_base64_to_hex(encoded.rstrip("=")) is None
+
+
+def test_recording_round_trips_terminal_response_fields():
+    raw = {
+        "user_id": "user-1", "project_id": "project-1",
+        "recording_id": "recording-1", "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:01:00Z", "status": "FAILED",
+        "feedback_s3_key": "users/user-1/projects/project-1/recordings/recording-1/feedback.json",
+        "failure_reason": "Transcription failed",
+    }
+    result = Recording.from_item(raw).as_item()
+    assert result["feedback_s3_key"] == raw["feedback_s3_key"]
+    assert result["failure_reason"] == raw["failure_reason"]
+
+
+def test_stored_reference_must_match_requested_recording():
+    from src.aws_payload.service import SpeakUpPayloadStore
+
+    recording = Recording(
+        user_id="user-1", project_id="project-1", recording_id="recording-1",
+        created_at="2026-01-01T00:00:00Z", updated_at="2026-01-01T00:00:00Z",
+    )
+    raw = {
+        "user_id": "user-1", "project_id": "project-1",
+        "recording_id": "recording-2",
+        "key": "users/user-1/projects/project-1/recordings/recording-2/transcript.json",
+        "payload_type": PayloadType.TRANSCRIPT.value,
+        "content_type": "application/json",
+    }
+    with pytest.raises(OwnershipViolationError):
+        SpeakUpPayloadStore._payload_ref_for_recording(
+            raw, recording, expected_payload_type=PayloadType.TRANSCRIPT
+        )
+
+
+def test_stored_reference_must_match_requested_payload_slot():
+    from src.aws_payload.service import SpeakUpPayloadStore
+
+    recording = Recording(
+        user_id="user-1", project_id="project-1", recording_id="recording-1",
+        created_at="2026-01-01T00:00:00Z", updated_at="2026-01-01T00:00:00Z",
+    )
+    raw = {
+        "user_id": "user-1", "project_id": "project-1", "recording_id": "recording-1",
+        "key": "users/user-1/projects/project-1/recordings/recording-1/artifacts/a/1/report.json",
+        "payload_type": PayloadType.PREPROCESS_REPORT.value,
+        "content_type": "application/json",
+    }
+    with pytest.raises(OwnershipViolationError):
+        SpeakUpPayloadStore._payload_ref_for_recording(
+            raw, recording, expected_payload_type=PayloadType.TRANSCRIPT
+        )
+
+
+@pytest.mark.parametrize("field,value", [
+    ("content_type", "audio/wav"),
+    ("producer", "other-producer"),
+    ("key", "users/user-1/projects/project-1/recordings/recording-1/artifacts/speakup-coach/v1/feedback.json"),
+])
+def test_stored_reference_must_match_artifact_identity(field, value):
+    from src.aws_payload.service import SpeakUpPayloadStore
+
+    recording = Recording(
+        user_id="user-1", project_id="project-1", recording_id="recording-1",
+        created_at="2026-01-01T00:00:00Z", updated_at="2026-01-01T00:00:00Z",
+    )
+    raw = {
+        "user_id": recording.user_id, "project_id": recording.project_id,
+        "recording_id": recording.recording_id,
+        "key": "users/user-1/projects/project-1/recordings/recording-1/artifacts/speakup-coach/v1/feedback.json",
+        "payload_type": PayloadType.FEEDBACK.value,
+        "content_type": "application/json",
+        "producer": "speakup-coach", "producer_version": "v1",
+    }
+    if field == "key":
+        value = value.replace("feedback.json", "transcript.json")
+    raw[field] = value
+    with pytest.raises(OwnershipViolationError):
+        SpeakUpPayloadStore._payload_ref_for_recording(
+            raw, recording, expected_payload_type=PayloadType.FEEDBACK
+        )
 from src.aws_payload.serialization import (
     dumps_canonical_json,
     loads_json_object,

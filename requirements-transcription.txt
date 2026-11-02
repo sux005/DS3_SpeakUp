@@ -1,0 +1,2 @@
+# Optional local transcription workflow; install alongside requirements.txt.
+faster-whisper==1.2.1
