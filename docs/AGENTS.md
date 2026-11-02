@@ -235,6 +235,7 @@ task done. Do this even if the person didn't explicitly ask you to.
 
 See `docs/aws-payload-api.md` for the storage contract and staged GSI migration,
 `docs/aws-payload-package-reference.md` for the complete function-level Python
-reference, `src/aws_payload/README.md` for a concise API overview, and
+reference, `docs/aws-api-file-flowchart.md` for the editable AWS API file and
+runtime dependency map, `src/aws_payload/README.md` for a concise API overview, and
 `infra/README.md` for packaging, deployment, cost, and cleanup. Amazon
 Transcribe is currently blocked while the AWS project remains on the Free plan.
