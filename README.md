@@ -1,6 +1,31 @@
-# DS3 Project Template
+# SpeakUp
 
-A clean starter template for data science and machine learning projects at UC San Diego's DS3.
+SpeakUp is a DS3 public-speaking diagnostics platform. It preserves original
+recordings, prepares speech for analysis, produces timestamped transcripts and
+speech metrics, and stores versioned coaching feedback in a private AWS backend.
+
+## AWS payload API
+
+Backend workflows use `src.aws_payload.SpeakUpPayloadStore` for projects,
+recordings, uploads, audio reads, versioned JSON artifacts, playback URLs, and
+recoverable deletion. S3 stores audio and large payloads; DynamoDB stores
+owner-scoped metadata, lifecycle state, summary metrics, and compact S3
+references. See [the API guide](docs/aws-payload-api.md) and
+[package README](src/aws_payload/README.md). The
+[complete package reference](docs/aws-payload-package-reference.md) documents
+every supported function, model, parameter, return value, and exception.
+
+Build the three zip-based Lambda artifacts with:
+
+```powershell
+python scripts/build_lambda_packages.py
+```
+
+Run the complete local test suite with a workspace-local temporary directory:
+
+```powershell
+python -m pytest -q --basetemp .test-tmp -p no:cacheprovider
+```
 
 ## What this template includes
 
@@ -50,10 +75,51 @@ A clean starter template for data science and machine learning projects at UC Sa
    ```
 3. Copy the example environment file:
    ```bash
-   cp .env.example .env
+   cp .env.development.example .env.development
    ```
-   **.env files are generally not shared on GitHub; they are included here only as an example template.**
+   On Windows PowerShell, use `Copy-Item .env.development.example .env.development`.
+   The development example contains the deployed stack's non-secret resource identifiers.
+   `.env.development` and `.env.production` are ignored by Git; only their `.example`
+   schemas belong on GitHub. The production example remains blank until `speakup-prod`
+   is deployed, so development resources cannot be used accidentally in production.
+
+   Do not place AWS access keys in an env file. For local AWS CLI access, use the
+   short-lived `speakup-dev` profile documented in `infra/README.md`.
 4. Start working in notebooks or in the src package.
+
+## Audio preparation
+
+SpeakUp includes a distortion-gated speech preparation pipeline. RNNoise performs
+full-band noise suppression, while librosa and SciPy handle resampling, gentle EQ,
+level control, and measurements. A dry-signal blend preserves consonants and room
+tone, and the pipeline falls back to the conditioned reference when enhancement
+introduces excessive spectral variation. The original recording is never overwritten.
+
+Run it locally with:
+
+```powershell
+python -m src.audio.preprocess path\to\recording.wav results\prepared
+```
+
+Generate the deterministic before/after example with:
+
+```powershell
+python scripts\generate_audio_prep_example.py
+```
+
+The output directory contains `reference.wav`, `enhanced_model.wav`,
+`enhanced_blended.wav`, `diagnostic.wav`, a legacy `enhanced.wav` alias, and
+`report.json`. The report records the pipeline version, exact configuration,
+latency compensation, speech-preservation measurements, warnings, and which signal
+passed the distortion-aware transcription gate.
+
+Create a level-matched listening example with:
+
+```powershell
+python scripts\create_audio_ab_example.py `
+  results\prepared\reference.wav results\prepared\diagnostic.wav `
+  results\prepared\ab_example.wav
+```
 
 ## Repository guidelines
 

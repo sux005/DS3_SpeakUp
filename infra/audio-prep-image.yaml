@@ -1,0 +1,43 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  SpeakUp audio-preparation image repository - bootstraps the immutable image
+  artifact required by the main serverless stack.
+
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@3
+  com.aws.cloudformation.Context:
+    arch: build audio-prep image -> ECR -> main stack AudioPrepImageUri parameter
+    must:
+      - Deploy in the AWS project's selected Region
+      - Build image for linux/arm64 to match the Lambda architecture
+
+Resources:
+  AudioPrepRepository:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: stores versioned librosa + FFmpeg worker images separately from zip-based Lambda code
+        must: [Keep image scanning enabled, Keep tags immutable]
+        mutable: change-with-constraints
+        mutability: {RepositoryName: must-never-change}
+    Properties:
+      RepositoryName: !Sub '${AWS::StackName}-audio-prep'
+      EncryptionConfiguration: {EncryptionType: AES256}
+      ImageScanningConfiguration: {ScanOnPush: true}
+      ImageTagMutability: IMMUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: >-
+          {"rules":[{"rulePriority":1,"description":"Retain ten newest images",
+          "selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},
+          "action":{"type":"expire"}}]}
+      Tags:
+        - {Key: Project, Value: SpeakUp}
+        - {Key: ManagedBy, Value: CloudFormation}
+
+Outputs:
+  RepositoryUri:
+    Description: Repository URI to tag and push the audio-prep image.
+    Value: !GetAtt AudioPrepRepository.RepositoryUri
