@@ -1,8 +1,10 @@
 # SpeakUp
 
-SpeakUp is a DS3 public-speaking diagnostics platform. It preserves original
-recordings, prepares speech for analysis, produces timestamped transcripts and
-speech metrics, and stores versioned coaching feedback in a private AWS backend.
+SpeakUp is a DS3 public-speaking diagnostics platform. Its backend stores
+original recordings without rewriting them during processing, prepares speech
+for analysis, produces timestamped transcripts and speech metrics, and stores
+versioned coaching feedback in private AWS resources. The frontend has not been
+implemented yet.
 
 ## AWS payload API
 
@@ -13,52 +15,50 @@ owner-scoped metadata, lifecycle state, summary metrics, and compact S3
 references. See [the API guide](docs/aws-payload-api.md) and
 [package README](src/aws_payload/README.md).
 
-Build the three zip-based Lambda artifacts with:
+Build the four zip-based Lambda artifacts (`api`, `processor`,
+`workflow_failure`, and `maintenance`) with:
 
 ```powershell
 python scripts/build_lambda_packages.py
 ```
 
-Run the complete local test suite with a workspace-local temporary directory:
+Run the local test suite with an ignored temporary directory:
 
 ```powershell
 python -m pytest -q --basetemp .test-tmp -p no:cacheprovider
 ```
 
-## What this template includes
-
-- A sensible folder structure for notebooks, source code, data, and outputs
-- A Python environment file for quick setup
-- A .gitignore tailored for secrets, notebooks, and generated artifacts
-- A small starter package and test example
-
-## Suggested repository structure
+## Repository structure
 
 ```text
 .
 ├── README.md
-├── .env.example
+├── .env.development.example
 ├── .gitignore
 ├── requirements.txt
+├── requirements-dev.txt
+├── docs/                    # API contracts and design notes
+├── infra/                   # CloudFormation and Lambda handlers
+├── scripts/                 # Packaging, migrations, and local QA
+├── src/
+│   ├── audio/               # Audio preparation
+│   ├── aws_payload/         # Backend storage and lifecycle API
+│   └── transcription/       # Optional local ASR
+├── tests/
 ├── notebooks/
 │   └── README.md
-├── src/
-│   ├── __init__.py
-│   └── example.py
 ├── frontend/
-│   └── README.md
-├── infra/
 │   └── README.md
 ├── data/
 │   ├── raw/
 │   └── processed/
 ├── results/
-├── models/
-└── tests/
+└── models/
 ```
 
-- `frontend/` is for UI/UX code and web app assets.
-- `infra/` is for deployment scripts, cloud config, and infrastructure as code for AWS/GCP.
+`frontend/` currently contains only its README. The backend HTTP contract is in
+[docs/aws-payload-api.md](docs/aws-payload-api.md); deployment and migration
+instructions are in [infra/README.md](infra/README.md).
 
 ## Quick start
 
@@ -67,9 +67,9 @@ python -m pytest -q --basetemp .test-tmp -p no:cacheprovider
    python3 -m venv .venv
    source .venv/bin/activate
    ```
-2. Install dependencies:
+2. Install dependencies (use `requirements-dev.txt` for the optional Moto tests):
    ```bash
-   pip install -r requirements.txt
+   pip install -r requirements-dev.txt
    ```
 3. Copy the example environment file:
    ```bash
@@ -83,7 +83,8 @@ python -m pytest -q --basetemp .test-tmp -p no:cacheprovider
 
    Do not place AWS access keys in an env file. For local AWS CLI access, use the
    short-lived `speakup-dev` profile documented in `infra/README.md`.
-4. Start working in notebooks or in the src package.
+4. Run the local tests with the command above. Live AWS tests require explicit
+   opt-in and credentials; ordinary test runs do not contact AWS.
 
 ## Audio preparation
 
@@ -283,15 +284,3 @@ git push origin feature/data-cleaning
 ```
 
 Then open a Pull Request on GitHub and wait for approval from the appropriate project manager or mentor.
-
-## Notes for DS3 projects
-
-This template is intentionally simple so students can focus on the science instead of setup. As projects grow, teams can add:
-
-- experiment tracking
-- model checkpoints
-- deployment scripts
-- cloud infrastructure (AWS/GCP) in `infra/`
-- frontend UI/UX code in `frontend/`
-- CI checks
-- docs pages

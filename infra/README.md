@@ -3,9 +3,10 @@
 `speakup.yaml` defines the development backend in CloudFormation:
 
 - private, encrypted, versioned S3 storage with HTTPS-only access
-- four on-demand DynamoDB tables (`projects`, `recordings`,
-  `recording-hashes`, and `workflow-admissions`) with owner-scoped list and
-  sparse maintenance GSIs
+- five on-demand DynamoDB tables (`projects`, `recordings`,
+  `recording-hashes`, `workflow-admissions`, and
+  `workflow-reconcile-cursors`) with owner-scoped list and sparse maintenance
+  GSIs
 - a Cognito email user pool and public SPA client
 - an API Gateway HTTP API with Cognito JWT authorization
 - Lambda handlers for metadata, pre-signed uploads, and audio processing
@@ -77,7 +78,7 @@ await api.post(`/recordings/${upload.recording_id}/confirm-upload`, {});
 await api.post(`/recordings/${upload.recording_id}/process`, {});
 ```
 
-The process route atomically reserves the checksum for one recording per user
+The process route conditionally reserves the checksum for one recording per user
 and project. A second recording with identical bytes returns HTTP 409 with
 `duplicate_recording_id` and does not start another workflow. Different bytes,
 or the same bytes in different projects, remain independent. Upload requests
@@ -106,10 +107,10 @@ ways to create an original recording. This is a planned interface contract;
   duration and 100 MiB upload limits in the interface as well as in the backend.
 - **Upload audio file:** A user selects an existing WAV, MP3, or M4A file,
   previews it, and submits it. The original bytes are uploaded unchanged.
-- **Shared submission:** Either source supplies a file/blob, a content type
-  matching its actual container, and its SHA-256 to `POST /uploads`. Extend the
-  reservation to accept expected byte length as described below. Both sources
-  then follow the same signed S3 PUT, `confirm-upload`, `process`, and
+- **Shared submission:** Either source supplies a file/blob, its byte length,
+  a content type matching its actual container, and its SHA-256 to
+  `POST /uploads`. Both sources then follow the same signed S3 PUT,
+  `confirm-upload`, `process`, and
   status-polling sequence above. Do not relabel a browser-generated blob as WAV
   merely to pass validation.
 - **Browser recording format:** `MediaRecorder` chooses from formats the
@@ -134,77 +135,23 @@ download, and cross-owner download denial. The browser recording controls are
 future work; signed upload, browser-audio MIME support, and
 original-download backend routes already exist.
 
-## Proposed upload-to-audio-preparation workflow
+## Current upload and processing workflow
 
-**Target design; not the current deployed workflow.** The current
-`speakup.yaml` state machine continues from audio preparation into Amazon
-Transcribe, speech metrics, and Bedrock feedback. The team has not selected an
-STT model, so the first delivery milestone should end when prepared audio and
-its quality report are durably stored. No frontend implementation is included
-in this design.
+The HTTP API reserves an owner-scoped recording with its original file length,
+content type, and SHA-256. The client uploads the unchanged bytes with the
+returned signed headers, confirms the S3 object, and explicitly starts
+processing. The Standard Step Functions workflow runs audio preparation,
+Amazon Transcribe, speech analysis, and Bedrock feedback. The processor stores
+versioned artifacts and compact recording metadata; the frontend can poll
+`GET /recordings/{recordingId}` for lifecycle status and metrics. Original audio
+is not overwritten during processing.
 
-```text
-Record button or file picker ──> one file/blob ──> frontend
-Frontend ──reserve upload──> API Gateway / API Lambda
-Frontend ──signed PUT──────> private S3 original
-Frontend ──confirm + process──> API Lambda ──> Step Functions
-Step Functions ──> audio-preparation Lambda ──> versioned S3 artifacts
-Step Functions ──> finalization Lambda ──> DynamoDB AUDIO_PREPARED
-Frontend ──GET recording──> API Lambda ──> status and artifact metadata
-Frontend ──GET download──> API Lambda ──signed GET──> original in S3
-```
-
-1. **Reserve and upload.** An authenticated client sends the project ID,
-   content type, byte length, and Base64 SHA-256 of the file to `POST /uploads`. The API uses
-   the Cognito `sub` as owner, creates an `AWAITING_UPLOAD` recording, and returns
-   a short-lived pre-signed PUT for one server-generated key. The client sends
-   every returned `required_headers` value with the file. It never chooses a
-   bucket or key and never receives AWS credentials. Keep the bucket private,
-   encrypted, versioned, TLS-only, and CORS-scoped to the frontend origin.
-2. **Confirm the object.** After S3 accepts the PUT, the client calls
-   `confirm-upload`. The API checks that the original exists at the reserved
-   key and matches its content type and checksum before changing the recording
-   to `UPLOADED`. It rejects a zero-byte, oversized, or length-mismatched object.
-   A matching checksum does not establish that the file is valid
-   audio; the preparation worker checks decoding, duration, and channel limits.
-3. **Start one workflow.** The client calls `POST /recordings/{id}/process`. The
-   API atomically reserves the source checksum, changes `UPLOADED` to
-   `PROCESSING`, and starts one Standard Step Functions execution with the
-   recording ID as its stable name. Its input contains owner, project,
-   recording, and original S3 key only. Repeated requests return the existing
-   recording/execution. Keep this explicit handshake as the authoritative
-   trigger; an S3 notification alone cannot establish owner or lifecycle state
-   and may be delivered more than once.
-4. **Prepare and persist.** The image-based audio-preparation Lambda reads the
-   original, enforces size and duration limits, and runs `src/audio`. It writes
-   versioned reference, enhanced, and selected diagnostic WAV files plus the
-   report to server-derived S3 keys. The original is never overwritten. It
-   then attaches verified artifact references to the recording. On replay, it
-   checks that *all* expected objects exist and repairs missing metadata before
-   returning a reused result; a report alone is insufficient proof of success.
-5. **Finalize.** A small processor action verifies the report and artifact
-   references, then conditionally changes `PROCESSING` to `AUDIO_PREPARED`.
-   Repeating finalization returns the saved result. `AUDIO_PREPARED` means the
-   upload-to-preparation milestone succeeded; it does not imply transcription,
-   speech metrics, or feedback. `GET /recordings/{id}` exposes this status and
-   compact artifact metadata for client polling.
-
-The active workflow should become `PreprocessAudio -> FinalizePreparation ->
-Succeed`, with bounded retries and task timeouts. Each failure path records a
-terminal `FAILED` state and a safe, short reason. Retry `MarkFailed` itself and
-use the EventBridge terminal-failure handler to reconcile a recording left in
-`PROCESSING` if that write fails. Do not log audio bytes, signed URLs, or report
-contents. A later STT workflow can start from `AUDIO_PREPARED` and record its
-provider, model/version, selected input artifact, and transcript artifact
-without changing the upload or preparation contract.
-
-Before rollout, test duplicate upload/process requests; checksum, size, and
-invalid-audio failures; interruption after each S3 artifact write; metadata
-reconciliation on replay; duplicate finalization; and failure while marking a
-recording failed. Validate the state machine and exercise a development upload
-through `AUDIO_PREPARED`. This design requires changes to `speakup.yaml`, the
-recording lifecycle, the audio-preparation reuse path, processor finalization,
-failure recovery, and workflow contract tests. It does not select or run STT.
+The workflow is implemented in `speakup.yaml`, but deployment and live
+processing are separate validation steps. A failed workflow is handled by the
+terminal-event handler and bounded reconciler. Scheduled maintenance handles
+expired abandoned and soft-deleted recordings, and permanent deletion purges
+all S3 versions for one recording. Neither the documentation checks nor the
+local tests perform those AWS operations.
 
 ## Lambda packages
 
@@ -256,10 +203,10 @@ python scripts/backfill_maintenance_index.py `
 ```
 
 The dry run does not advance the cursor. Inspect its full-table totals and any
-conflicts before applying changes. Enable `EnforceWorkflowAdmissions=true` only after an independent audit
-of legacy active rows, and switch discovery to index-only after the sparse
-index contains all due rows. No migration or deployment is run as part of the
-local backend checks.
+conflicts before applying changes. Enable `EnforceWorkflowAdmissions=true` only
+after an independent audit of legacy active rows, and switch discovery to
+index-only after the sparse index contains all due rows. No migration or
+deployment is run as part of the local backend checks.
 
 ## Owner-index migration
 
@@ -324,13 +271,13 @@ Step Functions logs errors without execution payloads, so transcripts are not co
 into workflow logs. Deleted S3 object versions expire after 30 days; abandoned
 multipart uploads are removed after 7 days.
 
-## Current plan limitation
+## Transcribe account access
 
-The AWS project is currently on the Free plan. Amazon Transcribe is available
-only on the Paid plan in the new AWS experience, so the managed project policy
-currently denies Transcribe API calls. The workflow, Lambda permission, and S3
-paths are already configured; after the project owner upgrades in AWS Settings,
-rerun the Transcribe smoke test before processing recordings.
+At the last development-account check, the AWS project plan prevented Amazon
+Transcribe calls. The workflow, Lambda permission, and S3 paths are configured
+in this repository, but that account restriction was not rechecked during local
+documentation work. Verify Transcribe access and rerun the live workflow smoke
+test before processing recordings in a deployed environment.
 
 ## Validation
 
