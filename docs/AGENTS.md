@@ -160,9 +160,18 @@ access uses the short-lived `speakup-dev` profile.
 ## Running things
 
 - Run audio preparation: `python -m src.audio.preprocess <input> <output-dir>`
+- Run local six-clip QA with duplicate skipping: `python scripts/run_real_audio_qa.py`
 - Build Lambda packages: `python scripts/build_lambda_packages.py`
 - Launch notebooks: `jupyter lab notebooks/`
 - Validate locally: `python -m pytest -q --basetemp .test-tmp -p no:cacheprovider`
+- Opt-in deployed workflow smoke test: set `SPEAKUP_LIVE_E2E=1`,
+  `SPEAKUP_E2E_API_URL`, `SPEAKUP_E2E_JWT`, and `SPEAKUP_E2E_WAV_PATH` to a
+  non-private spoken-English WAV, then run
+  `python -m pytest -q tests/test_live_backend_e2e.py`.
+- Opt-in deployed API storage checkpoints: set `SPEAKUP_LIVE_API=1`,
+  `SPEAKUP_E2E_API_URL`, and `SPEAKUP_E2E_JWT`, then run
+  `python -m pytest -q tests/test_live_backend_e2e.py`. This test generates
+  non-private synthetic WAV bytes and does not start processing.
 
 ## Testing
 
@@ -185,6 +194,16 @@ access uses the short-lived `speakup-dev` profile.
   threshold).
 - Build AWS payload keys only through `src/aws_payload/keys.py`; callers never
   choose buckets, tables, indexes, or raw keys.
+- Keep HTTP recording responses on the explicit public serializer in the API
+  adapter; do not return DynamoDB items, payload references, or workflow IDs.
+- Share checksum parsing and active-workflow status rules through
+  `src/aws_payload/checksum.py` and `src/aws_payload/policy.py`.
+- Require `content_length` for HTTP upload reservations; sign it into the PUT,
+  verify it on confirmation, and keep prepared audio writes immutable.
+- Keep Step Functions stages replay-safe: reuse deterministic Transcribe jobs and
+  build-identified versioned artifacts, bound polling, and record terminal
+  failures through the workflow, EventBridge fallback, and stale-workflow
+  reconciler. Active workflows cannot be soft-deleted.
 - Keep Regional AWS resources in the project's selected Region, `us-east-2`.
 - Never log audio bytes, transcript text, credentials, or pre-signed URLs.
 

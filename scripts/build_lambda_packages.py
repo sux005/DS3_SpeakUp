@@ -46,12 +46,11 @@ def build_all(output_directory: Path = DEFAULT_OUTPUT) -> list[Path]:
 
     lambda_root = REPOSITORY_ROOT / "infra" / "lambda"
     packages = []
-    for name in ("api", "processor", "workflow_failure"):
+    for name in ("api", "processor", "workflow_failure", "retention_cleanup"):
         packages.append(
             build_package(
                 lambda_root / name,
-                output_directory / f"{name}.zip",
-                include_payload_api=name != "workflow_failure",
+                output_directory / ("maintenance.zip" if name == "retention_cleanup" else f"{name}.zip"),
             )
         )
     return packages

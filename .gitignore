@@ -41,9 +41,12 @@ models/*
 htmlcov/
 build/
 .test-tmp/
+.review-tmp/
 
 # Agent files
 /.omx
 
 # Personal work notes
 /WORK_NOTES.md
+/work_notes.md
+/code_review.md

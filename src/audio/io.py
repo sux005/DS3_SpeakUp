@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 import shutil
+import os
+import select
 import subprocess
+import tempfile
+import time
 
 import numpy as np
 import soundfile as sf
@@ -14,7 +18,74 @@ class AudioDecodeError(ValueError):
     """Raised when an uploaded file cannot be decoded safely."""
 
 
-def _decode_with_pyav(source: Path) -> tuple[np.ndarray, int] | None:
+DEFAULT_MAX_DURATION_SECONDS = 600.0
+DEFAULT_MAX_CHANNELS = 8
+DEFAULT_MAX_DECODED_BYTES = 268_435_456
+FFMPEG_TIMEOUT_SECONDS = 120
+
+
+def _run_ffmpeg_bounded(command: list[str], destination: Path, max_bytes: int) -> None:
+    """Stream decoded output to disk with a hard byte and wall-time limit."""
+
+    process = subprocess.Popen(
+        command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+    )
+    deadline = time.monotonic() + FFMPEG_TIMEOUT_SECONDS
+    total = 0
+    try:
+        assert process.stdout is not None
+        with destination.open("wb") as output:
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not select.select([process.stdout], [], [], remaining)[0]:
+                    raise AudioDecodeError("FFmpeg decoding timed out")
+                chunk = os.read(process.stdout.fileno(), 1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_bytes + 4096:
+                    raise AudioDecodeError("Decoded audio exceeds the memory limit")
+                output.write(chunk)
+        if process.wait(timeout=max(0.1, deadline - time.monotonic())) != 0:
+            raise AudioDecodeError("FFmpeg could not decode the uploaded audio")
+    except subprocess.TimeoutExpired as error:
+        raise AudioDecodeError("FFmpeg decoding timed out") from error
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+        if process.stdout is not None:
+            process.stdout.close()
+
+
+def _check_stream_bounds(
+    frames: int,
+    sample_rate: int,
+    channels: int,
+    *,
+    max_duration_seconds: float,
+    max_channels: int,
+    max_decoded_bytes: int,
+) -> None:
+    """Reject streams whose decoded shape would exceed resource limits."""
+
+    if sample_rate <= 0 or channels < 1:
+        raise AudioDecodeError("Uploaded file has invalid audio metadata")
+    if channels > max_channels:
+        raise AudioDecodeError("Uploaded file has too many audio channels")
+    if frames > int(max_duration_seconds * sample_rate):
+        raise AudioDecodeError("Uploaded audio exceeds the duration limit")
+    if frames * channels * np.dtype(np.float32).itemsize > max_decoded_bytes:
+        raise AudioDecodeError("Decoded audio exceeds the memory limit")
+
+
+def _decode_with_pyav(
+    source: Path,
+    *,
+    max_duration_seconds: float,
+    max_channels: int,
+    max_decoded_bytes: int,
+) -> tuple[np.ndarray, int] | None:
     """Decode compressed audio with the optional pinned PyAV runtime."""
 
     try:
@@ -27,38 +98,128 @@ def _decode_with_pyav(source: Path) -> tuple[np.ndarray, int] | None:
                 raise AudioDecodeError("Uploaded file contains no audio stream")
             stream = container.streams.audio[0]
             sample_rate = int(stream.codec_context.sample_rate)
-            frames: list[np.ndarray] = []
+            channels = int(stream.codec_context.channels or 0)
+            if channels > max_channels:
+                raise AudioDecodeError("Uploaded file has too many audio channels")
+            decoded_samples = 0
             resampler = None
-            for frame in container.decode(stream):
-                if resampler is None:
-                    resampler = av.AudioResampler(
-                        format="fltp",
-                        layout=frame.layout.name,
-                        rate=sample_rate,
-                    )
-                for converted in resampler.resample(frame):
-                    frames.append(converted.to_ndarray().astype(np.float32))
-            if resampler is not None:
-                for converted in resampler.resample(None):
-                    frames.append(converted.to_ndarray().astype(np.float32))
-            if not frames:
-                raise AudioDecodeError("Uploaded file contains no decodable audio")
-            return np.concatenate(frames, axis=1).T, sample_rate
+            with tempfile.NamedTemporaryFile(suffix=".wav") as decoded_file:
+                decoded_path = Path(decoded_file.name)
+                writer = None
+                try:
+                    for frame in container.decode(stream):
+                        if resampler is None:
+                            resampler = av.AudioResampler(
+                                format="fltp",
+                                layout=frame.layout.name,
+                                rate=sample_rate,
+                            )
+                        for converted in resampler.resample(frame):
+                            chunk = converted.to_ndarray().astype(np.float32)
+                            decoded_samples += int(chunk.shape[1])
+                            _check_stream_bounds(
+                                decoded_samples,
+                                sample_rate,
+                                int(chunk.shape[0]),
+                                max_duration_seconds=max_duration_seconds,
+                                max_channels=max_channels,
+                                max_decoded_bytes=max_decoded_bytes,
+                            )
+                            if writer is None:
+                                import soundfile as sf_module
+
+                                writer = sf_module.SoundFile(
+                                    decoded_path,
+                                    mode="w",
+                                    samplerate=sample_rate,
+                                    channels=int(chunk.shape[0]),
+                                    subtype="FLOAT",
+                                    format="WAV",
+                                )
+                            writer.write(chunk.T)
+                    if resampler is not None:
+                        for converted in resampler.resample(None):
+                            chunk = converted.to_ndarray().astype(np.float32)
+                            decoded_samples += int(chunk.shape[1])
+                            _check_stream_bounds(
+                                decoded_samples,
+                                sample_rate,
+                                int(chunk.shape[0]),
+                                max_duration_seconds=max_duration_seconds,
+                                max_channels=max_channels,
+                                max_decoded_bytes=max_decoded_bytes,
+                            )
+                            if writer is None:
+                                import soundfile as sf_module
+
+                                writer = sf_module.SoundFile(
+                                    decoded_path,
+                                    mode="w",
+                                    samplerate=sample_rate,
+                                    channels=int(chunk.shape[0]),
+                                    subtype="FLOAT",
+                                    format="WAV",
+                                )
+                            writer.write(chunk.T)
+                finally:
+                    if writer is not None:
+                        writer.close()
+                if decoded_samples == 0:
+                    raise AudioDecodeError("Uploaded file contains no decodable audio")
+                audio, decoded_rate = sf.read(
+                    decoded_path, dtype="float32", always_2d=True
+                )
+                return np.asarray(audio, dtype=np.float32), int(decoded_rate)
     except AudioDecodeError:
         raise
     except (OSError, ValueError, av.error.FFmpegError):
         return None
 
 
-def decode_audio(path: str | Path) -> tuple[np.ndarray, int]:
+def decode_audio(
+    path: str | Path,
+    *,
+    max_duration_seconds: float = DEFAULT_MAX_DURATION_SECONDS,
+    max_channels: int = DEFAULT_MAX_CHANNELS,
+    max_decoded_bytes: int = DEFAULT_MAX_DECODED_BYTES,
+) -> tuple[np.ndarray, int]:
     """Decode with libsndfile, falling back to FFmpeg for M4A and other codecs."""
 
     source = Path(path)
     try:
+        try:
+            info = sf.info(source)
+            _check_stream_bounds(
+                int(info.frames),
+                int(info.samplerate),
+                int(info.channels),
+                max_duration_seconds=max_duration_seconds,
+                max_channels=max_channels,
+                max_decoded_bytes=max_decoded_bytes,
+            )
+        except AudioDecodeError:
+            raise
+        except (RuntimeError, sf.LibsndfileError):
+            # Compressed formats may not expose metadata through libsndfile;
+            # the PyAV/FFmpeg paths enforce bounds while decoding.
+            pass
         audio, sample_rate = sf.read(source, dtype="float32", always_2d=True)
+        _check_stream_bounds(
+            int(audio.shape[0]),
+            int(sample_rate),
+            int(audio.shape[1]),
+            max_duration_seconds=max_duration_seconds,
+            max_channels=max_channels,
+            max_decoded_bytes=max_decoded_bytes,
+        )
         return np.asarray(audio, dtype=np.float32), int(sample_rate)
     except (RuntimeError, sf.LibsndfileError) as soundfile_error:
-        pyav_result = _decode_with_pyav(source)
+        pyav_result = _decode_with_pyav(
+            source,
+            max_duration_seconds=max_duration_seconds,
+            max_channels=max_channels,
+            max_decoded_bytes=max_decoded_bytes,
+        )
         if pyav_result is not None:
             return pyav_result
         ffmpeg = shutil.which("ffmpeg")
@@ -72,19 +233,26 @@ def decode_audio(path: str | Path) -> tuple[np.ndarray, int]:
             "-hide_banner",
             "-loglevel",
             "error",
-            "-y",
             "-i",
             str(source),
             "-vn",
             "-acodec",
             "pcm_f32le",
-            str(decoded),
+            "-f",
+            "wav",
+            "pipe:1",
         ]
-        completed = subprocess.run(command, capture_output=True, text=True, check=False)
-        if completed.returncode != 0:
-            raise AudioDecodeError("FFmpeg could not decode the uploaded audio") from soundfile_error
         try:
+            _run_ffmpeg_bounded(command, decoded, max_decoded_bytes)
             audio, sample_rate = sf.read(decoded, dtype="float32", always_2d=True)
+            _check_stream_bounds(
+                int(audio.shape[0]),
+                int(sample_rate),
+                int(audio.shape[1]),
+                max_duration_seconds=max_duration_seconds,
+                max_channels=max_channels,
+                max_decoded_bytes=max_decoded_bytes,
+            )
             return np.asarray(audio, dtype=np.float32), int(sample_rate)
         finally:
             decoded.unlink(missing_ok=True)

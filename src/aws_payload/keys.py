@@ -20,7 +20,9 @@ _CONTENT_TYPE_EXTENSIONS = {
     "application/json": "json",
     "audio/mp4": "m4a",
     "audio/mpeg": "mp3",
+    "audio/ogg": "ogg",
     "audio/wav": "wav",
+    "audio/webm": "webm",
     "audio/x-m4a": "m4a",
     "audio/x-wav": "wav",
 }
@@ -79,7 +81,7 @@ def original_audio_key(
     """Build the immutable original-audio key for one recording."""
 
     extension = extension_for_content_type(content_type)
-    if extension not in {"wav", "mp3", "m4a"}:
+    if extension not in {"wav", "mp3", "m4a", "ogg", "webm"}:
         raise PayloadValidationError("Original recording content type must be audio")
     return f"{recording_prefix(user_id, project_id, recording_id)}original.{extension}"
 
@@ -138,7 +140,7 @@ def require_owned_key(
     segments = suffix.split("/")
     if any(segment in {"", ".", ".."} for segment in segments):
         raise OwnershipViolationError("Payload key contains an unsafe path segment")
-    is_original = re.fullmatch(r"original\.(?:wav|mp3|m4a)", suffix) is not None
+    is_original = re.fullmatch(r"original\.(?:wav|mp3|m4a|webm|ogg)", suffix) is not None
     is_artifact = (
         re.fullmatch(
             r"artifacts/[A-Za-z0-9][A-Za-z0-9._-]{0,127}/"

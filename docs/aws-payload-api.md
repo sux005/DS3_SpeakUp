@@ -23,6 +23,7 @@ select an AWS project, Region, bucket, table, index, or raw object path.
 
 | Route | Result |
 | --- | --- |
+| `GET /account/limits` | Returns the owner's active workflow count and current upload limits. |
 | `POST /projects` | Creates owner-scoped metadata. |
 | `GET /projects` | Lists projects with an opaque cursor. |
 | `POST /uploads` | Reserves a recording and returns a conditional pre-signed PUT. |
@@ -35,6 +36,33 @@ select an AWS project, Region, bucket, table, index, or raw object path.
 | `POST /recordings/{recordingId}/restore` | Restores a recoverable recording. |
 | `DELETE /recordings/{recordingId}/permanent` | Purges all object versions after exact-ID confirmation. |
 
+`POST /uploads` requires `project_id`, `content_type`, Base64 `sha256`, and
+positive `content_length` within the configured upload limit. The returned
+PUT signature binds the byte length; browsers send `Content-Length` from the
+file body automatically, so it is omitted from `required_headers`.
+Confirmation checks the stored length again. The server derives `recording_id`
+from the authenticated user, project, and `idempotency_key`; clients should
+not send `recording_id`. A reservation retry with the same idempotency key and
+identical fields returns the existing recording. Reusing that key with a
+different recording ID or other input is rejected, so the frontend can safely
+retry a request without creating a second upload reservation.
+
+`GET /account/limits` returns `active_workflows`, `max_active_workflows`,
+`remaining_workflows`, `admission_enforced`, `max_audio_upload_bytes`,
+`max_audio_duration_seconds`, `abandoned_retention_days`, and
+`deleted_recovery_days`. The frontend can use these values to explain upload
+and processing limits. The server remains authoritative: a processing request
+that exceeds the active workflow limit returns HTTP 429 with
+`code: "ACTIVE_WORKFLOW_LIMIT"`, `retryable: true`, and `Retry-After: 60`.
+
+Recording responses expose `user_id`, `project_id`, `recording_id`, timestamps,
+`status`, `content_type`, and `revision`, plus `content_length`,
+`summary_metrics`, and `audio_prep_status` when available. A failed recording
+returns a generic `failure_reason`. S3 keys, artifact references, execution
+ARNs, Transcribe job names, and internal failure details are not part of the
+HTTP recording response. `POST /uploads` still returns the reserved object key
+and signed upload URL needed for that upload.
+
 Mutation bodies may include `expected_revision`. Omitting it makes the adapter
 use the current strong read; backend-to-backend callers should provide it when
 they already hold a record. Permanent deletion also requires
@@ -45,7 +73,8 @@ they already hold a record. Permanent deletion also requires
 The internal package exposes stable domain exceptions rooted at `PayloadError`.
 The HTTP adapter maps validation to 400, missing/cross-owner data to 404,
 idempotency/revision/state/integrity conflicts to 409, and unexpected AWS
-`ClientError` failures to 503. AWS error text is not returned to clients.
+`ClientError` failures to 503. Active workflow admission failures map to 429.
+AWS error text is not returned to clients.
 
 ## JSON payload example
 

@@ -25,24 +25,32 @@ class ExecutionAlreadyExists(Exception):
 class StepFunctions:
     def __init__(self):
         self.exceptions = types.SimpleNamespace(ExecutionAlreadyExists=ExecutionAlreadyExists)
-        self.calls, self.executions = [], set()
+        self.calls, self.executions = [], {}
         self.fail_once = self.ack_lost_once = False
         self.lock = threading.Lock()
 
     def start_execution(self, **kwargs):
         with self.lock:
             self.calls.append(kwargs)
-            key = (kwargs["name"], kwargs["input"])
+            key = kwargs["name"]
             if self.fail_once:
                 self.fail_once = False
                 raise RuntimeError("temporary start failure")
             if key in self.executions:
                 raise ExecutionAlreadyExists()
-            self.executions.add(key)
+            self.executions[key] = {
+                "executionArn": f"arn:aws:states:us-east-2:123:execution:test:{kwargs['name']}",
+                "stateMachineArn": "arn:aws:states:us-east-2:123:stateMachine:test",
+                "input": kwargs["input"],
+                "status": "RUNNING",
+            }
             if self.ack_lost_once:
                 self.ack_lost_once = False
                 raise RuntimeError("response lost after start")
-            return {"executionArn": f"arn:execution:{kwargs['name']}"}
+            return {"executionArn": self.executions[key]["executionArn"]}
+
+    def describe_execution(self, *, executionArn):
+        return next(value for value in self.executions.values() if value["executionArn"] == executionArn)
 
 
 class HashTable:
@@ -168,7 +176,7 @@ def test_failed_start_remains_retryable_with_same_execution_name(harness):
     with pytest.raises(RuntimeError): api._dispatch(event)
     assert store.get_recording("owner", "recording-1").execution_start_status == "PENDING"
     assert request(api, event)[0] == 202
-    assert [call["name"] for call in step.calls] == ["recording-1", "recording-1"]
+    assert step.calls[0]["name"] == step.calls[1]["name"]
 
 
 def test_lost_start_response_reconciles_completed_execution(harness):
@@ -177,6 +185,30 @@ def test_lost_start_response_reconciles_completed_execution(harness):
     with pytest.raises(RuntimeError): api._dispatch(event)
     assert request(api, event)[0] == 202 and len(step.executions) == 1
     assert store.get_recording("owner", "recording-1").execution_start_status == "STARTED"
+
+
+@pytest.mark.parametrize("terminal", ["FAILED", "TIMED_OUT", "ABORTED"])
+def test_lost_start_response_reconciles_failed_execution(harness, terminal):
+    api, store, step, _, event, _ = harness
+    step.ack_lost_once = True
+    with pytest.raises(RuntimeError):
+        api._dispatch(event)
+    next(iter(step.executions.values()))["status"] = terminal
+    status, body = request(api, event)
+    assert status == 200
+    assert body["status"] == "FAILED"
+    assert store.get_recording("owner", "recording-1").status is RecordingStatus.FAILED
+
+
+def test_lost_start_response_flags_incomplete_succeeded_execution(harness):
+    api, _, step, _, event, _ = harness
+    step.ack_lost_once = True
+    with pytest.raises(RuntimeError):
+        api._dispatch(event)
+    next(iter(step.executions.values()))["status"] = "SUCCEEDED"
+    status, body = request(api, event)
+    assert status == 409
+    assert "incomplete recording metadata" in body["message"]
 
 
 def test_terminal_state_does_not_retry_pending_start(harness):
@@ -201,6 +233,20 @@ def test_same_project_duplicate_is_rejected_and_distinct_project_is_allowed(harn
     assert request(api, event)[0] == 202 and len(step.executions) == 2
 
 
+def test_browser_recording_uses_the_same_process_route(harness):
+    api, store, step, _, event, _ = harness
+    item = store.recordings.items["recording-1"]
+    item["content_type"] = "audio/webm"
+    item["original_s3_key"] = item["audio_s3_key"] = (
+        "users/owner/projects/project-1/recordings/recording-1/original.webm"
+    )
+    status, _ = request(api, event)
+    assert status == 202
+    assert len(step.executions) == 1
+    payload = next(iter(step.executions.values()))["input"]
+    assert json.loads(payload)["audio_s3_key"].endswith("/original.webm")
+
+
 def test_concurrent_duplicate_claims_allow_one_execution(harness):
     api, store, step, _, event, checksum = harness
     store.recordings.items["recording-2"] = make_recording("recording-2", checksum=checksum).as_item()
@@ -214,3 +260,24 @@ def test_concurrent_duplicate_claims_allow_one_execution(harness):
     for thread in threads: thread.join(timeout=5)
     assert sorted(status for status, _ in results) == [202, 409]
     assert len(step.executions) == 1
+
+
+def test_execution_name_is_scoped_to_owner_project_and_recording(harness):
+    api, _, _, _, _, _ = harness
+    first = make_recording("same-id", "project-1")
+    other_owner = Recording(
+        "other-owner", "project-1", "same-id", "2026-01-01", "2026-01-01",
+        RecordingStatus.AWAITING_UPLOAD,
+    )
+    other_project = make_recording("same-id", "project-2")
+    assert len({api._execution_name(first), api._execution_name(other_owner), api._execution_name(other_project)}) == 3
+
+
+def test_processing_recording_cannot_be_deleted_while_workflow_runs(harness):
+    api, store, _, _, event, _ = harness
+    store.recordings.items["recording-1"]["status"] = RecordingStatus.PROCESSING.value
+    delete_event = copy.deepcopy(event)
+    delete_event["routeKey"] = "DELETE /recordings/{recordingId}"
+    response = api.handler(delete_event, None)
+    assert response["statusCode"] == 409
+    assert "cannot be deleted" in json.loads(response["body"])["message"]

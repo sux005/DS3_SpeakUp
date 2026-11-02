@@ -85,6 +85,8 @@ class UploadIntent:
     content_type: str
     expires_at: str
     upload_url: str
+    expected_content_length: int | None = None
+    max_content_length: int | None = None
     required_headers: tuple[tuple[str, str], ...] = ()
 
 
@@ -134,12 +136,23 @@ class Recording:
     status: RecordingStatus = RecordingStatus.AWAITING_UPLOAD
     content_type: str = "audio/wav"
     original_s3_key: str = ""
+    content_length: int | None = None
     schema_version: int = 1
     revision: int = 0
     payload_refs: Mapping[str, Any] = field(default_factory=dict)
     source_sha256: str | None = None
     execution_arn: str | None = None
     execution_start_status: str | None = None
+    transcription_job_name: str | None = None
+    raw_transcript_s3_key: str | None = None
+    summary_metrics: Mapping[str, Any] = field(default_factory=dict)
+    audio_prep_status: str | None = None
+    reference_audio_s3_key: str | None = None
+    enhanced_audio_s3_key: str | None = None
+    diagnostic_audio_s3_key: str | None = None
+    preprocess_report_s3_key: str | None = None
+    feedback_s3_key: str | None = None
+    failure_reason: str | None = None
 
     def as_item(self) -> dict[str, Any]:
         """Return a DynamoDB-compatible representation."""
@@ -158,12 +171,26 @@ class Recording:
             "revision": self.revision,
             "payload_refs": dict(self.payload_refs),
         }
+        if self.content_length is not None:
+            result["content_length"] = self.content_length
         if self.source_sha256:
             result["source_sha256"] = self.source_sha256
         if self.execution_arn:
             result["execution_arn"] = self.execution_arn
         if self.execution_start_status:
             result["execution_start_status"] = self.execution_start_status
+        if self.transcription_job_name:
+            result["transcription_job_name"] = self.transcription_job_name
+        if self.raw_transcript_s3_key:
+            result["raw_transcript_s3_key"] = self.raw_transcript_s3_key
+        if self.summary_metrics:
+            result["summary_metrics"] = dict(self.summary_metrics)
+        for name in ("audio_prep_status", "reference_audio_s3_key", "enhanced_audio_s3_key",
+                     "diagnostic_audio_s3_key", "preprocess_report_s3_key",
+                     "feedback_s3_key", "failure_reason"):
+            value = getattr(self, name)
+            if value:
+                result[name] = value
         return result
 
     @classmethod
@@ -181,6 +208,11 @@ class Recording:
             updated_at=str(item.get("updated_at", item.get("created_at", ""))),
             status=RecordingStatus(raw_status),
             content_type=str(item.get("content_type", "audio/wav")),
+            content_length=(
+                int(item["content_length"])
+                if item.get("content_length") is not None
+                else None
+            ),
             original_s3_key=str(
                 item.get("original_s3_key", item.get("audio_s3_key", ""))
             ),
@@ -190,4 +222,14 @@ class Recording:
             source_sha256=item.get("source_sha256"),
             execution_arn=item.get("execution_arn"),
             execution_start_status=item.get("execution_start_status"),
+            transcription_job_name=item.get("transcription_job_name"),
+            raw_transcript_s3_key=item.get("raw_transcript_s3_key"),
+            summary_metrics=item.get("summary_metrics", {}),
+            audio_prep_status=item.get("audio_prep_status"),
+            reference_audio_s3_key=item.get("reference_audio_s3_key"),
+            enhanced_audio_s3_key=item.get("enhanced_audio_s3_key"),
+            diagnostic_audio_s3_key=item.get("diagnostic_audio_s3_key"),
+            preprocess_report_s3_key=item.get("preprocess_report_s3_key"),
+            feedback_s3_key=item.get("feedback_s3_key"),
+            failure_reason=item.get("failure_reason"),
         )

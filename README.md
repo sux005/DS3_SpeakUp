@@ -115,6 +115,9 @@ For local QA with the private `data/raw/SPEAKUP 1.mp4` through `SPEAKUP 6.mp4`
 recordings, run `python scripts/run_real_audio_qa.py`. The command writes one
 ignored `results/real_audio_qa/<clip>/` directory per source file. Each
 `report.json` records the source filename and SHA-256 of the exact input bytes.
+The runner skips identical source bytes within a batch and reuses a prior
+result only when its report matches the source and processing configuration and
+all expected artifacts exist. Changed inputs or incomplete outputs are rerun.
 The six-file end-to-end test below checks the same source files using temporary
 outputs. Generated QA artifacts remain ignored by Git.
 

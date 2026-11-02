@@ -3,8 +3,9 @@
 `speakup.yaml` defines the development backend in CloudFormation:
 
 - private, encrypted, versioned S3 storage with HTTPS-only access
-- three on-demand DynamoDB tables (`projects`, `recordings`, and
-  `recording-hashes`) with an owner-scoped recording-list GSI
+- four on-demand DynamoDB tables (`projects`, `recordings`,
+  `recording-hashes`, and `workflow-admissions`) with owner-scoped list and
+  sparse maintenance GSIs
 - a Cognito email user pool and public SPA client
 - an API Gateway HTTP API with Cognito JWT authorization
 - Lambda handlers for metadata, pre-signed uploads, and audio processing
@@ -38,6 +39,7 @@ real production frontend origin before deploying a production stack.
 `GET /health` is public. All other routes require a Cognito JWT:
 
 - `POST /projects`
+- `GET /account/limits`
 - `GET /projects`
 - `POST /uploads`
 - `GET /projects/{projectId}/recordings`
@@ -49,10 +51,13 @@ real production frontend origin before deploying a production stack.
 - `POST /recordings/{recordingId}/restore`
 - `DELETE /recordings/{recordingId}/permanent`
 
-`POST /uploads` requires `project_id`, `content_type`, and `sha256` (the Base64
-SHA-256 digest of the original file). It returns a 15-minute S3 pre-signed URL
-for WAV, MP3, or M4A audio. The browser sends every returned `required_headers`
-with its PUT request; S3 verifies the signed checksum. For example:
+`POST /uploads` requires `project_id`, `content_type`, `content_length`, and
+`sha256` (the Base64 SHA-256 digest of the original file). It returns a 15-minute S3 pre-signed URL
+for WAV, MP3, M4A, WebM, or Ogg audio. The browser sends every returned `required_headers`
+with its PUT request; S3 verifies the signed checksum.
+
+The browser sets the signed `Content-Length` from the `File` body; do not add it
+to request headers manually. For example:
 
 ```js
 const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
@@ -60,6 +65,7 @@ const sha256 = btoa(String.fromCharCode(...new Uint8Array(digest)));
 const upload = await api.post("/uploads", {
   project_id: projectId,
   content_type: file.type,
+  content_length: file.size,
   sha256,
 });
 await fetch(upload.upload_url, {
@@ -106,17 +112,15 @@ ways to create an original recording. This is a planned interface contract;
   then follow the same signed S3 PUT, `confirm-upload`, `process`, and
   status-polling sequence above. Do not relabel a browser-generated blob as WAV
   merely to pass validation.
-- **Browser recording format gap:** `MediaRecorder` chooses from formats the
-  browser supports; it does not guarantee WAV or MP3. The current backend
-  accepts `audio/wav`, `audio/x-wav`, `audio/mpeg`, `audio/mp4`, and
-  `audio/x-m4a`, but rejects common browser recording types such as WebM or
-  Ogg. Before enabling Record, use `MediaRecorder.isTypeSupported()` to select
-  a format, normalize any codec parameters to an approved upload content type,
-  and extend the backend allowlist, key extension rules, decoder tests, and
-  upload confirmation for the chosen browser formats. Preserve that
-  browser-generated file as the original; preprocessing produces separate WAV
-  artifacts. Do not assume a container is safe or decodable from its MIME
-  label alone.
+- **Browser recording format:** `MediaRecorder` chooses from formats the
+  browser supports; it does not guarantee WAV or MP3. The backend accepts
+  `audio/webm` and `audio/ogg` in addition to WAV, MP3, and M4A. Before
+  enabling Record, use `MediaRecorder.isTypeSupported()` to select a supported
+  format and send its approved base content type (`audio/webm`, `audio/ogg`, or
+  `audio/mp4`) consistently in the reservation and signed PUT. The backend
+  stores the original container, then decodes it and writes separate WAV
+  artifacts for the same Transcribe/analysis workflow used by uploaded files.
+  An allowed MIME label alone does not prove the bytes are decodable audio.
 - **Download original:** After either source is submitted, an authenticated
   user can request `GET /recordings/{recordingId}/download`. The API reads the
   recording under the JWT owner's ID and returns a short-lived, version-pinned
@@ -124,11 +128,11 @@ ways to create an original recording. This is a planned interface contract;
   Download original action. A bare S3 key does not grant access. Do not log or
   persist the signed URL; someone holding it can use it until it expires.
 
-Add tests for both input paths, the selected browser formats, invalid or
+Add frontend tests for both input paths, the selected browser formats, invalid or
 oversized audio, denied microphone permission, cancelled recordings, original
-download, and cross-owner download denial. The browser recording controls and
-MIME support are future work; the signed upload and original-download backend
-routes already exist.
+download, and cross-owner download denial. The browser recording controls are
+future work; signed upload, browser-audio MIME support, and
+original-download backend routes already exist.
 
 ## Proposed upload-to-audio-preparation workflow
 
@@ -151,7 +155,7 @@ Frontend ──GET download──> API Lambda ──signed GET──> original i
 ```
 
 1. **Reserve and upload.** An authenticated client sends the project ID,
-   content type, and Base64 SHA-256 of the file to `POST /uploads`. The API uses
+   content type, byte length, and Base64 SHA-256 of the file to `POST /uploads`. The API uses
    the Cognito `sub` as owner, creates an `AWAITING_UPLOAD` recording, and returns
    a short-lived pre-signed PUT for one server-generated key. The client sends
    every returned `required_headers` value with the file. It never chooses a
@@ -160,8 +164,8 @@ Frontend ──GET download──> API Lambda ──signed GET──> original i
 2. **Confirm the object.** After S3 accepts the PUT, the client calls
    `confirm-upload`. The API checks that the original exists at the reserved
    key and matches its content type and checksum before changing the recording
-   to `UPLOADED`. Add the expected byte length to the reservation and verify it
-   here as well. A matching checksum does not establish that the file is valid
+   to `UPLOADED`. It rejects a zero-byte, oversized, or length-mismatched object.
+   A matching checksum does not establish that the file is valid
    audio; the preparation worker checks decoding, duration, and channel limits.
 3. **Start one workflow.** The client calls `POST /recordings/{id}/process`. The
    API atomically reserves the source checksum, changes `UPLOADED` to
@@ -211,11 +215,47 @@ zip artifacts before uploading deployment objects:
 python scripts/build_lambda_packages.py
 ```
 
-The command writes `build/lambda/api.zip`, `processor.zip`, and
-`workflow_failure.zip`. Upload them under immutable `deployments/` keys in the
-private deployment bucket and pass those keys to the matching template
-parameters. The audio-preparation worker remains an image because of its native
-dependencies.
+The command writes `build/lambda/api.zip`, `processor.zip`,
+`workflow_failure.zip`, and `maintenance.zip` (built from the `retention_cleanup` handler). Upload each archive as a new versioned object under an
+immutable `deployments/` key in the private deployment bucket. Pass both the
+matching key and its S3 object version to `ApiCodeS3Key`/`ApiCodeS3Version`,
+`ProcessorCodeS3Key`/`ProcessorCodeS3Version`, and
+`FailureCodeS3Key`/`FailureCodeS3Version`. CloudFormation then updates Lambda
+code when the object version changes, even when the key stays the same. Pass
+`MaintenanceCodeS3Key`/`MaintenanceCodeS3Version` for the scheduled cleanup
+worker.
+Pass `AlarmTopicArn` for operational notifications; leaving it empty keeps alarms
+visible in CloudWatch without sending notifications. The audio-preparation
+worker remains an image because of its native dependencies.
+
+## Maintenance and admission migration
+
+The new `MaintenanceDueIndex` and admissions table need a one-time backfill for
+legacy recordings. Keep `EnforceWorkflowAdmissions=false` and recovery
+discovery in `dual` mode until the backfill is complete. The command processes
+one bounded page per invocation and stores a resume cursor in the existing
+recovery cursor table; repeat `--apply` until the cursor is cleared and a
+verification pass reports no missing active memberships or maintenance keys.
+
+```powershell
+python scripts/backfill_maintenance_index.py `
+  --recordings-table speakup-dev-recordings `
+  --admissions-table speakup-dev-workflow-admissions `
+  --cursor-table speakup-dev-workflow-reconcile-cursors `
+  --profile speakup-dev --region us-east-2
+
+python scripts/backfill_maintenance_index.py `
+  --recordings-table speakup-dev-recordings `
+  --admissions-table speakup-dev-workflow-admissions `
+  --cursor-table speakup-dev-workflow-reconcile-cursors `
+  --profile speakup-dev --region us-east-2 --apply
+```
+
+The dry run does not advance the cursor. Inspect any conflicts before retrying
+them, enable `EnforceWorkflowAdmissions=true` only after an independent audit
+of legacy active rows, and switch discovery to index-only after the sparse
+index contains all due rows. No migration or deployment is run as part of the
+local backend checks.
 
 ## Owner-index migration
 
@@ -260,10 +300,14 @@ docker buildx build --platform linux/arm64 `
   -t "${repositoryUri}:1.1.0" --push .
 ```
 
-Pass the resulting full image URI as the main stack's `AudioPrepImageUri`
-parameter. The worker writes versioned artifacts under each recording's
-`preprocess/1.1.0/` prefix and reuses them when the original ETag and configuration
-fingerprint match. Version 1.1.0 stores the conditioned reference, model-only
+Resolve the pushed image digest with `aws ecr describe-images`, then pass
+`${repositoryUri}@sha256:<digest>` as the main stack's `AudioPrepImageUri`
+parameter. The stack requires a digest-addressed image. The worker writes
+versioned artifacts under each recording's
+`artifacts/audio-prep/<pipeline-version>-<image-identity-hash>/` prefix and reuses
+them when the original ETag and configuration fingerprint match. The digest URI
+is hashed into the artifact version.
+Version 1.1.0 stores the conditioned reference, model-only
 candidate, conservative dry/wet blend, selected diagnostic signal, and quality report.
 
 ## Cost and privacy notes
@@ -291,6 +335,13 @@ Run from the repository root:
 ```powershell
 aws cloudformation validate-template --template-body file://infra/speakup.yaml --profile speakup-dev --region us-east-2
 ```
+
+After deployment, run the opt-in API checkpoints with `SPEAKUP_LIVE_API=1`,
+`SPEAKUP_E2E_API_URL`, and `SPEAKUP_E2E_JWT` set. The checkpoint test in
+`tests/test_live_backend_e2e.py` creates a QA project, signs and uploads a
+synthetic WAV, confirms its size and checksum, lists the recording, and downloads
+the original. The separate `SPEAKUP_LIVE_E2E=1` workflow test needs
+`SPEAKUP_E2E_WAV_PATH` with non-private speech and working Transcribe access.
 
 CloudFormation service validation also runs when the stack change set is created.
 Use `cfn-lint` locally. `cfn-guard` remains a recommended CI addition; until it
