@@ -11,6 +11,7 @@ from typing import Any, BinaryIO, Mapping
 import uuid
 
 from src.aws_payload.config import PayloadConfig
+from src.aws_payload.checksum import sha256_base64_to_hex
 from src.aws_payload.errors import OwnershipViolationError, PayloadValidationError
 from src.aws_payload.factory import AwsClientFactory
 from src.aws_payload.keys import artifact_key, require_owned_key, validate_identifier
@@ -67,6 +68,41 @@ class SpeakUpPayloadStore:
             enforce_admission_limit=config.enforce_workflow_admissions,
         )
         self.objects = objects or S3PayloadStore(config, self.factory.s3_client)
+
+    def _delete_recording_hash_claim(self, recording: Mapping[str, Any]) -> None:
+        """Delete only the checksum claim that still names this recording."""
+
+        factory = getattr(self, "factory", None)
+        table = getattr(factory, "recording_hashes_table", None)
+        source_sha256 = recording.get("source_sha256")
+        project_id = recording.get("project_id")
+        user_id = recording.get("user_id")
+        recording_id = recording.get("recording_id")
+        digest = sha256_base64_to_hex(source_sha256)
+        if table is None or not all(
+            isinstance(value, str) and value
+            for value in (digest, project_id, user_id, recording_id)
+        ):
+            return
+        conditional_error = getattr(
+            getattr(getattr(table, "meta", None), "client", None),
+            "exceptions",
+            None,
+        )
+        conditional_error = getattr(
+            conditional_error, "ConditionalCheckFailedException", None
+        )
+        try:
+            table.delete_item(
+                Key={"user_id": user_id, "project_hash": f"{project_id}#{digest}"},
+                ConditionExpression="recording_id = :recording_id",
+                ExpressionAttributeValues={":recording_id": recording_id},
+            )
+        except Exception as error:
+            if conditional_error is not None and isinstance(error, conditional_error):
+                # The claim is absent or already belongs to a replacement recording.
+                return
+            raise
 
     @classmethod
     def from_environment(cls) -> "SpeakUpPayloadStore":
@@ -492,6 +528,7 @@ class SpeakUpPayloadStore:
         deleted = self.objects.purge_recording(
             user_id, str(current["project_id"]), recording_id
         )
+        self._delete_recording_hash_claim(staged)
         self.recordings.finalize_permanent_delete(
             user_id,
             recording_id,
@@ -551,6 +588,7 @@ class SpeakUpPayloadStore:
         deleted = self.objects.purge_recording(
             user_id, str(staged["project_id"]), recording_id
         )
+        self._delete_recording_hash_claim(staged)
         self.recordings.finalize_permanent_delete(
             user_id,
             recording_id,

@@ -50,6 +50,7 @@ def test_retention_cleanup_stages_directly_before_purge(status, updated_at, reco
     store = SimpleNamespace(
         config=SimpleNamespace(abandoned_retention_days=7),
         recordings=recordings, objects=objects,
+        _delete_recording_hash_claim=lambda recording: None,
     )
     result = SpeakUpPayloadStore.cleanup_expired_recording(
         store, "user-1", "recording-1",
@@ -57,6 +58,97 @@ def test_retention_cleanup_stages_directly_before_purge(status, updated_at, reco
     )
     assert result == 2
     assert calls == (["purge", "finalize"] if status == "PURGE_PENDING" else ["stage", "purge", "finalize"])
+
+
+def _recording_with_source_hash(recording_id="recording-1"):
+    import base64
+    import hashlib
+
+    return {
+        "user_id": "user-1",
+        "project_id": "project-1",
+        "recording_id": recording_id,
+        "source_sha256": base64.b64encode(hashlib.sha256(b"audio").digest()).decode("ascii"),
+    }
+
+
+def test_hash_claim_cleanup_uses_conditional_recording_match():
+    from src.aws_payload.service import SpeakUpPayloadStore
+
+    calls = []
+    table = SimpleNamespace(
+        meta=SimpleNamespace(client=SimpleNamespace(exceptions=SimpleNamespace())),
+        delete_item=lambda **kwargs: calls.append(kwargs),
+    )
+    store = SimpleNamespace(factory=SimpleNamespace(recording_hashes_table=table))
+
+    SpeakUpPayloadStore._delete_recording_hash_claim(store, _recording_with_source_hash())
+
+    assert calls[0]["Key"]["user_id"] == "user-1"
+    assert calls[0]["Key"]["project_hash"].startswith("project-1#")
+    assert calls[0]["ConditionExpression"] == "recording_id = :recording_id"
+    assert calls[0]["ExpressionAttributeValues"] == {":recording_id": "recording-1"}
+
+
+def test_hash_claim_cleanup_ignores_absent_or_replaced_claim():
+    from src.aws_payload.service import SpeakUpPayloadStore
+
+    class ConditionalCheckFailed(Exception):
+        pass
+
+    table = SimpleNamespace(
+        meta=SimpleNamespace(
+            client=SimpleNamespace(
+                exceptions=SimpleNamespace(
+                    ConditionalCheckFailedException=ConditionalCheckFailed
+                )
+            )
+        ),
+        delete_item=lambda **kwargs: (_ for _ in ()).throw(ConditionalCheckFailed()),
+    )
+    store = SimpleNamespace(factory=SimpleNamespace(recording_hashes_table=table))
+
+    SpeakUpPayloadStore._delete_recording_hash_claim(store, _recording_with_source_hash())
+
+
+def test_cleanup_keeps_pending_metadata_when_hash_claim_delete_fails():
+    from src.aws_payload.service import SpeakUpPayloadStore
+
+    current = {
+        **_recording_with_source_hash(),
+        "status": "FAILED",
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z",
+        "revision": 4,
+    }
+    calls = []
+    recordings = SimpleNamespace(
+        get=lambda *args, **kwargs: current,
+        stage_retention_purge=lambda *args, **kwargs: (
+            calls.append("stage") or {**current, "status": "PURGE_PENDING", "revision": 5}
+        ),
+        finalize_permanent_delete=lambda *args, **kwargs: calls.append("finalize"),
+    )
+    objects = SimpleNamespace(purge_recording=lambda *args: calls.append("purge") or 1)
+    table = SimpleNamespace(
+        meta=SimpleNamespace(client=SimpleNamespace(exceptions=SimpleNamespace())),
+        delete_item=lambda **kwargs: (_ for _ in ()).throw(RuntimeError("DynamoDB unavailable")),
+    )
+    store = SimpleNamespace(
+        config=SimpleNamespace(abandoned_retention_days=7),
+        recordings=recordings,
+        objects=objects,
+        factory=SimpleNamespace(recording_hashes_table=table),
+    )
+    store._delete_recording_hash_claim = lambda recording: SpeakUpPayloadStore._delete_recording_hash_claim(store, recording)
+
+    with pytest.raises(RuntimeError, match="DynamoDB unavailable"):
+        SpeakUpPayloadStore.cleanup_expired_recording(
+            store, "user-1", "recording-1",
+            now=datetime(2026, 2, 10, tzinfo=timezone.utc),
+        )
+
+    assert calls == ["stage", "purge"]
 
 
 def test_internal_upload_reservation_rejects_client_chosen_recording_id():

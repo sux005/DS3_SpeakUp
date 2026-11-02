@@ -73,3 +73,10 @@ class AwsClientFactory:
 
         name = self.config.workflow_admissions_table
         return self.dynamodb_resource.Table(name) if name else None
+
+    @cached_property
+    def recording_hashes_table(self) -> Any | None:
+        """Return the checksum-claim table when configured."""
+
+        name = self.config.recording_hashes_table
+        return self.dynamodb_resource.Table(name) if name else None

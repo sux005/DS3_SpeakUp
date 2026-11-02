@@ -1,4 +1,7 @@
 from types import SimpleNamespace
+from datetime import datetime, timezone
+
+import pytest
 
 from scripts.backfill_maintenance_index import CURSOR_ID, backfill
 from src.aws_payload.repositories import maintenance_values
@@ -71,6 +74,59 @@ def test_dry_run_reports_work_without_writes():
     assert cursor.writes == []
 
 
+def test_dry_run_reads_all_scan_pages_without_advancing_cursor():
+    class PagedTable(Table):
+        def __init__(self):
+            super().__init__([])
+            self.pages = [
+                ([row(recording_id="first")], {"recording_id": "first"}),
+                ([row(recording_id="second")], None),
+            ]
+
+        def scan(self, **kwargs):
+            items, last_key = self.pages.pop(0)
+            return {"Items": items, **({"LastEvaluatedKey": last_key} if last_key else {})}
+
+    recordings = PagedTable()
+    cursor = Cursor()
+    result = backfill(recordings, Admissions([]), cursor, apply=False)
+    assert result.scanned == 2
+    assert cursor.writes == []
+    assert cursor.deletes == []
+
+
+def test_dry_run_ignores_apply_cursor_and_starts_at_table_beginning():
+    class CursorAwareTable(Table):
+        def __init__(self):
+            super().__init__([row()])
+            self.exclusive_keys = []
+
+        def scan(self, **kwargs):
+            self.exclusive_keys.append(kwargs.get("ExclusiveStartKey"))
+            return {"Items": self.items}
+
+    recordings = CursorAwareTable()
+    cursor = Cursor({"cursor_id": CURSOR_ID, "last_key": {"recording_id": "later"}})
+    backfill(recordings, Admissions([]), cursor, apply=False)
+    assert recordings.exclusive_keys == [None]
+
+
+def test_dry_run_rejects_non_advancing_scan_cursor():
+    class StuckTable(Table):
+        def __init__(self):
+            super().__init__([row()])
+            self.scan_count = 0
+
+        def scan(self, **kwargs):
+            self.scan_count += 1
+            return {"Items": self.items, "LastEvaluatedKey": {"recording_id": "same"}}
+
+    recordings = StuckTable()
+    with pytest.raises(RuntimeError, match="cursor did not advance"):
+        backfill(recordings, Admissions([]), Cursor(), apply=False)
+    assert recordings.scan_count == 2
+
+
 def test_apply_writes_maintenance_admission_and_cursor():
     recordings = Table([row()], last_key={"user_id": "user-1", "recording_id": "recording-1"})
     admissions = Admissions([])
@@ -125,9 +181,24 @@ def test_legacy_cleanup_due_includes_migration_grace_period():
     assert result.indexed == 1
     # The derived key is visible in dry-run only through the shared calculation;
     # verify the implementation's write shape with a matching apply run.
-    backfill(recordings, Admissions([]), Cursor(), apply=True, legacy_cleanup_grace_hours=24)
+    backfill(
+        recordings, Admissions([]), Cursor(), apply=True,
+        legacy_cleanup_grace_hours=24,
+        migration_started_at=datetime(2026, 1, 8, tzinfo=timezone.utc),
+    )
     due = recordings.writes[0]["ExpressionAttributeValues"][":due"]
     assert due.startswith("2026-01-09T00:00:00")
+
+
+def test_very_old_cleanup_due_is_anchored_to_migration_time():
+    recordings = Table([row(status="FAILED")])
+    backfill(
+        recordings, Admissions([]), Cursor(), apply=True,
+        legacy_cleanup_grace_hours=24,
+        migration_started_at=datetime(2026, 11, 1, tzinfo=timezone.utc),
+    )
+    due = recordings.writes[0]["ExpressionAttributeValues"][":due"]
+    assert due.startswith("2026-11-02T00:00:00")
 
 
 def test_active_backfill_uses_status_and_revision_conditions():

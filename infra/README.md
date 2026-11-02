@@ -232,10 +232,14 @@ worker remains an image because of its native dependencies.
 
 The new `MaintenanceDueIndex` and admissions table need a one-time backfill for
 legacy recordings. Keep `EnforceWorkflowAdmissions=false` and recovery
-discovery in `dual` mode until the backfill is complete. The command processes
-one bounded page per invocation and stores a resume cursor in the existing
-recovery cursor table; repeat `--apply` until the cursor is cleared and a
-verification pass reports no missing active memberships or maintenance keys.
+discovery in `dual` mode until the backfill is complete. A dry run scans every
+recordings-table page without writing a cursor or changing any item, so its
+totals cover the full table. An `--apply` run changes one bounded page and
+stores a resume cursor in the existing recovery cursor table; repeat `--apply`
+until the cursor is cleared and a verification pass reports no missing active
+memberships or maintenance keys. Legacy abandoned-record cleanup is anchored
+to the migration start time plus the configured grace period, so old rows are
+not immediately purged by the first maintenance run.
 
 ```powershell
 python scripts/backfill_maintenance_index.py `
@@ -251,8 +255,8 @@ python scripts/backfill_maintenance_index.py `
   --profile speakup-dev --region us-east-2 --apply
 ```
 
-The dry run does not advance the cursor. Inspect any conflicts before retrying
-them, enable `EnforceWorkflowAdmissions=true` only after an independent audit
+The dry run does not advance the cursor. Inspect its full-table totals and any
+conflicts before applying changes. Enable `EnforceWorkflowAdmissions=true` only after an independent audit
 of legacy active rows, and switch discovery to index-only after the sparse
 index contains all due rows. No migration or deployment is run as part of the
 local backend checks.

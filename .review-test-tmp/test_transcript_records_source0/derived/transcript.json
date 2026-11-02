@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "source": {
+    "file": "sample.mp4",
+    "sha256": "2d8a4427a0c4eecffa201cf8c7af2c89b72f77b017258a5c075fc79b9d96aa05",
+    "duration_seconds": 1.2
+  },
+  "engine": {
+    "name": "faster-whisper",
+    "version": "1.2.1",
+    "model": "small.en",
+    "language": "en"
+  },
+  "full_text": "Hello world.",
+  "segments": [
+    {
+      "start": 0.2,
+      "end": 1.0,
+      "text": "Hello world.",
+      "words": [
+        {
+          "start": 0.2,
+          "end": 0.6,
+          "text": "Hello",
+          "probability": 0.95
+        },
+        {
+          "start": 0.6,
+          "end": 1.0,
+          "text": "world.",
+          "probability": 0.9
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}

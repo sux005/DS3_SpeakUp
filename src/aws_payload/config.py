@@ -84,6 +84,7 @@ class PayloadConfig:
     read_timeout_seconds: int = 60
     sdk_total_max_attempts: int = 3
     sdk_max_pool_connections: int = 10
+    recording_hashes_table: str | None = None
 
     def __post_init__(self) -> None:
         """Reject invalid resource identifiers and unbounded settings."""
@@ -103,6 +104,10 @@ class PayloadConfig:
             self.workflow_admissions_table
         ):
             raise PayloadConfigurationError("workflow_admissions_table is not a valid DynamoDB name")
+        if self.recording_hashes_table is not None and not _DYNAMODB_NAME.fullmatch(
+            self.recording_hashes_table
+        ):
+            raise PayloadConfigurationError("recording_hashes_table is not a valid DynamoDB name")
         bounds = (
             ("upload_url_ttl_seconds", self.upload_url_ttl_seconds, 60, 3600),
             ("recovery_days", self.recovery_days, 1, 365),
@@ -170,6 +175,7 @@ class PayloadConfig:
             data_bucket=_required(values, "DATA_BUCKET"),
             projects_table=_required(values, "PROJECTS_TABLE"),
             recordings_table=_required(values, "RECORDINGS_TABLE"),
+            recording_hashes_table=(values.get("RECORDING_HASHES_TABLE") or None),
             workflow_admissions_table=(values.get("WORKFLOW_ADMISSIONS_TABLE") or None),
             max_active_workflows=_integer(values, "MAX_ACTIVE_WORKFLOWS", 3, 1, 100),
             enforce_workflow_admissions=_boolean(

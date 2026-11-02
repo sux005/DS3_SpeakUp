@@ -45,6 +45,7 @@ def _valid_item(item: dict[str, Any]) -> bool:
 def _maintenance_values(
     item: dict[str, Any], *, recovery_days: int, stale_minutes: int,
     legacy_cleanup_grace_hours: int,
+    migration_started_at: datetime,
 ) -> dict[str, str]:
     values = maintenance_values(
         str(item["user_id"]),
@@ -58,10 +59,11 @@ def _maintenance_values(
     if (
         values
         and item["status"] in {"AWAITING_UPLOAD", "FAILED"}
-        and legacy_cleanup_grace_hours
     ):
         due, separator, suffix = values["maintenance_due_at_recording_id"].partition("#RECORDING#")
-        grace_due = datetime.fromisoformat(due.replace("Z", "+00:00")) + timedelta(hours=legacy_cleanup_grace_hours)
+        natural_due = datetime.fromisoformat(due.replace("Z", "+00:00"))
+        migration_due = migration_started_at + timedelta(hours=legacy_cleanup_grace_hours)
+        grace_due = max(natural_due, migration_due)
         values["maintenance_due_at_recording_id"] = (
             grace_due.isoformat(timespec="milliseconds").replace("+00:00", "Z")
             + separator + suffix
@@ -140,14 +142,37 @@ def backfill(
     recovery_days: int = 7,
     stale_minutes: int = 30,
     legacy_cleanup_grace_hours: int = 24,
+    migration_started_at: datetime | None = None,
 ) -> BackfillResult:
-    """Backfill one page per call; cursor state persists across invocations."""
+    """Backfill one page when applying, or audit every page in dry-run mode."""
 
     result = BackfillResult()
+    migration_clock = migration_started_at or datetime.now(timezone.utc)
+    if migration_clock.tzinfo is None:
+        migration_clock = migration_clock.replace(tzinfo=timezone.utc)
+    else:
+        migration_clock = migration_clock.astimezone(timezone.utc)
     cursor_item = cursor_table.get_item(Key={"cursor_id": CURSOR_ID}).get("Item") or {}
-    start_key = cursor_item.get("last_key") if isinstance(cursor_item.get("last_key"), dict) else None
-    items, last_key = _scan_page(recordings, page_size, start_key)
-    for item in items:
+    start_key = (
+        cursor_item.get("last_key")
+        if apply and isinstance(cursor_item.get("last_key"), dict)
+        else None
+    )
+    scan_state: dict[str, Any] = {"last_key": None}
+
+    def iter_items():
+        page_start = start_key
+        while True:
+            items, page_last_key = _scan_page(recordings, page_size, page_start)
+            if not apply and page_last_key and page_last_key == page_start:
+                raise RuntimeError("maintenance backfill scan cursor did not advance")
+            scan_state["last_key"] = page_last_key
+            yield from items
+            if apply or not page_last_key:
+                return
+            page_start = page_last_key
+
+    for item in iter_items():
         result.scanned += 1
         if not _valid_item(item):
             result.skipped_invalid += 1
@@ -155,6 +180,7 @@ def backfill(
         values = _maintenance_values(
             item, recovery_days=recovery_days, stale_minutes=stale_minutes,
             legacy_cleanup_grace_hours=legacy_cleanup_grace_hours,
+            migration_started_at=migration_clock,
         )
         current = (item.get("maintenance_partition"), item.get("maintenance_due_at_recording_id"))
         expected = (values.get("maintenance_partition"), values.get("maintenance_due_at_recording_id"))
@@ -201,6 +227,7 @@ def backfill(
             except recordings.meta.client.exceptions.ConditionalCheckFailedException:
                 result.conflicts += 1
                 continue
+    last_key = scan_state["last_key"]
     if apply:
         if last_key:
             cursor_table.put_item(Item={"cursor_id": CURSOR_ID, "last_key": last_key})
@@ -219,7 +246,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--page-size", type=int, default=100, choices=range(1, 1001))
     parser.add_argument("--recovery-days", type=int, default=7, choices=range(1, 31))
     parser.add_argument("--stale-minutes", type=int, default=30, choices=range(1, 1441))
-    parser.add_argument("--legacy-cleanup-grace-hours", type=int, default=24, choices=range(0, 169))
+    parser.add_argument("--legacy-cleanup-grace-hours", type=int, default=24, choices=range(1, 169))
     parser.add_argument("--apply", action="store_true")
     return parser
 
@@ -245,6 +272,7 @@ def main() -> int:
             recovery_days=args.recovery_days,
             stale_minutes=args.stale_minutes,
             legacy_cleanup_grace_hours=args.legacy_cleanup_grace_hours,
+            migration_started_at=datetime.now(timezone.utc),
         )
     except ClientError as error:
         print(f"Backfill failed: {error}", file=sys.stderr)

@@ -599,6 +599,9 @@ Resources:
                 Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:UpdateItem, dynamodb:DeleteItem]
                 Resource: [!GetAtt RecordingsTable.Arn, !Sub '${RecordingsTable.Arn}/index/MaintenanceDueIndex']
               - Effect: Allow
+                Action: [dynamodb:DeleteItem]
+                Resource: !GetAtt RecordingHashesTable.Arn
+              - Effect: Allow
                 Action: [dynamodb:GetItem, dynamodb:PutItem]
                 Resource: !GetAtt WorkflowReconcileCursorTable.Arn
               - Effect: Allow
@@ -669,6 +672,7 @@ Resources:
           DATA_BUCKET: !Ref DataBucket
           PROJECTS_TABLE: !Ref ProjectsTable
           RECORDINGS_TABLE: !Ref RecordingsTable
+          RECORDING_HASHES_TABLE: !Ref RecordingHashesTable
           WORKFLOW_ADMISSIONS_TABLE: !Ref WorkflowAdmissionsTable
           MAX_ACTIVE_WORKFLOWS: !Ref MaxActiveWorkflows
           ENFORCE_WORKFLOW_ADMISSIONS: !Ref EnforceWorkflowAdmissions
@@ -770,6 +774,7 @@ Resources:
           DATA_BUCKET: !Ref DataBucket
           PROJECTS_TABLE: !Ref ProjectsTable
           RECORDINGS_TABLE: !Ref RecordingsTable
+          RECORDING_HASHES_TABLE: !Ref RecordingHashesTable
           RECONCILE_CURSOR_TABLE: !Ref WorkflowReconcileCursorTable
           OWNER_PROJECT_INDEX: OwnerProjectCreatedAtIndex
           MAINTENANCE_INDEX_NAME: MaintenanceDueIndex

@@ -1,0 +1,14 @@
+{
+  "source_file": "sample.mp4",
+  "source_sha256": "abc",
+  "review_status": "pending",
+  "text": "hello",
+  "automatic_segments": [
+    {
+      "start": 0.0,
+      "end": 0.5,
+      "text": "hello",
+      "words": []
+    }
+  ]
+}
