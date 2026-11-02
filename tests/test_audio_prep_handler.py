@@ -382,4 +382,3 @@ def test_partial_artifact_upload_propagates_failure_without_marking_recording_co
     with pytest.raises(RuntimeError, match="S3 unavailable"):
         audio_prep.handler(event(), None)
     assert uploaded == ["reference", "enhanced_model"]
-

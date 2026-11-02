@@ -546,4 +546,3 @@ def test_running_due_workflow_is_rescheduled_after_marker_processing(monkeypatch
         "maintenance_due_at_recording_id": old_key,
     }) == 0
     assert updates and updates[0]["ExpressionAttributeValues"][":old_due"] == old_key
-

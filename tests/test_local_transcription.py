@@ -122,5 +122,3 @@ def test_review_template_starts_pending_and_cannot_be_overwritten(tmp_path: Path
 def test_word_error_rate_rejects_empty_reference() -> None:
     with pytest.raises(ValueError, match="empty"):
         word_error_rate("", "some words")
-
-
