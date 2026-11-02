@@ -24,3 +24,10 @@ def test_failure_package_contains_payload_store(tmp_path):
     with zipfile.ZipFile(failure_package) as archive:
         names = set(archive.namelist())
     assert "src/aws_payload/service.py" in names
+
+
+def test_processor_package_contains_rubric(tmp_path):
+    packages = build_all(tmp_path)
+    processor_package = next(path for path in packages if path.name == "processor.zip")
+    with zipfile.ZipFile(processor_package) as archive:
+        assert "src/scoring/rubric.py" in archive.namelist()

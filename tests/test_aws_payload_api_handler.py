@@ -263,3 +263,25 @@ def test_public_metrics_are_json_numbers():
     )
     body = json.loads(module.reply(200, module._recording_body(recording))["body"])
     assert body["summary_metrics"] == {"word_count": 12, "words_per_minute": 123.4}
+
+
+def test_public_recording_exposes_rubric_scores_and_pause_details():
+    module = load_handler_module()
+    recording = Recording(
+        "user-1", "project-1", "recording-1", "2026-01-01T00:00:00Z",
+        "2026-01-01T00:02:00Z", status=RecordingStatus.COMPLETE,
+        summary_metrics={
+            "rubric_version": "2026-10-31", "rubric_status": "scored",
+            "rubric_scores": {"speaking_rate": Decimal("4"),
+                              "filler_words": Decimal("3"),
+                              "pauses_inside_sentences": Decimal("2")},
+            "long_pauses": [{"start_seconds": Decimal("12.5"),
+                             "duration_seconds": Decimal("1.2"),
+                             "inside_sentence": True}],
+        },
+    )
+    body = json.loads(module.reply(200, module._recording_body(recording))["body"])
+    assert body["summary_metrics"]["rubric_scores"] == {
+        "speaking_rate": 4, "filler_words": 3, "pauses_inside_sentences": 2,
+    }
+    assert body["summary_metrics"]["long_pauses"][0]["duration_seconds"] == 1.2

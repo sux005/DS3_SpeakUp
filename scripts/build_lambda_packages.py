@@ -22,7 +22,8 @@ def _write_tree(archive: zipfile.ZipFile, source: Path, target: Path) -> None:
 
 
 def build_package(
-    handler_directory: Path, destination: Path, *, include_payload_api: bool = True
+    handler_directory: Path, destination: Path, *, include_payload_api: bool = True,
+    include_scoring: bool = False,
 ) -> Path:
     """Package one Lambda handler and the shared internal payload library."""
 
@@ -38,6 +39,8 @@ def build_package(
         payload_package = REPOSITORY_ROOT / "src" / "aws_payload"
         if include_payload_api and payload_package.is_dir():
             _write_tree(archive, payload_package, Path("src/aws_payload"))
+        if include_scoring:
+            _write_tree(archive, REPOSITORY_ROOT / "src" / "scoring", Path("src/scoring"))
     return destination
 
 
@@ -51,6 +54,7 @@ def build_all(output_directory: Path = DEFAULT_OUTPUT) -> list[Path]:
             build_package(
                 lambda_root / name,
                 output_directory / ("maintenance.zip" if name == "retention_cleanup" else f"{name}.zip"),
+                include_scoring=name == "processor",
             )
         )
     return packages

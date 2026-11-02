@@ -146,6 +146,14 @@ versioned artifacts and compact recording metadata; the frontend can poll
 `GET /recordings/{recordingId}` for lifecycle status and metrics. Original audio
 is not overwritten during processing.
 
+Speech analysis applies the finalized 2026-10-31 rubric. It scores speaking
+rate, scored fillers per 100 spoken words, and inside-sentence pauses per
+speaking minute from 0 to 4 when estimated speech lasts at least 60 seconds.
+The processor derives pauses from Transcribe word gaps and reports that method
+in the metrics. Scores and detailed fields are documented in
+`docs/aws-payload-api.md`. Processor ZIPs include `src/scoring`; historical
+analysis artifacts remain available on workflow replay.
+
 The workflow is implemented in `speakup.yaml`, but deployment and live
 processing are separate validation steps. A failed workflow is handled by the
 terminal-event handler and bounded reconciler. Scheduled maintenance handles

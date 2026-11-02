@@ -58,7 +58,10 @@ class FakeStore:
             execution_arn="arn:execution:test",
             transcription_job_name=None,
             raw_transcript_s3_key=None,
-            summary_metrics={},
+            summary_metrics=(
+                {"word_count": 2} if status in (RecordingStatus.ANALYZED, RecordingStatus.COMPLETE)
+                else {}
+            ),
             payload_refs=(
                 {PayloadType.FEEDBACK.value: feedback_ref} if feedback_ref else {}
             ),
@@ -336,8 +339,8 @@ def test_analyze_normalizes_transcript_and_calculates_fillers(monkeypatch):
             "results": {
                 "transcripts": [{"transcript": "um hello"}],
                 "items": [
-                    {"type": "pronunciation", "end_time": "1.0", "alternatives": [{"content": "um"}]},
-                    {"type": "pronunciation", "end_time": "2.0", "alternatives": [{"content": "hello"}]},
+                    {"type": "pronunciation", "start_time": "0.0", "end_time": "1.0", "alternatives": [{"content": "um"}]},
+                    {"type": "pronunciation", "start_time": "1.0", "end_time": "2.0", "alternatives": [{"content": "hello"}]},
                 ],
             }
         }
@@ -346,12 +349,13 @@ def test_analyze_normalizes_transcript_and_calculates_fillers(monkeypatch):
 
     result = module.handler(event("analyze", transcript_s3_key="raw.json"), None)
 
-    assert result["summary_metrics"] == {
-        "word_count": 2,
-        "duration_seconds": 2.0,
-        "words_per_minute": 60.0,
-        "filler_words": {"um": 1},
-    }
+    metrics = result["summary_metrics"]
+    assert metrics["word_count"] == 1
+    assert metrics["duration_seconds"] == 2.0
+    assert metrics["words_per_minute"] == 30.0
+    assert metrics["filler_words"] == {"um": 1}
+    assert metrics["rubric_status"] == "insufficient_speech"
+    assert all(score is None for score in metrics["rubric_scores"].values())
     assert [item["artifact_name"] for item in store.artifacts] == ["transcript", "speech_analysis"]
     assert store.transitions[-1][0] is RecordingStatus.ANALYZED
 
@@ -419,7 +423,7 @@ def test_analyze_persists_dynamodb_compatible_metrics(monkeypatch):
     module = load_processor(monkeypatch)
     store = FakeStore(status=RecordingStatus.TRANSCRIBING)
     store.stream_bytes = json.dumps({"results": {"transcripts": [{"transcript": "hello"}],
-                                         "items": [{"type": "pronunciation", "end_time": "1.3",
+                                         "items": [{"type": "pronunciation", "start_time": "0.0", "end_time": "1.3",
                                                     "alternatives": [{"content": "hello"}]}]}}).encode()
     module.payloads = lambda: store
 
@@ -428,6 +432,29 @@ def test_analyze_persists_dynamodb_compatible_metrics(monkeypatch):
     metrics = store.transitions[-1][2]["summary_metrics"]
     TypeSerializer().serialize(metrics)
     assert module.handler(event("analyze", transcript_s3_key="raw.json"), None)["summary_metrics"]["duration_seconds"] == 1.3
+
+
+def test_analyze_replays_historical_metrics_without_replacing_artifacts(monkeypatch):
+    module = load_processor(monkeypatch)
+    store = FakeStore(status=RecordingStatus.ANALYZED)
+    store.recording.summary_metrics = {"word_count": 2, "words_per_minute": 60}
+    for payload_type, producer, name in (
+        (PayloadType.TRANSCRIPT, "speakup-transcript-normalizer", "transcript"),
+        (PayloadType.SPEECH_ANALYSIS, "speakup-speech-analysis", "speech_analysis"),
+    ):
+        store.recording.payload_refs[payload_type.value] = {
+            "key": artifact_key("user-1", "project-1", "recording-1", producer=producer,
+                                producer_version="1.0.0", artifact_name=name,
+                                content_type="application/json"),
+            "user_id": "user-1", "project_id": "project-1", "recording_id": "recording-1",
+            "payload_type": payload_type.value, "producer": producer,
+            "producer_version": "1.0.0",
+        }
+    module.payloads = lambda: store
+    result = module.handler(event("analyze", transcript_s3_key="raw.json"), None)
+    assert result["summary_metrics"] == {"word_count": 2, "words_per_minute": 60}
+    assert store.artifacts == []
+    assert store.transitions == []
 
 
 def test_analyze_recreates_missing_persisted_object_on_replay(monkeypatch):
@@ -495,13 +522,13 @@ def test_analyze_reconciles_s3_write_before_metadata_patch(monkeypatch):
 def test_feedback_reuses_existing_feedback_without_calling_bedrock(monkeypatch):
     module = load_processor(monkeypatch)
     key = artifact_key("user-1", "project-1", "recording-1", producer="speakup-coach",
-                       producer_version="1.0.0", artifact_name="feedback",
+                       producer_version=module.FEEDBACK_VERSION, artifact_name="feedback",
                        content_type="application/json")
     store = FakeStore(
         status=RecordingStatus.ANALYZED,
         feedback_ref={"key": key, "user_id": "user-1", "project_id": "project-1",
                       "recording_id": "recording-1", "payload_type": PayloadType.FEEDBACK.value,
-                      "producer": "speakup-coach", "producer_version": "1.0.0"},
+                      "producer": "speakup-coach", "producer_version": module.FEEDBACK_VERSION},
     )
     module.payloads = lambda: store
     module.BEDROCK = SimpleNamespace(converse=lambda **kwargs: pytest.fail("Bedrock must not run"))
@@ -510,6 +537,22 @@ def test_feedback_reuses_existing_feedback_without_calling_bedrock(monkeypatch):
 
     assert result["status"] == RecordingStatus.COMPLETE.value
     assert store.transitions[-1][2] == {"feedback_s3_key": key}
+
+
+def test_feedback_replays_historical_artifact_without_rewriting(monkeypatch):
+    module = load_processor(monkeypatch)
+    key = artifact_key("user-1", "project-1", "recording-1", producer="speakup-coach",
+                       producer_version="1.0.0", artifact_name="feedback",
+                       content_type="application/json")
+    store = FakeStore(status=RecordingStatus.COMPLETE, feedback_ref={
+        "key": key, "user_id": "user-1", "project_id": "project-1",
+        "recording_id": "recording-1", "payload_type": PayloadType.FEEDBACK.value,
+        "producer": "speakup-coach", "producer_version": "1.0.0",
+    })
+    module.payloads = lambda: store
+    result = module.handler(event("feedback"), None)
+    assert result["status"] == "COMPLETE"
+    assert store.artifacts == []
 
 
 def test_feedback_rejects_foreign_artifact_reference(monkeypatch):
@@ -546,6 +589,36 @@ def test_feedback_generates_and_persists_model_output(monkeypatch):
     assert result["status"] == RecordingStatus.COMPLETE.value
     assert "transcript_text" not in result
     assert store.artifacts[-1]["data"]["feedback"] == "Practice pauses."
+
+
+def test_feedback_uses_persisted_metrics_over_workflow_event(monkeypatch):
+    module = load_processor(monkeypatch)
+    store = FakeStore(status=RecordingStatus.ANALYZED)
+    store.recording.summary_metrics = {
+        "rubric_status": "scored", "rubric_scores": {"speaking_rate": 4},
+    }
+    module.payloads = lambda: store
+    calls = []
+    module.BEDROCK = SimpleNamespace(
+        converse=lambda **kwargs: (calls.append(kwargs) or {
+            "output": {"message": {"content": [{"text": "Practice pauses."}]}}
+        })
+    )
+
+    module.handler(event("feedback", summary_metrics={"rubric_scores": {"speaking_rate": 0}}), None)
+
+    prompt = json.loads(calls[0]["messages"][0]["content"][0]["text"])
+    assert prompt["metrics"] == store.recording.summary_metrics
+
+
+def test_feedback_rejects_missing_persisted_metrics(monkeypatch):
+    module = load_processor(monkeypatch)
+    store = FakeStore(status=RecordingStatus.ANALYZED)
+    store.recording.summary_metrics = {}
+    module.payloads = lambda: store
+    module.BEDROCK = SimpleNamespace(converse=lambda **kwargs: pytest.fail("Bedrock must not run"))
+    with pytest.raises(ValueError, match="persisted metrics"):
+        module.handler(event("feedback", summary_metrics={"word_count": 2}), None)
 
 
 def test_feedback_rejects_transcript_over_model_input_bound(monkeypatch):

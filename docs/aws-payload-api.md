@@ -83,12 +83,27 @@ AWS error text is not returned to clients.
   "schema_version": 1,
   "payload_type": "speech-analysis.v1",
   "producer": "speakup-speech-analysis",
-  "producer_version": "1.0.0",
+  "producer_version": "2.0.0",
   "created_at": "2026-10-27T12:00:00.000Z",
   "data": {
     "metrics": {
-      "words_per_minute": 132.4,
-      "filler_words": {"um": 2}
+      "rubric_version": "2026-10-31",
+      "rubric_status": "scored",
+      "pause_detection_method": "transcribe_word_gaps",
+      "word_count": 132,
+      "duration_seconds": 66.0,
+      "speaking_duration_seconds": 63.0,
+      "words_per_minute": 120.0,
+      "filler_words": {"um": 2},
+      "fillers_per_100_words": 1.52,
+      "pauses_inside_sentences": 8,
+      "pauses_per_speaking_minute": 7.62,
+      "total_pause_seconds": 3.0,
+      "rubric_scores": {
+        "speaking_rate": 3,
+        "filler_words": 4,
+        "pauses_inside_sentences": 4
+      }
     }
   }
 }
@@ -98,6 +113,16 @@ Raw Transcribe output is stored in a backend-generated artifact key. The worker
 normalizes it into `transcript.v1`; analysis and feedback are separate versioned
 payloads. DynamoDB keeps compact references and summary metrics, not full
 transcripts or generated feedback.
+
+The finalized 2026-10-31 rubric scores speaking rate, scored fillers, and
+inside-sentence pauses from 0 to 4. `word_count` excludes scored filler tokens;
+`duration_seconds` spans the first to last word, while
+`speaking_duration_seconds` removes detected pauses of at least 0.3 seconds.
+Scores are `null` and `rubric_status` is `insufficient_speech` below 60 seconds
+of estimated speaking time. The response also reports unscored watch words,
+between-sentence pauses, total pause time, and timestamped long pauses. Pause
+detection uses Transcribe word gaps, so it estimates acoustic silence. Older
+recordings retain their original versioned analysis on replay.
 
 ## GSI migration
 
