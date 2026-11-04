@@ -50,7 +50,7 @@ def test_audio_preparation_has_model_runtime_headroom():
         "  FailureFunction:", 1
     )[0]
     assert "Architectures: [x86_64]" in audio_block
-    assert "MemorySize: 4096" in audio_block
+    assert "MemorySize: 3008" in audio_block
     assert "Timeout: 600" in audio_block
 
 

@@ -274,9 +274,9 @@ is hashed into the artifact version.
 Version 2.0.0 stores the 48 kHz normalized reference, DeepFilterNet model candidate,
 conservative dry/model blend, selected diagnostic signal, and quality report. The model
 candidate is preferred when it passes the distortion gate; the blend and reference are
-fallbacks. The audio worker uses 4 GB of memory and a 10-minute Lambda timeout so the
-configured 10-minute recording limit has CPU and memory headroom; the Step Functions
-task timeout is 10.5 minutes.
+fallbacks. The audio worker uses the account-supported 3,008 MB memory maximum and a
+10-minute Lambda timeout so the configured 10-minute recording limit has CPU and memory
+headroom; the Step Functions task timeout is 10.5 minutes.
 
 ## Cost and privacy notes
 

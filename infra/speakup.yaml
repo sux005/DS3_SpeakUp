@@ -704,7 +704,7 @@ Resources:
       PackageType: Image
       Architectures: [x86_64]
       Role: !GetAtt AudioPrepFunctionRole.Arn
-      MemorySize: 4096
+      MemorySize: 3008
       Timeout: 600
       EphemeralStorage: {Size: 2048}
       TracingConfig: {Mode: Active}
