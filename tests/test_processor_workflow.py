@@ -354,9 +354,17 @@ def test_analyze_normalizes_transcript_and_calculates_fillers(monkeypatch):
     assert metrics["duration_seconds"] == 2.0
     assert metrics["words_per_minute"] == 30.0
     assert metrics["filler_words"] == {"um": 1}
+    assert "filler_occurrences" not in metrics
+    assert "pauses" not in metrics
+    assert "long_pauses" not in metrics
     assert metrics["rubric_status"] == "insufficient_speech"
     assert all(score is None for score in metrics["rubric_scores"].values())
     assert [item["artifact_name"] for item in store.artifacts] == ["transcript", "speech_analysis"]
+    analysis = store.artifacts[-1]["data"]["metrics"]
+    assert analysis["filler_occurrences"] == [
+        {"filler": "um", "start_seconds": 0.0, "end_seconds": 1.0}
+    ]
+    assert analysis["pauses"] == []
     assert store.transitions[-1][0] is RecordingStatus.ANALYZED
 
 
@@ -442,13 +450,16 @@ def test_analyze_replays_historical_metrics_without_replacing_artifacts(monkeypa
         (PayloadType.TRANSCRIPT, "speakup-transcript-normalizer", "transcript"),
         (PayloadType.SPEECH_ANALYSIS, "speakup-speech-analysis", "speech_analysis"),
     ):
+        producer_version = (
+            "2.0.0" if payload_type is PayloadType.SPEECH_ANALYSIS else "1.0.0"
+        )
         store.recording.payload_refs[payload_type.value] = {
             "key": artifact_key("user-1", "project-1", "recording-1", producer=producer,
-                                producer_version="1.0.0", artifact_name=name,
+                                producer_version=producer_version, artifact_name=name,
                                 content_type="application/json"),
             "user_id": "user-1", "project_id": "project-1", "recording_id": "recording-1",
             "payload_type": payload_type.value, "producer": producer,
-            "producer_version": "1.0.0",
+            "producer_version": producer_version,
         }
     module.payloads = lambda: store
     result = module.handler(event("analyze", transcript_s3_key="raw.json"), None)

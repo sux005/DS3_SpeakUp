@@ -30,4 +30,6 @@ def test_processor_package_contains_rubric(tmp_path):
     packages = build_all(tmp_path)
     processor_package = next(path for path in packages if path.name == "processor.zip")
     with zipfile.ZipFile(processor_package) as archive:
-        assert "src/scoring/rubric.py" in archive.namelist()
+        names = set(archive.namelist())
+    assert "src/scoring/rubric.py" in names
+    assert "src/scoring/rubrics/speaking-2026-10-31.csv" in names

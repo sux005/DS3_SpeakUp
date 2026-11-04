@@ -9,7 +9,7 @@ import hashlib
 import json
 import logging
 import os
-from typing import Any
+from typing import Any, Mapping
 import uuid
 
 import boto3
@@ -17,7 +17,7 @@ from boto3.dynamodb.conditions import Attr
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
-from src.aws_payload import Recording, RecordingStatus, SpeakUpPayloadStore
+from src.aws_payload import PayloadType, Recording, RecordingStatus, SpeakUpPayloadStore
 from src.aws_payload.checksum import sha256_base64_to_hex
 from src.aws_payload.errors import (
     ActiveWorkflowLimitError,
@@ -201,6 +201,53 @@ def _recording_body(recording: Recording) -> dict[str, Any]:
     if recording.status is RecordingStatus.FAILED:
         body["failure_reason"] = "Processing failed"
     return body
+
+
+def _artifact_body(
+    store: SpeakUpPayloadStore,
+    user_id: str,
+    recording_id: str,
+    artifact_type: str,
+) -> dict[str, Any]:
+    """Return only the client-facing data from an owner-checked S3 artifact."""
+
+    payload_types = {
+        "transcript": PayloadType.TRANSCRIPT,
+        "analysis": PayloadType.SPEECH_ANALYSIS,
+        "feedback": PayloadType.FEEDBACK,
+    }
+    payload_type = payload_types.get(artifact_type)
+    if payload_type is None:
+        raise PayloadValidationError(
+            "artifactType must be transcript, analysis, or feedback"
+        )
+    document = store.get_json_artifact(user_id, recording_id, payload_type)
+    data = document.get("data")
+    if not isinstance(data, Mapping):
+        raise PayloadIntegrityError("stored artifact data is invalid")
+
+    if artifact_type == "transcript":
+        text = data.get("text")
+        items = data.get("items")
+        if not isinstance(text, str) or not isinstance(items, list):
+            raise PayloadIntegrityError("stored transcript is invalid")
+        public_data: dict[str, Any] = {"text": text, "items": items}
+    elif artifact_type == "analysis":
+        metrics = data.get("metrics")
+        if not isinstance(metrics, Mapping):
+            raise PayloadIntegrityError("stored analysis is invalid")
+        public_data = {"metrics": dict(metrics)}
+    else:
+        feedback = data.get("feedback")
+        if not isinstance(feedback, str):
+            raise PayloadIntegrityError("stored feedback is invalid")
+        public_data = {"feedback": feedback}
+
+    return {
+        "recording_id": recording_id,
+        "artifact_type": artifact_type,
+        "data": public_data,
+    }
 
 
 def _processing_reply(recording: Recording) -> dict[str, Any]:
@@ -424,6 +471,16 @@ def _dispatch(event: dict[str, Any]) -> dict[str, Any]:
     recording_id = str(path.get("recordingId") or "")
     if route == "GET /recordings/{recordingId}":
         return reply(200, _recording_body(store.get_recording(user_id, recording_id)))
+    if route == "GET /recordings/{recordingId}/artifacts/{artifactType}":
+        return reply(
+            200,
+            _artifact_body(
+                store,
+                user_id,
+                recording_id,
+                str(path.get("artifactType") or ""),
+            ),
+        )
     if route == "POST /recordings/{recordingId}/confirm-upload":
         return reply(200, _recording_body(store.confirm_upload(user_id, recording_id)))
     if route == "GET /recordings/{recordingId}/download":

@@ -36,7 +36,7 @@ def _build_version(base: str) -> str:
 
 TRANSCRIBE_VERSION = _build_version("raw-v1")
 TRANSCRIPT_VERSION = _build_version("1.0.0")
-ANALYSIS_VERSION = _build_version("2.0.0")
+ANALYSIS_VERSION = _build_version("3.0.0")
 FEEDBACK_VERSION = _build_version("2.0.0")
 MAX_TRANSCRIBE_POLLS = 80
 DEFAULT_BEDROCK_MAX_INPUT_CHARS = 80_000
@@ -59,15 +59,21 @@ def _bedrock_input(prompt: dict[str, Any]) -> str:
 
 def _artifact_reference(recording: Any, event: dict[str, Any], payload_type: PayloadType,
                         producer: str, version: str, name: str,
-                        *, historical_base: str | None = None) -> dict[str, Any] | None:
+                        *, historical_base: str | tuple[str, ...] | None = None) -> dict[str, Any] | None:
     reference = recording.payload_refs.get(payload_type.value)
     if reference is None:
         return None
     stored_version = reference.get("producer_version")
     if historical_base and stored_version != version:
         current_base = version.split("-", 1)[0]
+        historical_bases = (
+            (historical_base,) if isinstance(historical_base, str)
+            else historical_base
+        )
+        accepted_bases = (*historical_bases, current_base)
+        accepted_pattern = "|".join(re.escape(base) for base in accepted_bases)
         if not isinstance(stored_version, str) or not re.fullmatch(
-            rf"(?:{re.escape(historical_base)}|{re.escape(current_base)})(?:-[0-9a-f]{{24}})?",
+            rf"(?:{accepted_pattern})(?:-[0-9a-f]{{24}})?",
             stored_version,
         ):
             raise ValueError("Stored artifact reference has an unsupported version")
@@ -117,6 +123,13 @@ def _json_metrics(value: Any) -> dict[str, Any]:
     """Return DynamoDB numeric values as JSON-compatible workflow metrics."""
 
     return json.loads(json.dumps(value, default=lambda number: float(number) if isinstance(number, Decimal) else number))
+
+
+def _compact_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
+    """Keep per-occurrence review data in S3, not the DynamoDB summary."""
+
+    detailed_fields = {"filler_occurrences", "pauses", "long_pauses"}
+    return {key: value for key, value in metrics.items() if key not in detailed_fields}
 
 
 SDK_CONFIG = Config(
@@ -297,7 +310,7 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                                                  "transcript", historical_base="1.0.0")
             analysis_ref = _artifact_reference(recording, event, PayloadType.SPEECH_ANALYSIS,
                                                "speakup-speech-analysis", ANALYSIS_VERSION,
-                                               "speech_analysis", historical_base="1.0.0")
+                                               "speech_analysis", historical_base=("1.0.0", "2.0.0"))
             transcript_found = store.objects.find_json(
                 event["user_id"], event["project_id"], event["recording_id"],
                 payload_type=PayloadType.TRANSCRIPT,
@@ -331,6 +344,7 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         text = str(transcripts[0].get("transcript", ""))
         items = document.get("results", {}).get("items") or []
         metrics = score_transcribe_items(items)
+        summary_metrics = _compact_metrics(metrics)
         recording, transcript_ref = _ensure_json_artifact(
             store, event, recording, PayloadType.TRANSCRIPT,
             "speakup-transcript-normalizer", TRANSCRIPT_VERSION, "transcript",
@@ -342,26 +356,26 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             {"metrics": metrics},
         )
         if already_analyzed:
-            if _json_metrics(recording.summary_metrics) != metrics:
+            if _json_metrics(recording.summary_metrics) != summary_metrics:
                 raise ValueError("Stored analysis metrics disagree with the raw transcript")
         else:
             try:
                 recording = store.transition_recording(
                     event["user_id"], event["recording_id"], RecordingStatus.ANALYZED,
                     expected_revision=recording.revision,
-                    updates={"summary_metrics": json.loads(json.dumps(metrics), parse_float=Decimal)},
+                    updates={"summary_metrics": json.loads(json.dumps(summary_metrics), parse_float=Decimal)},
                 )
             except WriteConflictError:
                 recording = store.get_recording(event["user_id"], event["recording_id"])
                 if recording.status not in (RecordingStatus.ANALYZED, RecordingStatus.COMPLETE):
                     raise
-                if _json_metrics(recording.summary_metrics) != metrics:
+                if _json_metrics(recording.summary_metrics) != summary_metrics:
                     raise ValueError("Concurrent analysis has different metrics")
         return {
             **event,
             "transcript_s3_key": transcript_ref["key"],
             "analysis_s3_key": analysis_ref["key"],
-            "summary_metrics": metrics,
+            "summary_metrics": summary_metrics,
             "recording_revision": recording.revision,
         }
 

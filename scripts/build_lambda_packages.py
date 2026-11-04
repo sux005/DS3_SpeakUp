@@ -12,9 +12,12 @@ DEFAULT_OUTPUT = REPOSITORY_ROOT / "build" / "lambda"
 
 
 def _write_tree(archive: zipfile.ZipFile, source: Path, target: Path) -> None:
-    """Add Python source files beneath ``source`` at ``target`` in an archive."""
+    """Add runtime package files beneath ``source`` at ``target`` in an archive."""
 
-    for path in sorted(source.rglob("*.py")):
+    for path in sorted(
+        path for path in source.rglob("*")
+        if path.is_file() and path.suffix in {".py", ".csv"}
+    ):
         if "__pycache__" in path.parts:
             continue
         relative = path.relative_to(source)

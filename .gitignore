@@ -46,6 +46,9 @@ build/
 .review-tmp/
 .review-test-tmp/
 
+# Runtime rubrics belong in src/scoring/rubrics so Lambda packages include them.
+/rubrics/
+
 # Agent files
 /.omx
 

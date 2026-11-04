@@ -170,6 +170,8 @@ access uses the short-lived `speakup-dev` profile.
 - Run local six-clip QA with duplicate skipping:
   `.venv-audio-v2/Scripts/python scripts/run_real_audio_qa.py`
 - Build Lambda packages: `python scripts/build_lambda_packages.py`
+- Calculate transcript WPM: `python scripts/calculate_wpm.py <transcript.json>`
+- Count transcript fillers: `python scripts/count_fillers.py <transcript.json>`
 - Launch notebooks: `jupyter lab notebooks/`
 - Validate locally: `python -m pytest -q --basetemp .test-tmp -p no:cacheprovider`
 - Opt-in deployed workflow smoke test: set `SPEAKUP_LIVE_E2E=1`,

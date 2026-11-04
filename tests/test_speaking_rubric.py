@@ -41,6 +41,11 @@ def test_fillers_exclude_scored_tokens_and_preserve_watch_list():
     }
     assert result["word_count"] == 73
     assert result["filler_count"] == 6
+    assert [item["filler"] for item in result["filler_occurrences"]] == [
+        "um", "uh", "er", "erm", "ah", "you know",
+    ]
+    phrase = result["filler_occurrences"][-1]
+    assert phrase["start_seconds"] < phrase["end_seconds"]
     assert result["watch_words"] == {
         "like": 1, "i mean": 1, "kind of": 1, "so": 1, "well": 1,
         "actually": 1,
@@ -54,6 +59,7 @@ def test_excluded_you_know_contexts_are_not_counted():
         tokens[:3] = [preceding, "you", "know"]
         result = score_transcribe_items(timed_words(tokens, seconds=65))
         assert result["filler_words"] == {}
+        assert result["filler_occurrences"] == []
         assert result["word_count"] == 65
 
 
@@ -110,6 +116,12 @@ def test_pauses_use_speaking_time_and_sentence_boundaries():
     assert result["pauses_inside_sentences"] == 1
     assert result["pauses_between_sentences"] == 1
     assert result["pauses_per_speaking_minute"] == 0.92
+    assert result["pauses"] == [
+        {"start_seconds": 11.0, "end_seconds": 12.2,
+         "duration_seconds": 1.2, "inside_sentence": True},
+        {"start_seconds": 22.2, "end_seconds": 25.4,
+         "duration_seconds": 3.2, "inside_sentence": False},
+    ]
     assert result["long_pauses"] == [
         {"start_seconds": 11.0, "end_seconds": 12.2,
          "duration_seconds": 1.2, "inside_sentence": True},

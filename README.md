@@ -175,6 +175,24 @@ probabilities alone do not establish transcription accuracy. The reviewed JSON
 is the reference for rubric evaluation and must be updated deliberately when the
 source recording changes.
 
+### WPM and filler metrics
+
+Run the same deterministic rubric calculation used by the AWS processor against
+raw Amazon Transcribe JSON, a stored SpeakUp transcript payload, or the local
+Faster Whisper transcript format:
+
+```powershell
+python scripts\calculate_wpm.py path\to\transcript.json
+python scripts\count_fillers.py path\to\transcript.json
+```
+
+Both commands print JSON and require word timestamps. WPM follows the finalized
+rubric definition, so scored filler tokens are excluded from `word_count`. The
+calculator loads score bands from
+[`src/scoring/rubrics/speaking-2026-10-31.csv`](src/scoring/rubrics/speaking-2026-10-31.csv),
+whose minimal runtime schema is documented in
+[`docs/rubric-csv-format.md`](docs/rubric-csv-format.md).
+
 ### Local test commands
 
 After installing `requirements.txt` and `requirements-transcription.txt` in the

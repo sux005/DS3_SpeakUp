@@ -29,6 +29,7 @@ select an AWS project, Region, bucket, table, index, or raw object path.
 | `POST /uploads` | Reserves a recording and returns a conditional pre-signed PUT. |
 | `GET /projects/{projectId}/recordings` | Lists newest recordings via the owner GSI. |
 | `GET /recordings/{recordingId}` | Strongly reads visible metadata. |
+| `GET /recordings/{recordingId}/artifacts/{artifactType}` | Owner-checks and returns public `transcript`, `analysis`, or `feedback` data from S3. |
 | `POST /recordings/{recordingId}/confirm-upload` | Verifies S3 and marks the upload ready. |
 | `GET /recordings/{recordingId}/download` | Returns a short-lived owner-checked GET URL. |
 | `POST /recordings/{recordingId}/process` | Starts the Standard Step Functions workflow. |
@@ -63,6 +64,13 @@ ARNs, Transcribe job names, and internal failure details are not part of the
 HTTP recording response. `POST /uploads` still returns the reserved object key
 and signed upload URL needed for that upload.
 
+Completed-review screens use
+`GET /recordings/{recordingId}/artifacts/{artifactType}`, where `artifactType`
+is `transcript`, `analysis`, or `feedback`. The API strongly reads the
+authenticated owner's recording before reading S3 and returns
+`recording_id`, `artifact_type`, and `data`. It does not expose S3 references,
+producer metadata, or the Bedrock model ID.
+
 Mutation bodies may include `expected_revision`. Omitting it makes the adapter
 use the current strong read; backend-to-backend callers should provide it when
 they already hold a record. Permanent deletion also requires
@@ -83,7 +91,7 @@ AWS error text is not returned to clients.
   "schema_version": 1,
   "payload_type": "speech-analysis.v1",
   "producer": "speakup-speech-analysis",
-  "producer_version": "2.0.0",
+  "producer_version": "3.0.0",
   "created_at": "2026-10-27T12:00:00.000Z",
   "data": {
     "metrics": {
@@ -95,10 +103,19 @@ AWS error text is not returned to clients.
       "speaking_duration_seconds": 63.0,
       "words_per_minute": 120.0,
       "filler_words": {"um": 2},
+      "filler_occurrences": [
+        {"filler": "um", "start_seconds": 0.0, "end_seconds": 0.28}
+      ],
       "fillers_per_100_words": 1.52,
       "pauses_inside_sentences": 8,
       "pauses_per_speaking_minute": 7.62,
       "total_pause_seconds": 3.0,
+      "pauses": [
+        {"start_seconds": 31.2, "end_seconds": 32.3, "duration_seconds": 1.1, "inside_sentence": true}
+      ],
+      "long_pauses": [
+        {"start_seconds": 31.2, "end_seconds": 32.3, "duration_seconds": 1.1, "inside_sentence": true}
+      ],
       "rubric_scores": {
         "speaking_rate": 3,
         "filler_words": 4,
@@ -112,17 +129,19 @@ AWS error text is not returned to clients.
 Raw Transcribe output is stored in a backend-generated artifact key. The worker
 normalizes it into `transcript.v1`; analysis and feedback are separate versioned
 payloads. DynamoDB keeps compact references and summary metrics, not full
-transcripts or generated feedback.
+transcripts, generated feedback, or occurrence-level filler/pause arrays.
 
 The finalized 2026-10-31 rubric scores speaking rate, scored fillers, and
 inside-sentence pauses from 0 to 4. `word_count` excludes scored filler tokens;
 `duration_seconds` spans the first to last word, while
 `speaking_duration_seconds` removes detected pauses of at least 0.3 seconds.
 Scores are `null` and `rubric_status` is `insufficient_speech` below 60 seconds
-of estimated speaking time. The response also reports unscored watch words,
-between-sentence pauses, total pause time, and timestamped long pauses. Pause
-detection uses Transcribe word gaps, so it estimates acoustic silence. Older
-recordings retain their original versioned analysis on replay.
+of estimated speaking time. The compact recording response also reports
+unscored watch words, between-sentence pauses, and total pause time. The S3
+analysis artifact adds every scored filler occurrence and detected pause with
+timestamps, including the long-pause subset. Pause detection uses Transcribe
+word gaps, so it estimates acoustic silence. Older recordings retain their
+original versioned analysis on replay.
 
 ## GSI migration
 
