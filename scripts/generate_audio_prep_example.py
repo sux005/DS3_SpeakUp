@@ -62,7 +62,7 @@ def main() -> int:
     if args.source:
         clean, sample_rate = sf.read(args.source, dtype="float32", always_2d=False)
     else:
-        sample_rate = 16_000
+        sample_rate = 48_000
         clean = _synthetic_voice(sample_rate)
 
     clean_path = args.output / "clean_source.wav"

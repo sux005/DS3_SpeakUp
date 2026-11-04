@@ -1,0 +1,15 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# DeepFilterNet 0.5.6 publishes native wheels through CPython 3.11.
+# This is a self-contained Python 3.11 environment for model-backed audio QA;
+# do not combine it with the Python 3.13 development requirements.
+numpy>=1.26,<2
+scipy>=1.15,<2
+librosa==0.11.0
+soundfile>=0.13,<0.15
+soxr>=1.0,<2
+torch==2.5.1+cpu
+torchaudio==2.5.1+cpu
+deepfilternet==0.5.6
+deepfilterlib==0.5.6
+av==18.1.0

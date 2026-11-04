@@ -116,8 +116,9 @@ for analysis, derives transcript-based speech metrics, and stores versioned
 coaching results in a private serverless AWS backend.
 
 **Status:** active development; development AWS stack exists
-**Primary language(s)/framework(s):** Python 3.13 Lambda, boto3, librosa,
-RNNoise, DynamoDB, S3, Step Functions, CloudFormation
+**Primary language(s)/framework(s):** Python 3.13 Lambda, isolated Python 3.11
+DeepFilterNet audio worker, boto3, librosa, DynamoDB, S3, Step Functions,
+CloudFormation
 
 ## Repo structure
 
@@ -152,6 +153,11 @@ pip install -r requirements.txt
 cp .env.development.example .env.development
 ```
 
+DeepFilterNet-backed local audio processing uses a separate Python 3.11 environment
+with the self-contained `requirements-audio-model.txt`; do not combine it with the
+Python 3.13 `requirements.txt`. The normal test environment does not need to install
+PyTorch or native model wheels.
+
 Use `.env.production.example` as the production schema after the production
 CloudFormation stack is deployed. Never commit `.env.development` or
 `.env.production`, and never put AWS access keys in either file; local AWS CLI
@@ -159,8 +165,10 @@ access uses the short-lived `speakup-dev` profile.
 
 ## Running things
 
-- Run audio preparation: `python -m src.audio.preprocess <input> <output-dir>`
-- Run local six-clip QA with duplicate skipping: `python scripts/run_real_audio_qa.py`
+- Run model-backed audio preparation with the Python 3.11 environment:
+  `.venv-audio-v2/Scripts/python -m src.audio.preprocess <input> <output-dir>`
+- Run local six-clip QA with duplicate skipping:
+  `.venv-audio-v2/Scripts/python scripts/run_real_audio_qa.py`
 - Build Lambda packages: `python scripts/build_lambda_packages.py`
 - Launch notebooks: `jupyter lab notebooks/`
 - Validate locally: `python -m pytest -q --basetemp .test-tmp -p no:cacheprovider`

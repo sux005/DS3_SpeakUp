@@ -1,4 +1,4 @@
-"""Deterministic audio preparation for SpeakUp diagnostics."""
+"""Model-driven audio preparation for SpeakUp diagnostics."""
 
 from pathlib import Path
 import os

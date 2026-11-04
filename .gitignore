@@ -6,6 +6,7 @@ __pycache__/
 *.egg-info/
 .venv/
 .venv-audio/
+.venv-audio-v2/
 venv/
 
 # Jupyter
@@ -41,6 +42,7 @@ models/*
 htmlcov/
 build/
 .test-tmp/
+.test-tmp-pr/
 .review-tmp/
 .review-test-tmp/
 

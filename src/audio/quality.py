@@ -189,6 +189,25 @@ def compare_candidate(
             float(np.median(candidate_frames[quiet]))
         )
 
+    # Noise suppression intentionally turns many formerly noisy frames into
+    # silence, so total non-silent duration is not a speech-preservation signal.
+    # Measure retention only on the loudest reference frames, where speech is
+    # most likely to dominate the background.
+    speech_threshold = float(np.percentile(reference_frames, 60.0))
+    speech = reference_frames >= max(speech_threshold, EPSILON)
+    speech_attenuation_db = 0.0
+    speech_retention = 1.0
+    if np.any(speech):
+        speech_attenuation_db = _db(float(np.median(reference_frames[speech]))) - _db(
+            float(np.median(candidate_frames[speech]))
+        )
+        minimum_retained_level = reference_frames[speech] * 10.0 ** (
+            -config.maximum_speech_frame_attenuation_db / 20.0
+        )
+        speech_retention = float(
+            np.mean(candidate_frames[speech] >= minimum_retained_level)
+        )
+
     return {
         "waveform_correlation": round(correlation, 6),
         "si_sdr_db": round(si_sdr_db, 3),
@@ -196,4 +215,6 @@ def compare_candidate(
             spectral_gain_variability, 3
         ),
         "quiet_frame_attenuation_db": round(quiet_attenuation_db, 3),
+        "speech_frame_attenuation_db": round(speech_attenuation_db, 3),
+        "speech_frame_retention_fraction": round(speech_retention, 5),
     }

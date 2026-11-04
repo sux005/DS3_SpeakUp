@@ -702,10 +702,10 @@ Resources:
     Properties:
       FunctionName: !Sub '${AWS::StackName}-audio-prep'
       PackageType: Image
-      Architectures: [arm64]
+      Architectures: [x86_64]
       Role: !GetAtt AudioPrepFunctionRole.Arn
-      MemorySize: 2048
-      Timeout: 300
+      MemorySize: 4096
+      Timeout: 600
       EphemeralStorage: {Size: 2048}
       TracingConfig: {Mode: Active}
       Environment:
@@ -721,7 +721,11 @@ Resources:
           MAX_TRANSCRIPT_PAYLOAD_BYTES: '5242880'
           PAYLOAD_RECOVERY_DAYS: '30'
           ABANDONED_RETENTION_DAYS: '7'
-          AUDIO_PIPELINE_VERSION: '1.1.0'
+          AUDIO_PIPELINE_VERSION: '2.0.0'
+          AUDIO_ENHANCEMENT_BACKEND: deepfilternet
+          AUDIO_ENHANCEMENT_MODEL: DeepFilterNet3
+          AUDIO_ENHANCEMENT_ATTENUATION_LIMIT_DB: '18'
+          AUDIO_ORIGINAL_BLEND_FRACTION: '0.75'
           AUDIO_BUILD_DIGEST: !Ref AudioPrepImageUri
           AUDIO_MAX_DURATION_SECONDS: !Ref MaxAudioDurationSeconds
           AUDIO_MAX_UPLOAD_BYTES: !Ref MaxAudioUploadBytes
@@ -826,7 +830,7 @@ Resources:
       DefinitionString: !Sub |
         {
           "Comment":"SpeakUp audio processing workflow","StartAt":"PreprocessAudio","States":{
-            "PreprocessAudio":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","TimeoutSeconds":330,"Parameters":{"FunctionName":"${AudioPrepFunction.Arn}","Payload":{"user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.audio_s3_key"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["Lambda.ServiceException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"StartTranscription"},
+            "PreprocessAudio":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","TimeoutSeconds":630,"Parameters":{"FunctionName":"${AudioPrepFunction.Arn}","Payload":{"user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.audio_s3_key"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["Lambda.ServiceException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"StartTranscription"},
             "StartTranscription":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","Parameters":{"FunctionName":"${ProcessorFunction.Arn}","Payload":{"action":"start","user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.transcription_audio_s3_key"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["Lambda.ServiceException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"WaitForTranscribe"},
             "WaitForTranscribe":{"Type":"Wait","Seconds":15,"Next":"CheckTranscription"},
             "CheckTranscription":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","Parameters":{"FunctionName":"${ProcessorFunction.Arn}","Payload":{"action":"status","user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.audio_s3_key","transcription_job_name.$":"$.transcription_job_name","transcript_s3_key.$":"$.transcript_s3_key","poll_attempts.$":"$.poll_attempts"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["Lambda.ServiceException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"TranscriptionStatus"},

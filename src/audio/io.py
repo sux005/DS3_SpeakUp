@@ -4,11 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 import shutil
-import os
-import select
 import subprocess
 import tempfile
-import time
+import threading
 
 import numpy as np
 import soundfile as sf
@@ -30,23 +28,31 @@ def _run_ffmpeg_bounded(command: list[str], destination: Path, max_bytes: int) -
     process = subprocess.Popen(
         command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
     )
-    deadline = time.monotonic() + FFMPEG_TIMEOUT_SECONDS
     total = 0
+    stream_errors: list[Exception] = []
+
+    def copy_output() -> None:
+        nonlocal total
+        try:
+            assert process.stdout is not None
+            with destination.open("wb") as output:
+                while chunk := process.stdout.read(1024 * 1024):
+                    total += len(chunk)
+                    if total > max_bytes + 4096:
+                        raise AudioDecodeError("Decoded audio exceeds the memory limit")
+                    output.write(chunk)
+        except Exception as error:
+            stream_errors.append(error)
+
+    reader = threading.Thread(target=copy_output, name="ffmpeg-output", daemon=True)
     try:
-        assert process.stdout is not None
-        with destination.open("wb") as output:
-            while True:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0 or not select.select([process.stdout], [], [], remaining)[0]:
-                    raise AudioDecodeError("FFmpeg decoding timed out")
-                chunk = os.read(process.stdout.fileno(), 1024 * 1024)
-                if not chunk:
-                    break
-                total += len(chunk)
-                if total > max_bytes + 4096:
-                    raise AudioDecodeError("Decoded audio exceeds the memory limit")
-                output.write(chunk)
-        if process.wait(timeout=max(0.1, deadline - time.monotonic())) != 0:
+        reader.start()
+        reader.join(FFMPEG_TIMEOUT_SECONDS)
+        if reader.is_alive():
+            raise AudioDecodeError("FFmpeg decoding timed out")
+        if stream_errors:
+            raise stream_errors[0]
+        if process.wait(timeout=1.0) != 0:
             raise AudioDecodeError("FFmpeg could not decode the uploaded audio")
     except subprocess.TimeoutExpired as error:
         raise AudioDecodeError("FFmpeg decoding timed out") from error
@@ -54,6 +60,8 @@ def _run_ffmpeg_bounded(command: list[str], destination: Path, max_bytes: int) -
         if process.poll() is None:
             process.kill()
             process.wait()
+        if reader.is_alive():
+            reader.join(timeout=1.0)
         if process.stdout is not None:
             process.stdout.close()
 
@@ -103,8 +111,8 @@ def _decode_with_pyav(
                 raise AudioDecodeError("Uploaded file has too many audio channels")
             decoded_samples = 0
             resampler = None
-            with tempfile.NamedTemporaryFile(suffix=".wav") as decoded_file:
-                decoded_path = Path(decoded_file.name)
+            with tempfile.TemporaryDirectory() as decoded_directory:
+                decoded_path = Path(decoded_directory) / "decoded.wav"
                 writer = None
                 try:
                     for frame in container.decode(stream):

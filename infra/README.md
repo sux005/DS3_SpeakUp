@@ -234,10 +234,12 @@ explicit CloudFormation change.
 
 ## Audio-preparation image
 
-The native RNNoise, librosa, SciPy, libsndfile, and FFmpeg dependencies live in a
-separate Lambda container image. Before deploying, confirm the selected Region in AWS
-Settings > View all projects > Overview > Additional Info > Region. The development
-project currently uses `us-east-2`.
+The DeepFilterNet3 model, CPU PyTorch runtime, librosa, SciPy, libsndfile, and
+FFmpeg dependencies live in a separate Python 3.11 Lambda container image. The
+legacy RNNoise backend remains available for local compatibility but is not bundled
+in the production image. Before deploying, confirm the selected Region in AWS Settings > View all
+projects > Overview > Additional Info > Region. The development project currently
+uses `us-east-2`.
 
 Bootstrap the retained ECR repository once:
 
@@ -246,7 +248,10 @@ aws cloudformation deploy --template-file infra/audio-prep-image.yaml `
   --stack-name speakup-audio-images --profile speakup-dev --region us-east-2
 ```
 
-Build and push an ARM64 image with an immutable version tag:
+Build and push an x86-64 image with an immutable version tag. The image build downloads
+the DeepFilterNet3 checkpoint from the matching `v0.5.6` source tag, verifies its pinned
+SHA-256, and embeds it in the immutable image, so runtime processing does not download
+model weights:
 
 ```powershell
 $repositoryUri = aws cloudformation describe-stacks `
@@ -254,9 +259,9 @@ $repositoryUri = aws cloudformation describe-stacks `
   --query "Stacks[0].Outputs[?OutputKey=='RepositoryUri'].OutputValue" --output text
 aws ecr get-login-password --profile speakup-dev --region us-east-2 |
   docker login --username AWS --password-stdin ($repositoryUri -split '/')[0]
-docker buildx build --platform linux/arm64 `
+docker buildx build --platform linux/amd64 --provenance=false `
   -f infra/lambda/audio_prep/Dockerfile `
-  -t "${repositoryUri}:1.1.0" --push .
+  -t "${repositoryUri}:2.0.0" --push .
 ```
 
 Resolve the pushed image digest with `aws ecr describe-images`, then pass
@@ -266,8 +271,12 @@ versioned artifacts under each recording's
 `artifacts/audio-prep/<pipeline-version>-<image-identity-hash>/` prefix and reuses
 them when the original ETag and configuration fingerprint match. The digest URI
 is hashed into the artifact version.
-Version 1.1.0 stores the conditioned reference, model-only
-candidate, conservative dry/wet blend, selected diagnostic signal, and quality report.
+Version 2.0.0 stores the 48 kHz normalized reference, DeepFilterNet model candidate,
+conservative dry/model blend, selected diagnostic signal, and quality report. The model
+candidate is preferred when it passes the distortion gate; the blend and reference are
+fallbacks. The audio worker uses 4 GB of memory and a 10-minute Lambda timeout so the
+configured 10-minute recording limit has CPU and memory headroom; the Step Functions
+task timeout is 10.5 minutes.
 
 ## Cost and privacy notes
 
