@@ -29,7 +29,7 @@ Parameters:
   CorsAllowedOrigin:
     Type: String
     Default: http://localhost:3000
-    AllowedPattern: '^https?://[^ ]+$'
+    AllowedPattern: '^https://[^ ]+$|^http://localhost:3000$'
   BedrockModelId:
     Type: String
     Default: amazon.nova-lite-v1:0
@@ -102,7 +102,7 @@ Rules:
   ProductionParameters:
     RuleCondition: !Equals [!Ref Environment, prod]
     Assertions:
-      - Assert: !Not [!Equals [!Select [0, !Split ["://", !Ref CorsAllowedOrigin]], http]]
+      - Assert: !Not [!Equals [!Ref CorsAllowedOrigin, http://localhost:3000]]
         AssertDescription: Production CORS origins must use HTTPS.
       - Assert: !Not [!Equals [!Ref DataBucketName, speakup-dev-private-110359221190-us-east-2]]
         AssertDescription: Production must not use the development data bucket.
