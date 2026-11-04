@@ -90,32 +90,43 @@ instructions are in [infra/README.md](infra/README.md).
 
 ## Audio preparation
 
-SpeakUp includes a distortion-gated speech preparation pipeline. RNNoise performs
-full-band noise suppression, while librosa and SciPy handle resampling, gentle EQ,
-level control, and measurements. A dry-signal blend preserves consonants and room
-tone, and the pipeline falls back to the conditioned reference when enhancement
-introduces excessive spectral variation. The original recording is never overwritten.
+SpeakUp includes a distortion-gated, model-driven speech preparation pipeline.
+Version 2 sends full-band 48 kHz mono audio to DeepFilterNet3 without fixed high-pass,
+hum-notch, or presence-EQ denoising. The learned output is selected first when it
+passes the speech-preservation gate; a conservative dry/model blend and the normalized
+reference remain safety fallbacks. The original recording is never overwritten.
+
+The official DeepFilterNet native runtime requires CPython 3.11. For local
+model-backed audio work, create a dedicated 3.11 environment and install the
+self-contained model requirements. Do not combine them with the Python 3.13
+development requirements:
+
+```powershell
+py -3.11 -m venv .venv-audio-v2
+.\.venv-audio-v2\Scripts\python -m pip install -r requirements-audio-model.txt
+```
 
 Run it locally with:
 
 ```powershell
-python -m src.audio.preprocess path\to\recording.wav results\prepared
+.\.venv-audio-v2\Scripts\python -m src.audio.preprocess path\to\recording.wav results\prepared
 ```
 
-Generate the deterministic before/after example with:
+Generate the reproducible synthetic before/after example with:
 
 ```powershell
-python scripts\generate_audio_prep_example.py
+.\.venv-audio-v2\Scripts\python scripts\generate_audio_prep_example.py
 ```
 
 The output directory contains `reference.wav`, `enhanced_model.wav`,
 `enhanced_blended.wav`, `diagnostic.wav`, a legacy `enhanced.wav` alias, and
-`report.json`. The report records the pipeline version, exact configuration,
-latency compensation, speech-preservation measurements, warnings, and which signal
-passed the distortion-aware transcription gate.
+`report.json`. The report records the pipeline version, exact model and runtime
+configuration, speech-preservation measurements, warnings, and which signal passed
+the distortion-aware transcription gate.
 
 For local QA with the private `data/raw/SPEAKUP 1.mp4` through `SPEAKUP 6.mp4`
-recordings, run `python scripts/run_real_audio_qa.py`. The command writes one
+recordings, run `.\.venv-audio-v2\Scripts\python scripts/run_real_audio_qa.py`.
+The command writes one
 ignored `results/real_audio_qa/<clip>/` directory per source file. Each
 `report.json` records the source filename and SHA-256 of the exact input bytes.
 The runner skips identical source bytes within a batch and reuses a prior

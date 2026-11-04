@@ -41,6 +41,19 @@ def test_success_path_preserves_the_processing_stage_order():
     assert states["GenerateFeedback"]["Next"] == "Complete"
 
 
+def test_audio_preparation_has_model_runtime_headroom():
+    state = workflow_definition()["States"]["PreprocessAudio"]
+    assert state["TimeoutSeconds"] == 630
+
+    template = TEMPLATE.read_text(encoding="utf-8")
+    audio_block = template.split("  AudioPrepFunction:", 1)[1].split(
+        "  FailureFunction:", 1
+    )[0]
+    assert "Architectures: [x86_64]" in audio_block
+    assert "MemorySize: 4096" in audio_block
+    assert "Timeout: 600" in audio_block
+
+
 @pytest.mark.parametrize(
     ("state_name", "action", "required_fields"),
     [

@@ -10,7 +10,7 @@ Metadata:
     arch: build audio-prep image -> ECR -> main stack AudioPrepImageUri parameter
     must:
       - Deploy in the AWS project's selected Region
-      - Build image for linux/arm64 to match the Lambda architecture
+      - Build image for linux/amd64 to match the Lambda architecture
 
 Resources:
   AudioPrepRepository:

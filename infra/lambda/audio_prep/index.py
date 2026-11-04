@@ -382,7 +382,9 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     suffix = Path(str(event["audio_s3_key"])).suffix or ".audio"
     references = dict(recording.payload_refs)
-    with tempfile.TemporaryDirectory(dir="/tmp") as temporary_directory:
+    with tempfile.TemporaryDirectory(
+        dir=tempfile.gettempdir()
+    ) as temporary_directory:
         temporary = Path(temporary_directory)
         source_path = temporary / f"source{suffix}"
         output_directory = temporary / "prepared"

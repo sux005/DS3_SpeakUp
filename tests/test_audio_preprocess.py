@@ -1,4 +1,4 @@
-"""Tests for the deterministic dual-path audio preparation pipeline."""
+"""Tests for the model-driven dual-path audio preparation pipeline."""
 
 from __future__ import annotations
 
@@ -11,7 +11,10 @@ import pytest
 import soundfile as sf
 
 from src.audio.config import AudioPrepConfig
-from src.audio.io import AudioDecodeError, _run_ffmpeg_bounded
+from src.audio.enhancement import EnhancementResult, _match_timeline, enhance_speech
+from src.audio.filters import blend_with_original
+from src.audio.io import AudioDecodeError, _run_ffmpeg_bounded, decode_audio
+from src.audio.preprocess import _candidate_passes, prepare_audio, process_audio_file
 
 
 def test_ffmpeg_stream_is_stopped_before_filling_disk(tmp_path):
@@ -30,15 +33,97 @@ def test_artifact_version_includes_deployment_build_digest(monkeypatch):
     monkeypatch.setenv("AUDIO_BUILD_DIGEST", "sha256:abc123/unsafe")
     import hashlib
     expected = hashlib.sha256(b"sha256:abc123/unsafe").hexdigest()[:24]
-    assert config.artifact_version() == f"1.1.0-{expected}"
+    assert config.artifact_version() == f"{config.pipeline_version}-{expected}"
 
 
 def test_artifact_version_keeps_local_compatibility_without_digest(monkeypatch):
     config = AudioPrepConfig()
     monkeypatch.delenv("AUDIO_BUILD_DIGEST", raising=False)
     assert config.artifact_version() == config.pipeline_version
-from src.audio.io import AudioDecodeError, decode_audio
-from src.audio.preprocess import prepare_audio, process_audio_file
+
+
+def test_v2_environment_controls_are_loaded(monkeypatch) -> None:
+    monkeypatch.setenv("AUDIO_ENHANCEMENT_MODEL", "fixture-model")
+    monkeypatch.setenv("AUDIO_ENHANCEMENT_ATTENUATION_LIMIT_DB", "9.5")
+    monkeypatch.setenv("AUDIO_ENHANCEMENT_POST_FILTER", "true")
+    monkeypatch.setenv("AUDIO_ORIGINAL_BLEND_FRACTION", "0.8")
+
+    config = AudioPrepConfig.from_environment()
+
+    assert config.target_sample_rate == 48_000
+    assert config.enhancement_model == "fixture-model"
+    assert config.enhancement_attenuation_limit_db == 9.5
+    assert config.enhancement_post_filter is True
+    assert config.original_blend_fraction == 0.8
+
+
+def test_model_timeline_matching_pads_truncates_and_rejects_non_finite() -> None:
+    assert np.array_equal(
+        _match_timeline(np.array([0.25], dtype=np.float32), 3),
+        np.array([0.25, 0.0, 0.0], dtype=np.float32),
+    )
+    assert np.array_equal(
+        _match_timeline(np.array([0.1, 0.2, 0.3], dtype=np.float32), 2),
+        np.array([0.1, 0.2], dtype=np.float32),
+    )
+    with pytest.raises(RuntimeError, match="non-finite"):
+        _match_timeline(np.array([np.nan], dtype=np.float32), 1)
+
+
+def test_disabled_enhancer_returns_an_unmodified_copy() -> None:
+    source = np.array([0.1, -0.2], dtype=np.float32)
+    result = enhance_speech(
+        source, 48_000, AudioPrepConfig(enhancement_backend="none")
+    )
+
+    assert np.array_equal(result.audio, source)
+    assert result.audio is not source
+    assert result.report["applied"] is False
+
+
+def test_default_blend_is_conservative_toward_the_original() -> None:
+    config = AudioPrepConfig()
+    original = np.array([1.0, -1.0], dtype=np.float32)
+    model = np.zeros(2, dtype=np.float32)
+
+    blended = blend_with_original(original, model, config.original_blend_fraction)
+
+    assert config.original_blend_fraction == 0.75
+    assert np.allclose(blended, original * 0.75)
+
+
+def test_gate_does_not_treat_removed_background_noise_as_removed_speech() -> None:
+    config = AudioPrepConfig()
+    candidate = np.zeros(100, dtype=np.float32)
+    reference_quality = {
+        "clipping_fraction": 0.0,
+        "estimated_snr_db": 5.0,
+        "non_silent_fraction": 1.0,
+        "reverberation_tail_proxy": 0.1,
+    }
+    candidate_quality = {
+        "clipping_fraction": 0.0,
+        "estimated_snr_db": 20.0,
+        "non_silent_fraction": 0.4,
+        "reverberation_tail_proxy": 0.3,
+    }
+    comparison = {
+        "waveform_correlation": 0.98,
+        "si_sdr_db": 15.0,
+        "spectral_gain_variability_db": 2.0,
+        "speech_frame_retention_fraction": 0.98,
+    }
+
+    passed, failures = _candidate_passes(
+        candidate,
+        reference_quality,
+        candidate_quality,
+        comparison,
+        config,
+    )
+
+    assert passed is True
+    assert failures == []
 
 
 def speech_like_signal(sample_rate: int = 16_000, seconds: float = 3.0) -> np.ndarray:
@@ -84,9 +169,9 @@ def test_prepare_audio_preserves_timeline_and_generates_report() -> None:
         AudioPrepConfig(enhancement_backend="none"),
     )
 
-    assert prepared.sample_rate == 16_000
-    assert len(prepared.reference) == len(source)
-    assert len(prepared.enhanced) == len(source)
+    assert prepared.sample_rate == 48_000
+    assert abs(len(prepared.reference) - len(source) * 3) <= 1
+    assert abs(len(prepared.enhanced) - len(source) * 3) <= 1
     assert np.all(np.isfinite(prepared.enhanced))
     assert np.max(np.abs(prepared.enhanced)) <= 10 ** (-3.0 / 20.0) + 1e-5
     assert prepared.report["output"]["timeline_preserved"] is True
@@ -101,6 +186,54 @@ def test_prepare_audio_preserves_timeline_and_generates_report() -> None:
     assert prepared.report["config_fingerprint"]
 
 
+def test_v2_selects_a_safe_model_candidate_before_the_dry_blend() -> None:
+    source = degraded_signal()
+
+    def learned_enhancer(audio, sample_rate, config):
+        assert sample_rate == 16_000
+        assert config.enhancement_backend == "deepfilternet"
+        return EnhancementResult(
+            audio=audio * np.float32(0.9),
+            report={
+                "backend": "deepfilternet",
+                "model": "fixture-model",
+                "available": True,
+                "applied": True,
+            },
+        )
+
+    prepared = prepare_audio(
+        source,
+        16_000,
+        AudioPrepConfig(),
+        enhancer=learned_enhancer,
+    )
+
+    assert prepared.report["pipeline_version"] == "2.0.0"
+    assert prepared.report["output"]["handcrafted_denoising_applied"] is False
+    assert prepared.report["output"]["selected_for_transcription"] == "enhanced_model"
+    assert prepared.report["output"]["selection_reason"] == "model_passed_distortion_gate"
+    assert prepared.report["output"]["enhancement"]["model"] == "fixture-model"
+    assert np.array_equal(prepared.diagnostic, prepared.enhanced_model)
+
+
+def test_v2_passes_full_band_audio_to_the_model_without_fixed_denoising() -> None:
+    source = degraded_signal()
+    observed = {}
+
+    def observe_model_input(audio, sample_rate, config):
+        observed["audio"] = audio.copy()
+        return EnhancementResult(
+            audio=audio.copy(),
+            report={"backend": "fixture", "available": True, "applied": True},
+        )
+
+    prepare_audio(source, 16_000, AudioPrepConfig(), enhancer=observe_model_input)
+
+    expected = source - float(np.mean(source))
+    assert np.allclose(observed["audio"], expected, atol=1e-7)
+
+
 def test_prepare_audio_resamples_stereo() -> None:
     mono = speech_like_signal(sample_rate=24_000, seconds=1.5)
     stereo = np.column_stack([mono, mono * 0.8])
@@ -111,8 +244,8 @@ def test_prepare_audio_resamples_stereo() -> None:
     )
 
     assert prepared.reference.ndim == 1
-    assert prepared.sample_rate == 16_000
-    assert abs(len(prepared.reference) - 24_000) <= 1
+    assert prepared.sample_rate == 48_000
+    assert abs(len(prepared.reference) - 72_000) <= 1
 
 
 def test_duration_limit_is_enforced() -> None:

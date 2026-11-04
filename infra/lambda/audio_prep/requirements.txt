@@ -1,10 +1,14 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 awslambdaric>=3.1,<4
 boto3>=1.35,<2
-numpy>=2.1,<3
+numpy>=1.26,<2
 scipy>=1.15,<2
-librosa==1.0.0
+librosa==0.11.0
 soundfile>=0.13,<0.15
 soxr>=1.0,<2
-pyrnnoise==0.4.5
-audiolab==0.5.2
-av==19.0.2
+torch==2.5.1+cpu
+torchaudio==2.5.1+cpu
+deepfilternet==0.5.6
+deepfilterlib==0.5.6
+av==18.1.0
