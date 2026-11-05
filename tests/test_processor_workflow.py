@@ -181,6 +181,25 @@ def test_status_returns_transcribe_state_and_failure_reason(monkeypatch):
     assert result["error"] == "codec error"
 
 
+def test_completed_transcription_does_not_emit_failure_error(monkeypatch):
+    module = load_processor(monkeypatch)
+    module.payloads = lambda: FakeStore()
+    module.TRANSCRIBE = SimpleNamespace(
+        get_transcription_job=lambda **kwargs: {
+            "TranscriptionJob": {"TranscriptionJobStatus": "COMPLETED"}
+        }
+    )
+
+    result = module.handler(
+        event("status", transcription_job_name="job-1", transcript_s3_key="raw.json"),
+        None,
+    )
+
+    assert result["transcribe_status"] == "COMPLETED"
+    assert result["failure_reason"] == ""
+    assert result["error"] == ""
+
+
 def test_status_reaches_poll_limit_and_allows_completion_on_final_poll(monkeypatch):
     module = load_processor(monkeypatch)
     module.payloads = lambda: FakeStore()

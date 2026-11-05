@@ -329,16 +329,19 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         )["TranscriptionJob"]
         attempts = int(event.get("poll_attempts", 0)) + 1
         status = job["TranscriptionJobStatus"]
+        failure_reason = job.get("FailureReason", "")
+        if status == "FAILED":
+            error_message = failure_reason or "Transcription job failed"
+        elif status not in ("COMPLETED", "FAILED") and attempts >= MAX_TRANSCRIBE_POLLS:
+            error_message = "Transcription polling limit exceeded"
+        else:
+            error_message = ""
         return {
             **event,
             "poll_attempts": attempts,
             "transcribe_status": status,
-            "failure_reason": job.get("FailureReason", ""),
-            "error": (
-                "Transcription polling limit exceeded"
-                if status not in ("COMPLETED", "FAILED") and attempts >= MAX_TRANSCRIBE_POLLS
-                else job.get("FailureReason", "Transcription job failed")
-            ),
+            "failure_reason": failure_reason,
+            "error": error_message,
         }
 
     if action == "analyze":

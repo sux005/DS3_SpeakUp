@@ -1,4 +1,4 @@
-"""Run one authenticated WAV through the deployed SpeakUp public pipeline.
+"""Run one authenticated audio file through the deployed SpeakUp public pipeline.
 
 The script creates a dedicated Cognito QA user, authenticates with SRP, uses
 only public HTTP routes to upload and start processing, and observes Step
@@ -52,6 +52,21 @@ G = 2
 K = int(hashlib.sha256(bytes.fromhex("00" + N_HEX + "02")).hexdigest(), 16)
 INFO_BITS = b"Caldera Derived Key"
 TERMINAL_EXECUTION_STATUSES = {"SUCCEEDED", "FAILED", "TIMED_OUT", "ABORTED"}
+_AUDIO_CONTENT_TYPES = {
+    ".wav": "audio/wav",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".ogg": "audio/ogg",
+    ".webm": "audio/webm",
+}
+
+
+def _audio_content_type(path: Path) -> str:
+    try:
+        return _AUDIO_CONTENT_TYPES[path.suffix.lower()]
+    except KeyError as error:
+        supported = ", ".join(sorted(_AUDIO_CONTENT_TYPES))
+        raise ValueError(f"unsupported audio extension; expected one of: {supported}") from error
 
 
 def _pad_hex(value: int) -> str:
@@ -234,10 +249,11 @@ def _new_history(client: Any, execution_arn: str, after_id: int) -> list[dict[st
 
 
 def run(args: argparse.Namespace) -> Path:
-    wav_path = args.wav.resolve()
-    audio = wav_path.read_bytes()
-    if wav_path.suffix.lower() != ".wav" or not audio:
-        raise RuntimeError("the input must be a non-empty WAV file")
+    audio_path = args.audio.resolve()
+    content_type = _audio_content_type(audio_path)
+    audio = audio_path.read_bytes()
+    if not audio:
+        raise RuntimeError("the input must be a non-empty audio file")
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     log_path = args.log or Path("results/live-e2e") / f"pipeline-{run_id}.jsonl"
     log = RunLog(log_path.resolve())
@@ -301,7 +317,7 @@ def run(args: argparse.Namespace) -> Path:
             "POST", api, "/uploads", token=token,
             payload={
                 "project_id": project_id,
-                "content_type": "audio/wav",
+                "content_type": content_type,
                 "sha256": base64.b64encode(digest).decode("ascii"),
                 "content_length": len(audio),
                 "idempotency_key": str(uuid.uuid4()),
@@ -319,8 +335,9 @@ def run(args: argparse.Namespace) -> Path:
             headers=reservation["required_headers"],
         )
         log.emit(
-            "upload_wav", "SUCCESS",
+            "upload_audio", "SUCCESS",
             http_status=upload_status,
+            content_type=content_type,
             duration_seconds=round(time.perf_counter() - upload_started, 3),
         )
         process_started = time.perf_counter()
@@ -440,7 +457,7 @@ def run(args: argparse.Namespace) -> Path:
         )
         _, downloaded = _http("GET", download["download_url"])
         if not isinstance(downloaded, bytes) or hashlib.sha256(downloaded).digest() != digest:
-            raise RuntimeError("downloaded original WAV checksum did not match")
+            raise RuntimeError("downloaded original audio checksum did not match")
         log.emit("original_download", "SUCCESS", sha256_verified=True)
         log.emit(
             "run", "SUCCESS",
@@ -468,7 +485,7 @@ def run(args: argparse.Namespace) -> Path:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("wav", type=Path)
+    parser.add_argument("audio", type=Path)
     parser.add_argument(
         "--profile",
         default="speakup-dev",
