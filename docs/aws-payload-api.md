@@ -30,9 +30,9 @@ select an AWS project, Region, bucket, table, index, or raw object path.
 | `GET /projects/{projectId}/recordings` | Lists newest recordings via the owner GSI. |
 | `GET /recordings/{recordingId}` | Strongly reads visible metadata. |
 | `GET /recordings/{recordingId}/artifacts/{artifactType}` | Owner-checks and returns public `transcript`, `analysis`, or `feedback` data from S3. |
-| `POST /recordings/{recordingId}/confirm-upload` | Verifies S3 and marks the upload ready. |
+| `POST /recordings/{recordingId}/confirm-upload` | Idempotent recovery endpoint that verifies S3 and marks the upload ready. |
 | `GET /recordings/{recordingId}/download` | Returns a short-lived owner-checked GET URL. |
-| `POST /recordings/{recordingId}/process` | Starts the Standard Step Functions workflow. |
+| `POST /recordings/{recordingId}/process` | Idempotent recovery endpoint that starts or rejoins the Standard workflow. |
 | `DELETE /recordings/{recordingId}` | Soft-deletes with a 30-day recovery window. |
 | `POST /recordings/{recordingId}/restore` | Restores a recoverable recording. |
 | `DELETE /recordings/{recordingId}/permanent` | Purges all object versions after exact-ID confirmation. |
@@ -47,6 +47,15 @@ not send `recording_id`. A reservation retry with the same idempotency key and
 identical fields returns the existing recording. Reusing that key with a
 different recording ID or other input is rejected, so the frontend can safely
 retry a request without creating a second upload reservation.
+
+After the signed PUT succeeds, S3 sends an `Object Created` event through
+EventBridge. A dedicated least-privilege Lambda validates that the key belongs
+to the reservation, confirms the checksum and length, applies duplicate and
+admission controls, and starts the deterministic Step Functions execution.
+The normal client does not call `confirm-upload` or `process`; those routes are
+retained for operational recovery and backward compatibility. Duplicate event
+delivery is safe because recording revisions, checksum claims, and the stable
+execution name make the start idempotent.
 
 `GET /account/limits` returns `active_workflows`, `max_active_workflows`,
 `remaining_workflows`, `admission_enforced`, `max_audio_upload_bytes`,

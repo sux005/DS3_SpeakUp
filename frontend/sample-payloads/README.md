@@ -25,10 +25,9 @@ The browser upload sequence is:
    `content_length`, and a stable `idempotency_key`.
 2. `PUT` the unchanged file bytes to `upload_url` with every
    `required_headers` entry.
-3. `POST /recordings/{recordingId}/confirm-upload`.
-4. `POST /recordings/{recordingId}/process`.
-5. Poll `GET /recordings/{recordingId}` until `COMPLETE` or `FAILED`.
-6. For a completed review, fetch the three artifact routes above in parallel.
+3. Poll `GET /recordings/{recordingId}` until `COMPLETE` or `FAILED`; the S3
+   object event confirms the upload and starts processing automatically.
+4. For a completed review, fetch the three artifact routes above in parallel.
 
 Recording lists intentionally contain only compact `summary_metrics`. Exact
 filler and pause occurrences live in the analysis artifact so DynamoDB does not

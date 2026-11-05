@@ -150,6 +150,22 @@ def test_admission_and_maintenance_contracts_are_wired():
     assert "MAINTENANCE_SHARD_COUNT: '8'" in template
 
 
+def test_original_upload_automatically_starts_idempotent_processing():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    assert "EventBridgeConfiguration: {EventBridgeEnabled: true}" in template
+    assert "UploadCompletedRule:" in template
+    assert "detail-type: ['Object Created']" in template
+    for extension in ("wav", "mp3", "m4a", "ogg", "webm"):
+        assert f"suffix: '/original.{extension}'" in template
+    assert "Handler: index.upload_handler" in template
+    assert "DeadLetterConfig: {Arn: !GetAtt WorkflowFailureDeadLetterQueue.Arn}" in template
+    assert "RetryPolicy: {MaximumEventAgeInSeconds: 86400, MaximumRetryAttempts: 8}" in template
+    assert "UploadTriggerInvokeConfig:" in template
+    assert "MaximumRetryAttempts: 2" in template
+    assert "OnFailure: {Destination: !GetAtt WorkflowFailureDeadLetterQueue.Arn}" in template
+    assert "UploadTriggerFunctionErrorAlarm:" in template
+
+
 def test_migrations_have_safe_defaults_and_production_alarm_guard():
     template = TEMPLATE.read_text(encoding="utf-8")
     assert "EnforceWorkflowAdmissions:" in template

@@ -9,6 +9,8 @@ import hashlib
 import json
 import logging
 import os
+import re
+import time
 from typing import Any, Mapping
 import uuid
 
@@ -35,6 +37,13 @@ from src.aws_payload.policy import ACTIVE_WORKFLOW_STATUSES
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.INFO)
+
+_ORIGINAL_OBJECT_KEY = re.compile(
+    r"^users/(?P<user_id>[A-Za-z0-9_-]{1,64})/projects/"
+    r"(?P<project_id>[A-Za-z0-9_-]{1,64})/recordings/"
+    r"(?P<recording_id>[A-Za-z0-9_-]{1,64})/"
+    r"original\.(?:wav|mp3|m4a|ogg|webm)$"
+)
 
 @lru_cache(maxsize=1)
 def payloads() -> SpeakUpPayloadStore:
@@ -352,6 +361,131 @@ def _start_claimed_execution(store: SpeakUpPayloadStore, recording: Recording) -
         return _processing_reply(store.get_recording(recording.user_id, recording.recording_id))
 
 
+def _process_recording(
+    store: SpeakUpPayloadStore,
+    user_id: str,
+    recording_id: str,
+    *,
+    expected_project_id: str | None = None,
+) -> dict[str, Any]:
+    """Confirm an uploaded original and idempotently start its workflow."""
+
+    recording = store.get_recording(user_id, recording_id)
+    if expected_project_id is not None and recording.project_id != expected_project_id:
+        raise OwnershipViolationError("upload event project does not match the recording")
+    if recording.status in {RecordingStatus.COMPLETE, RecordingStatus.FAILED}:
+        return _processing_reply(recording)
+    if recording.status in {
+        RecordingStatus.PROCESSING,
+        RecordingStatus.TRANSCRIBING,
+        RecordingStatus.ANALYZED,
+    }:
+        return _start_claimed_execution(store, recording)
+    if recording.status is RecordingStatus.AWAITING_UPLOAD:
+        try:
+            recording = store.confirm_upload(user_id, recording_id)
+        except WriteConflictError:
+            recording = store.get_recording(user_id, recording_id)
+    duplicate_id = claim_recording_hash(store, recording)
+    if duplicate_id:
+        return reply(
+            409,
+            {
+                "message": "Exact audio already submitted for this project",
+                "duplicate_recording_id": duplicate_id,
+            },
+        )
+    state_machine_arn = os.environ["STATE_MACHINE_ARN"]
+    execution_name = _execution_name(recording)
+    execution_arn = (
+        state_machine_arn.replace(":stateMachine:", ":execution:", 1)
+        + f":{execution_name}"
+    )
+    try:
+        processing = store.transition_recording(
+            user_id,
+            recording_id,
+            RecordingStatus.PROCESSING,
+            expected_revision=recording.revision,
+            updates={
+                "execution_arn": execution_arn,
+                "execution_start_status": "PENDING",
+            },
+        )
+    except (WriteConflictError, InvalidTransitionError):
+        return _start_claimed_execution(
+            store, store.get_recording(user_id, recording_id)
+        )
+    return _start_claimed_execution(store, processing)
+
+
+def _uploaded_object_scope(event: Mapping[str, Any]) -> tuple[str, str, str]:
+    """Validate one S3 Object Created event and return its recording scope."""
+
+    if event.get("source") != "aws.s3" or event.get("detail-type") != "Object Created":
+        raise PayloadValidationError("event must be an S3 Object Created event")
+    detail = event.get("detail")
+    if not isinstance(detail, Mapping):
+        raise PayloadValidationError("event detail is missing")
+    bucket = detail.get("bucket")
+    object_detail = detail.get("object")
+    if not isinstance(bucket, Mapping) or not isinstance(object_detail, Mapping):
+        raise PayloadValidationError("event bucket or object detail is missing")
+    if bucket.get("name") != os.environ["DATA_BUCKET"]:
+        raise OwnershipViolationError("upload event belongs to another bucket")
+    key = object_detail.get("key")
+    match = _ORIGINAL_OBJECT_KEY.fullmatch(str(key or ""))
+    if match is None:
+        raise PayloadValidationError("upload event key is not an original audio object")
+    return (
+        match.group("user_id"),
+        match.group("project_id"),
+        match.group("recording_id"),
+    )
+
+
+def upload_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
+    """Automatically start processing after a reserved original reaches S3."""
+
+    del context
+    started = time.perf_counter()
+    event_id = str(event.get("id") or "")
+    try:
+        user_id, project_id, recording_id = _uploaded_object_scope(event)
+        LOGGER.info(json.dumps({
+            "stage": "upload_trigger",
+            "status": "RECEIVED",
+            "event_id": event_id,
+            "project_id": project_id,
+            "recording_id": recording_id,
+        }, sort_keys=True))
+        response = _process_recording(
+            payloads(),
+            user_id,
+            recording_id,
+            expected_project_id=project_id,
+        )
+        status_code = int(response["statusCode"])
+        LOGGER.info(json.dumps({
+            "stage": "upload_trigger",
+            "status": "STARTED" if status_code < 300 else "IGNORED",
+            "event_id": event_id,
+            "recording_id": recording_id,
+            "http_status": status_code,
+            "duration_ms": round((time.perf_counter() - started) * 1000, 3),
+        }, sort_keys=True))
+        return {"recording_id": recording_id, "status_code": status_code}
+    except Exception as error:
+        LOGGER.exception(json.dumps({
+            "stage": "upload_trigger",
+            "status": "FAILED",
+            "event_id": event_id,
+            "error_type": type(error).__name__,
+            "duration_ms": round((time.perf_counter() - started) * 1000, 3),
+        }, sort_keys=True))
+        raise
+
+
 def _dispatch(event: dict[str, Any]) -> dict[str, Any]:
     route = event.get("routeKey", "")
     if route == "GET /health":
@@ -495,30 +629,7 @@ def _dispatch(event: dict[str, Any]) -> dict[str, Any]:
             },
         )
     if route == "POST /recordings/{recordingId}/process":
-        recording = store.get_recording(user_id, recording_id)
-        if recording.status in {RecordingStatus.COMPLETE, RecordingStatus.FAILED}:
-            return _processing_reply(recording)
-        if recording.status in {RecordingStatus.PROCESSING, RecordingStatus.TRANSCRIBING, RecordingStatus.ANALYZED}:
-            return _start_claimed_execution(store, recording)
-        if recording.status is RecordingStatus.AWAITING_UPLOAD:
-            recording = store.confirm_upload(user_id, recording_id)
-        duplicate_id = claim_recording_hash(store, recording)
-        if duplicate_id:
-            return reply(409, {"message": "Exact audio already submitted for this project", "duplicate_recording_id": duplicate_id})
-        state_machine_arn = os.environ["STATE_MACHINE_ARN"]
-        execution_name = _execution_name(recording)
-        execution_arn = state_machine_arn.replace(":stateMachine:", ":execution:", 1) + f":{execution_name}"
-        try:
-            processing = store.transition_recording(
-                user_id,
-                recording_id,
-                RecordingStatus.PROCESSING,
-                expected_revision=recording.revision,
-                updates={"execution_arn": execution_arn, "execution_start_status": "PENDING"},
-            )
-        except (WriteConflictError, InvalidTransitionError):
-            return _start_claimed_execution(store, store.get_recording(user_id, recording_id))
-        return _start_claimed_execution(store, processing)
+        return _process_recording(store, user_id, recording_id)
 
     current = store.recordings.get(user_id, recording_id, include_deleted=True)
     expected_revision = _integer(

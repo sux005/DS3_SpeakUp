@@ -14,7 +14,11 @@ from unittest.mock import patch
 
 import pytest
 
-from src.aws_payload.errors import WriteConflictError
+from src.aws_payload.errors import (
+    OwnershipViolationError,
+    PayloadValidationError,
+    WriteConflictError,
+)
 from src.aws_payload.models import Project, Recording, RecordingStatus
 
 
@@ -155,11 +159,69 @@ def request(api, event):
     return response["statusCode"], json.loads(response["body"])
 
 
+def upload_event(*, bucket="speakup-private", key=None):
+    return {
+        "id": "event-1",
+        "source": "aws.s3",
+        "detail-type": "Object Created",
+        "detail": {
+            "bucket": {"name": bucket},
+            "object": {
+                "key": key or (
+                    "users/owner/projects/project-1/recordings/"
+                    "recording-1/original.wav"
+                )
+            },
+        },
+    }
+
+
 def test_repeat_returns_same_execution_without_starting_again(harness):
     api, store, step, _, event, _ = harness
     first, second = request(api, event), request(api, event)
     assert first == second and first[0] == 202 and len(step.calls) == 1
     assert store.get_recording("owner", "recording-1").execution_start_status == "STARTED"
+
+
+def test_object_created_event_starts_the_same_idempotent_workflow(harness, monkeypatch):
+    api, _, step, _, _, _ = harness
+    monkeypatch.setenv("DATA_BUCKET", "speakup-private")
+    first = api.upload_handler(upload_event(), None)
+    second = api.upload_handler(upload_event(), None)
+    assert first["status_code"] == second["status_code"] == 202
+    assert len(step.executions) == 1
+
+
+def test_upload_trigger_rejects_wrong_bucket_and_non_original_key(harness, monkeypatch):
+    api, _, _, _, _, _ = harness
+    monkeypatch.setenv("DATA_BUCKET", "speakup-private")
+    with pytest.raises(OwnershipViolationError):
+        api.upload_handler(upload_event(bucket="another-bucket"), None)
+    with pytest.raises(PayloadValidationError):
+        api.upload_handler(
+            upload_event(
+                key=(
+                    "users/owner/projects/project-1/recordings/recording-1/"
+                    "artifacts/audio-prep/2.0.0/diagnostic.wav"
+                )
+            ),
+            None,
+        )
+
+
+def test_upload_trigger_rejects_project_scope_mismatch(harness, monkeypatch):
+    api, _, _, _, _, _ = harness
+    monkeypatch.setenv("DATA_BUCKET", "speakup-private")
+    with pytest.raises(OwnershipViolationError):
+        api.upload_handler(
+            upload_event(
+                key=(
+                    "users/owner/projects/another-project/recordings/recording-1/"
+                    "original.wav"
+                )
+            ),
+            None,
+        )
 
 
 def test_concurrent_requests_start_only_one_execution(harness):

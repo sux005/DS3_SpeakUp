@@ -26,9 +26,10 @@ flowchart LR
     Workflow["Step Functions<br/>processing state machine"]:::aws
     PrepLambda["infra/lambda/audio_prep/index.py<br/>prepare audio + write artifacts"]:::adapter
     Processor["infra/lambda/processor/index.py<br/>Transcribe + metrics + Bedrock adapter"]:::adapter
+    UploadTrigger["index.upload_handler<br/>validate upload + idempotent start"]:::adapter
     Transcribe["Amazon Transcribe"]:::aws
     Bedrock["Amazon Bedrock"]:::aws
-    EventBridge["EventBridge<br/>terminal workflow failures"]:::aws
+    EventBridge["EventBridge<br/>original uploads + terminal failures"]:::aws
     FailureLambda["infra/lambda/workflow_failure/index.py<br/>safe failure logging"]:::adapter
     Logs["CloudWatch Logs / X-Ray"]:::observe
 
@@ -43,7 +44,11 @@ flowchart LR
     S3Store -->|"presigned PUT/GET"| Browser
     Browser -->|"direct audio upload"| S3
     S3Store --> S3
-    ApiLambda -->|"start processing"| Workflow
+    S3 -->|"Object Created: original audio"| EventBridge
+    EventBridge --> UploadTrigger
+    UploadTrigger --> Store
+    UploadTrigger -->|"start processing"| Workflow
+    ApiLambda -.->|"idempotent recovery start"| Workflow
     Workflow -->|"1. preprocess"| PrepLambda
     PrepLambda --> Store
     PrepLambda -->|"prepared audio + report"| S3
@@ -56,6 +61,7 @@ flowchart LR
     Workflow -.->|"failed execution"| EventBridge
     EventBridge --> FailureLambda
     ApiLambda -.-> Logs
+    UploadTrigger -.-> Logs
     PrepLambda -.-> Logs
     Processor -.-> Logs
     Workflow -.-> Logs
@@ -71,6 +77,8 @@ flowchart LR
   DynamoDB directly.
 - Audio moves directly between the browser and private S3 using short-lived,
   owner-scoped presigned URLs.
+- The original-object event automatically confirms the reservation and starts
+  one deterministic workflow execution; duplicate delivery is safe.
 - Step Functions, not the HTTP request, owns long-running processing.
 - The processor file is an AWS integration adapter. The analytics formulas can
   change without changing the surrounding infrastructure flow.

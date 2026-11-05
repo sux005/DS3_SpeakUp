@@ -323,20 +323,11 @@ def run(args: argparse.Namespace) -> Path:
             http_status=upload_status,
             duration_seconds=round(time.perf_counter() - upload_started, 3),
         )
-        _, confirmed = _api_json(
-            "POST", api, f"/recordings/{recording_id}/confirm-upload",
-            token=token, payload={},
-        )
-        if confirmed.get("status") != "UPLOADED":
-            raise RuntimeError("recording did not enter UPLOADED status")
-        log.emit("confirm_upload", "SUCCESS")
-
         process_started = time.perf_counter()
-        process_status, _ = _api_json(
-            "POST", api, f"/recordings/{recording_id}/process",
-            token=token, payload={},
+        log.emit(
+            "automatic_upload_trigger", "WAITING",
+            message="No confirm-upload or process request was sent",
         )
-        log.emit("start_processing", "SUCCESS", http_status=process_status)
         execution_arn = _execution_arn(
             state_machine_arn, user_id, project_id, recording_id
         )

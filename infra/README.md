@@ -12,7 +12,7 @@
 - Lambda handlers for metadata, pre-signed uploads, and audio processing
 - an image-based librosa/FFmpeg Lambda that prepares diagnostic and ASR audio
 - a Standard Step Functions workflow for audio prep, Transcribe, speech metrics, and Bedrock feedback
-- EventBridge capture of terminal workflow failures
+- EventBridge routing for original-upload starts and terminal workflow failures
 - CloudWatch logs with finite retention and X-Ray tracing
 
 The existing development bucket is adopted with `import-bucket.yaml` before the
@@ -74,8 +74,8 @@ await fetch(upload.upload_url, {
   headers: upload.required_headers,
   body: file,
 });
-await api.post(`/recordings/${upload.recording_id}/confirm-upload`, {});
-await api.post(`/recordings/${upload.recording_id}/process`, {});
+// The S3 Object Created event confirms and starts processing automatically.
+await pollRecordingUntilTerminal(upload.recording_id);
 ```
 
 The process route conditionally reserves the checksum for one recording per user
@@ -87,8 +87,12 @@ with a checksum already reserved by a processing or complete recording return
 recording with the same bytes. Legacy recordings without a checksum remain
 processable without cross-recording duplicate detection.
 
-The client confirms the upload and then starts processing. Repeated process
-requests return the existing Standard workflow execution. Download routes return 15-minute,
+S3 sends the original-object event through EventBridge to a dedicated trigger
+Lambda. The trigger verifies the reserved object's checksum and length, applies
+duplicate and workflow-admission guards, and starts one deterministic Standard
+workflow execution. Duplicate object events and repeated process requests return
+the existing execution. The confirm and process routes remain idempotent recovery
+endpoints but are not required in the normal client flow. Download routes return 15-minute,
 owner-checked S3 URLs. Normal deletion is recoverable for 30 days; permanent
 deletion requires the exact recording ID as confirmation.
 
@@ -109,9 +113,9 @@ ways to create an original recording. This is a planned interface contract;
   previews it, and submits it. The original bytes are uploaded unchanged.
 - **Shared submission:** Either source supplies a file/blob, its byte length,
   a content type matching its actual container, and its SHA-256 to
-  `POST /uploads`. Both sources then follow the same signed S3 PUT,
-  `confirm-upload`, `process`, and
-  status-polling sequence above. Do not relabel a browser-generated blob as WAV
+  `POST /uploads`. Both sources then follow the same signed S3 PUT and
+  status-polling sequence; the object event starts processing automatically.
+  Do not relabel a browser-generated blob as WAV
   merely to pass validation.
 - **Browser recording format:** `MediaRecorder` chooses from formats the
   browser supports; it does not guarantee WAV or MP3. The backend accepts
