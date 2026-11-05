@@ -570,6 +570,72 @@ def test_feedback_disabled_completes_without_bedrock(monkeypatch):
     assert store.artifacts == []
 
 
+def test_feedback_scope_accepts_only_persisted_normalized_artifacts(monkeypatch):
+    module = load_processor(monkeypatch)
+    monkeypatch.setenv("ENABLE_BEDROCK_FEEDBACK", "false")
+    store = FakeStore(status=RecordingStatus.ANALYZED)
+    store.recording.raw_transcript_s3_key = (
+        "users/user-1/projects/project-1/recordings/recording-1/"
+        "artifacts/aws-transcribe/raw-v1/raw.json"
+    )
+    transcript_key = artifact_key(
+        "user-1", "project-1", "recording-1",
+        producer="speakup-transcript-normalizer",
+        producer_version=module.TRANSCRIPT_VERSION,
+        artifact_name="transcript",
+        content_type="application/json",
+    )
+    analysis_key = artifact_key(
+        "user-1", "project-1", "recording-1",
+        producer="speakup-speech-analysis",
+        producer_version=module.ANALYSIS_VERSION,
+        artifact_name="speech_analysis",
+        content_type="application/json",
+    )
+    store.recording.payload_refs.update({
+        PayloadType.TRANSCRIPT.value: {
+            "key": transcript_key,
+            "user_id": "user-1",
+            "project_id": "project-1",
+            "recording_id": "recording-1",
+            "payload_type": PayloadType.TRANSCRIPT.value,
+            "producer": "speakup-transcript-normalizer",
+            "producer_version": module.TRANSCRIPT_VERSION,
+        },
+        PayloadType.SPEECH_ANALYSIS.value: {
+            "key": analysis_key,
+            "user_id": "user-1",
+            "project_id": "project-1",
+            "recording_id": "recording-1",
+            "payload_type": PayloadType.SPEECH_ANALYSIS.value,
+            "producer": "speakup-speech-analysis",
+            "producer_version": module.ANALYSIS_VERSION,
+        },
+    })
+    module.payloads = lambda: store
+
+    result = module.handler(
+        event(
+            "feedback",
+            transcript_s3_key=transcript_key,
+            analysis_s3_key=analysis_key,
+        ),
+        None,
+    )
+    assert result["status"] == "COMPLETE"
+
+    store.recording.status = RecordingStatus.ANALYZED
+    with pytest.raises(ValueError, match="analysis scope"):
+        module.handler(
+            event(
+                "feedback",
+                transcript_s3_key=transcript_key,
+                analysis_s3_key="users/other/analysis.json",
+            ),
+            None,
+        )
+
+
 def test_feedback_replays_historical_artifact_without_rewriting(monkeypatch):
     module = load_processor(monkeypatch)
     key = artifact_key("user-1", "project-1", "recording-1", producer="speakup-coach",

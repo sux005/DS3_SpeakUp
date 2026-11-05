@@ -199,7 +199,36 @@ def _validate_workflow_scope(recording: Any, event: dict[str, Any]) -> None:
     if job_name and event.get("transcription_job_name") not in (None, job_name):
         raise ValueError("Workflow Transcribe job scope does not match recording")
     transcript_key = getattr(recording, "raw_transcript_s3_key", None)
-    if transcript_key and event.get("transcript_s3_key") not in (None, transcript_key):
+    allowed_transcript_keys = {transcript_key} if transcript_key else set()
+    if event.get("action") == "feedback":
+        transcript_ref = _artifact_reference(
+            recording,
+            event,
+            PayloadType.TRANSCRIPT,
+            "speakup-transcript-normalizer",
+            TRANSCRIPT_VERSION,
+            "transcript",
+            historical_base="1.0.0",
+        )
+        analysis_ref = _artifact_reference(
+            recording,
+            event,
+            PayloadType.SPEECH_ANALYSIS,
+            "speakup-speech-analysis",
+            ANALYSIS_VERSION,
+            "speech_analysis",
+            historical_base=("1.0.0", "2.0.0"),
+        )
+        if transcript_ref is not None:
+            allowed_transcript_keys.add(transcript_ref["key"])
+        if event.get("analysis_s3_key") is not None and (
+            analysis_ref is None or event["analysis_s3_key"] != analysis_ref["key"]
+        ):
+            raise ValueError("Workflow analysis scope does not match recording")
+    if (
+        allowed_transcript_keys
+        and event.get("transcript_s3_key") not in ({None} | allowed_transcript_keys)
+    ):
         raise ValueError("Workflow transcript scope does not match recording")
 
 
