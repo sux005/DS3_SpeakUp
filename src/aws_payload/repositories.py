@@ -1017,7 +1017,6 @@ class RecordingRepository:
 
         names = {"#revision": "revision"}
         values: dict[str, Any] = {
-            ":expected_revision": expected_revision,
             ":next_revision": expected_revision + 1,
         }
         setters = ["#revision = :next_revision"]

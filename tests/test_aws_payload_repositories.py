@@ -506,4 +506,5 @@ def test_patch_ordinary_metadata_does_not_require_clock():
     recordings = FakeTable("recordings", item=item)
     repository = RecordingRepository(recordings, FakeTable("projects"))
     repository.patch("user-1", "recording-1", expected_revision=1, updates={"summary_metrics": {"score": 1}})
-    assert any(name == "update_item" for name, _ in recordings.calls)
+    call = next(kwargs for name, kwargs in recordings.calls if name == "update_item")
+    assert ":expected_revision" not in call["ExpressionAttributeValues"]
