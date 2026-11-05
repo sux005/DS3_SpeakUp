@@ -166,6 +166,14 @@ def test_original_upload_automatically_starts_idempotent_processing():
     assert "UploadTriggerFunctionErrorAlarm:" in template
 
 
+def test_processing_roles_can_resolve_missing_retry_artifacts_and_feedback_is_gated():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    assert template.count("Action: s3:ListBucket") >= 2
+    assert "EnableBedrockFeedback:" in template
+    assert "Default: 'false'" in template
+    assert "ENABLE_BEDROCK_FEEDBACK: !Ref EnableBedrockFeedback" in template
+
+
 def test_migrations_have_safe_defaults_and_production_alarm_guard():
     template = TEMPLATE.read_text(encoding="utf-8")
     assert "EnforceWorkflowAdmissions:" in template

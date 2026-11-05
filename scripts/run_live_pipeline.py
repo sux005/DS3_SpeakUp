@@ -399,7 +399,16 @@ def run(args: argparse.Namespace) -> Path:
         )
 
         artifact_summaries: dict[str, Any] = {}
-        for artifact_type in ("transcript", "analysis", "feedback"):
+        artifact_types = ["transcript", "analysis"]
+        if recording.get("feedback_s3_key"):
+            artifact_types.append("feedback")
+        else:
+            log.emit(
+                "artifact.feedback",
+                "SKIPPED",
+                reason="Bedrock feedback is disabled for this deployment",
+            )
+        for artifact_type in artifact_types:
             _, artifact = _api_json(
                 "GET", api,
                 f"/recordings/{recording_id}/artifacts/{artifact_type}",

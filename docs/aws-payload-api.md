@@ -139,6 +139,9 @@ Raw Transcribe output is stored in a backend-generated artifact key. The worker
 normalizes it into `transcript.v1`; analysis and feedback are separate versioned
 payloads. DynamoDB keeps compact references and summary metrics, not full
 transcripts, generated feedback, or occurrence-level filler/pause arrays.
+Feedback is optional: when `EnableBedrockFeedback=false`, the recording reaches
+`COMPLETE` after transcript normalization, analytics, and rubric scoring without
+creating a feedback artifact.
 
 The finalized 2026-10-31 rubric scores speaking rate, scored fillers, and
 inside-sentence pauses from 0 to 4. `word_count` excludes scored filler tokens;

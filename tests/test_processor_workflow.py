@@ -26,6 +26,7 @@ def load_processor(monkeypatch):
         "AWS_SECRET_ACCESS_KEY": "test",
         "ENVIRONMENT": "test",
         "BEDROCK_MODEL_ID": "model-test",
+        "ENABLE_BEDROCK_FEEDBACK": "true",
     }.items():
         monkeypatch.setenv(key, value)
     spec = importlib.util.spec_from_file_location("speakup_processor_test", PROCESSOR_PATH)
@@ -548,6 +549,25 @@ def test_feedback_reuses_existing_feedback_without_calling_bedrock(monkeypatch):
 
     assert result["status"] == RecordingStatus.COMPLETE.value
     assert store.transitions[-1][2] == {"feedback_s3_key": key}
+
+
+def test_feedback_disabled_completes_without_bedrock(monkeypatch):
+    module = load_processor(monkeypatch)
+    monkeypatch.setenv("ENABLE_BEDROCK_FEEDBACK", "false")
+    store = FakeStore(status=RecordingStatus.ANALYZED)
+    module.payloads = lambda: store
+    module.BEDROCK = SimpleNamespace(
+        converse=lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("Bedrock must not be called")
+        )
+    )
+
+    result = module.handler(event("feedback", summary_metrics={"word_count": 2}), None)
+
+    assert result["status"] == "COMPLETE"
+    assert result["feedback_status"] == "SKIPPED"
+    assert store.transitions[-1][0] is RecordingStatus.COMPLETE
+    assert store.artifacts == []
 
 
 def test_feedback_replays_historical_artifact_without_rewriting(monkeypatch):

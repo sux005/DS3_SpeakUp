@@ -256,6 +256,28 @@ def test_transactional_admission_propagates_throttling():
         )
 
 
+def test_transactional_admission_release_uses_only_referenced_values():
+    class Transaction:
+        def __init__(self):
+            self.calls = []
+
+        def transact_write_items(self, **kwargs):
+            self.calls.append(kwargs)
+
+    transaction = Transaction()
+    repository = _transactional_repository(transaction)
+    repository._recordings.item["status"] = "PROCESSING"
+    repository.transition(
+        "user-1", "recording-1", "FAILED",
+        expected_revision=0, updated_at="2026-01-01T00:01:00Z",
+    )
+    admission_update = transaction.calls[0]["TransactItems"][1]["Update"]
+    assert admission_update["UpdateExpression"] == "DELETE active_recording_ids :ids"
+    assert admission_update["ExpressionAttributeValues"] == {
+        ":ids": {"recording-1"}
+    }
+
+
 def test_bootstrap_admission_populates_membership_without_enforcing_limit():
     class Transaction:
         def __init__(self):

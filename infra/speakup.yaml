@@ -58,6 +58,11 @@ Parameters:
     Default: 80000
     MinValue: 4000
     MaxValue: 200000
+  EnableBedrockFeedback:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Generate Bedrock coaching after deterministic analytics.
   ApiCodeS3Key:
     Type: String
     AllowedPattern: '^deployments/.+\.zip$'
@@ -554,6 +559,10 @@ Resources:
                 Effect: Allow
                 Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject]
                 Resource: !Sub '${DataBucket.Arn}/users/*'
+              - Sid: ListRecordingObjects
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt DataBucket.Arn
               - Sid: RecordingState
                 Effect: Allow
                 Action: [dynamodb:GetItem, dynamodb:UpdateItem]
@@ -599,6 +608,10 @@ Resources:
                 Effect: Allow
                 Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject]
                 Resource: !Sub '${DataBucket.Arn}/users/*'
+              - Sid: ListRecordingObjects
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt DataBucket.Arn
               - Sid: RecordingState
                 Effect: Allow
                 Action: [dynamodb:GetItem, dynamodb:UpdateItem]
@@ -781,6 +794,7 @@ Resources:
           ENFORCE_WORKFLOW_ADMISSIONS: !Ref EnforceWorkflowAdmissions
           BEDROCK_MODEL_ID: !Ref BedrockModelId
           BEDROCK_MAX_INPUT_CHARS: !Ref BedrockMaxInputChars
+          ENABLE_BEDROCK_FEEDBACK: !Ref EnableBedrockFeedback
           PROCESSOR_BUILD_ID: !Sub '${ProcessorCodeS3Key}:${ProcessorCodeS3Version}'
           ENVIRONMENT: !Ref Environment
           OWNER_PROJECT_INDEX: OwnerProjectCreatedAtIndex

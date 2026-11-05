@@ -6,6 +6,7 @@ from functools import lru_cache
 from decimal import Decimal
 import hashlib
 import json
+import logging
 import os
 import re
 from typing import Any
@@ -23,6 +24,16 @@ from src.aws_payload import (
 from src.aws_payload.keys import artifact_key
 from src.aws_payload.errors import WriteConflictError
 from src.scoring import score_transcribe_items
+
+
+LOGGER = logging.getLogger(__name__)
+LOGGER.setLevel(logging.INFO)
+
+
+def _bedrock_feedback_enabled() -> bool:
+    """Return the explicit deployment feature flag for generative feedback."""
+
+    return os.getenv("ENABLE_BEDROCK_FEEDBACK", "false").strip().lower() == "true"
 
 
 def _build_version(base: str) -> str:
@@ -385,6 +396,34 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             recording, event, PayloadType.FEEDBACK, "speakup-coach", FEEDBACK_VERSION, "feedback",
             historical_base="1.0.0",
         )
+        if not _bedrock_feedback_enabled():
+            if recording.status is RecordingStatus.COMPLETE:
+                return {
+                    **event,
+                    "status": recording.status.value,
+                    "feedback_status": "SKIPPED",
+                }
+            if recording.status is not RecordingStatus.ANALYZED:
+                raise ValueError("Recording is not ready for completion")
+            if not recording.summary_metrics:
+                raise ValueError("Analyzed recording is missing persisted metrics")
+            recording = store.transition_recording(
+                event["user_id"],
+                event["recording_id"],
+                RecordingStatus.COMPLETE,
+                expected_revision=recording.revision,
+            )
+            LOGGER.info(json.dumps({
+                "stage": "feedback",
+                "status": "SKIPPED",
+                "reason": "ENABLE_BEDROCK_FEEDBACK is false",
+                "recording_id": event["recording_id"],
+            }, sort_keys=True))
+            return {
+                **event,
+                "status": recording.status.value,
+                "feedback_status": "SKIPPED",
+            }
         if recording.status is RecordingStatus.COMPLETE:
             if feedback_ref is None:
                 raise ValueError("Completed recording is missing feedback")

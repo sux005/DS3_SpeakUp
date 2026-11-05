@@ -11,7 +11,7 @@
 - an API Gateway HTTP API with Cognito JWT authorization
 - Lambda handlers for metadata, pre-signed uploads, and audio processing
 - an image-based librosa/FFmpeg Lambda that prepares diagnostic and ASR audio
-- a Standard Step Functions workflow for audio prep, Transcribe, speech metrics, and Bedrock feedback
+- a Standard Step Functions workflow for audio prep, Transcribe, deterministic speech metrics, and optional Bedrock feedback
 - EventBridge routing for original-upload starts and terminal workflow failures
 - CloudWatch logs with finite retention and X-Ray tracing
 
@@ -26,6 +26,7 @@ the stack does not delete recordings, users, or DynamoDB data.
 - stack name: `speakup-dev`
 - frontend origin: `http://localhost:3000`
 - Bedrock model: in-Region `amazon.nova-lite-v1:0`
+- Bedrock feedback: disabled by default with `EnableBedrockFeedback=false`
 - CloudWatch retention: 14 days
 - audio preparation limit: 10 minutes and 100 MiB per recording
 
@@ -143,10 +144,13 @@ original-download backend routes already exist.
 
 The HTTP API reserves an owner-scoped recording with its original file length,
 content type, and SHA-256. The client uploads the unchanged bytes with the
-returned signed headers, confirms the S3 object, and explicitly starts
-processing. The Standard Step Functions workflow runs audio preparation,
-Amazon Transcribe, speech analysis, and Bedrock feedback. The processor stores
-versioned artifacts and compact recording metadata; the frontend can poll
+returned signed headers. S3 publishes the completed object event through
+EventBridge, which idempotently starts the Standard Step Functions workflow;
+the normal client does not call confirm or process routes. The workflow runs
+audio preparation, Amazon Transcribe, and deterministic speech analysis.
+Bedrock coaching runs only when `EnableBedrockFeedback=true`; otherwise the
+recording completes after analytics. The processor stores versioned artifacts
+and compact recording metadata; the frontend can poll
 `GET /recordings/{recordingId}` for lifecycle status and metrics. Original audio
 is not overwritten during processing.
 
@@ -287,7 +291,8 @@ headroom; the Step Functions task timeout is 10.5 minutes.
 The stack uses on-demand/serverless capacity and has no provisioned concurrency.
 Charges are usage-based for S3, DynamoDB (including GSI writes and strong
 base-table re-reads after list queries), API Gateway, Lambda, Step Functions,
-Transcribe, Bedrock, and logs. Bedrock output is capped at 800 tokens per recording.
+Transcribe, optional Bedrock, and logs. When enabled, Bedrock output is capped
+at 800 tokens per recording.
 Step Functions logs errors without execution payloads, so transcripts are not copied
 into workflow logs. Deleted S3 object versions expire after 30 days; abandoned
 multipart uploads are removed after 7 days.
