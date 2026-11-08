@@ -206,6 +206,9 @@ access uses the short-lived `speakup-dev` profile.
   choose buckets, tables, indexes, or raw keys.
 - Keep HTTP recording responses on the explicit public serializer in the API
   adapter; do not return DynamoDB items, payload references, or workflow IDs.
+- Ground Bedrock coaching in persisted metrics and the matching rubric CSV bands.
+  General feedback is unscored; pace, scored filler rate, and inside-sentence
+  pause rate use their existing calculator scores.
 - Share checksum parsing and active-workflow status rules through
   `src/aws_payload/checksum.py` and `src/aws_payload/policy.py`.
 - Require `content_length` for HTTP upload reservations; sign it into the PUT,

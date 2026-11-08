@@ -19,3 +19,18 @@ recordings identify their project and are listed through
 There is no frontend build or run command yet because James's source tree is
 not in this checkout. The checked-in tests validate the full review mock JSON
 against the public-field contract, but they do not exercise a browser UI.
+## Recording review screen contract
+
+After a recording reaches `COMPLETE`, request
+`GET /recordings/{recordingId}/review`. Show four coaching cards for general
+speech, pace (including WPM), filler words, and pauses. Each card should put
+the measured value or observation beside the specific `next_step`, so the user
+can see what to practice. Keep the short overview above the cards.
+
+For the planned playback view, use the transcript's timed `items` to highlight
+words as the audio plays. Mark intervals from `feedback.moments` on that same
+timeline. Selecting a marked phrase should seek to its `start_seconds` and
+show its `observation` and `next_step`; use `kind` to distinguish a strength
+from an improvement. Moment timing is based on Transcribe word positions, and
+not every phrase will have feedback. Older feedback artifacts have only a
+summary string, so the review screen should still display that summary.
