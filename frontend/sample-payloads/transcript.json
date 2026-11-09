@@ -1,0 +1,17 @@
+{
+  "recording_id": "8f2d9305-51f8-5ea1-9dbf-d5fc94b87f08",
+  "artifact_type": "transcript",
+  "data": {
+    "text": "Um, welcome to the project update.",
+    "items": [
+      {"type": "pronunciation", "start_time": "0.000", "end_time": "0.280", "alternatives": [{"content": "Um"}]},
+      {"type": "punctuation", "alternatives": [{"content": ","}]},
+      {"type": "pronunciation", "start_time": "0.520", "end_time": "0.900", "alternatives": [{"content": "welcome"}]},
+      {"type": "pronunciation", "start_time": "0.940", "end_time": "1.080", "alternatives": [{"content": "to"}]},
+      {"type": "pronunciation", "start_time": "1.110", "end_time": "1.260", "alternatives": [{"content": "the"}]},
+      {"type": "pronunciation", "start_time": "1.300", "end_time": "1.680", "alternatives": [{"content": "project"}]},
+      {"type": "pronunciation", "start_time": "2.050", "end_time": "2.430", "alternatives": [{"content": "update"}]},
+      {"type": "punctuation", "alternatives": [{"content": "."}]}
+    ]
+  }
+}
