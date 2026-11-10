@@ -1,0 +1,10 @@
+{
+  "active_workflows": 1,
+  "max_active_workflows": 3,
+  "remaining_workflows": 2,
+  "admission_enforced": true,
+  "max_audio_upload_bytes": 104857600,
+  "max_audio_duration_seconds": 600,
+  "abandoned_retention_days": 7,
+  "deleted_recovery_days": 30
+}
