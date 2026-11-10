@@ -218,6 +218,11 @@ access uses the short-lived `speakup-dev` profile.
   failures through the workflow, EventBridge fallback, and stale-workflow
   reconciler. Active workflows cannot be soft-deleted.
 - Keep Regional AWS resources in the project's selected Region, `us-east-2`.
+- Pauses: the audio-prep worker stores `pause_inputs` (energy silences + Silero VAD
+  speech, `src/audio/pause_detection.py`) in its report; the processor passes them to
+  `score_transcribe_items(..., acoustic=...)`. Missing inputs fall back to Transcribe
+  word gaps, and `pause_detection_method` says which ran. `silero-vad` lives only in
+  the audio worker requirements.
 - Never log audio bytes, transcript text, credentials, or pre-signed URLs.
 
 ## Git / PR workflow

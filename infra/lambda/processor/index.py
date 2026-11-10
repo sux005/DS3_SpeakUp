@@ -7,6 +7,7 @@ from decimal import Decimal
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 from typing import Any
@@ -22,7 +23,7 @@ from src.aws_payload import (
     SpeakUpPayloadStore,
 )
 from src.aws_payload.keys import artifact_key
-from src.aws_payload.errors import WriteConflictError
+from src.aws_payload.errors import PayloadNotFoundError, WriteConflictError
 from src.scoring import load_rubric, score_transcribe_items
 
 
@@ -47,7 +48,7 @@ def _build_version(base: str) -> str:
 
 TRANSCRIBE_VERSION = _build_version("raw-v1")
 TRANSCRIPT_VERSION = _build_version("1.0.0")
-ANALYSIS_VERSION = _build_version("3.0.0")
+ANALYSIS_VERSION = _build_version("4.0.0")
 FEEDBACK_VERSION = _build_version("3.0.0")
 MAX_TRANSCRIBE_POLLS = 80
 DEFAULT_BEDROCK_MAX_INPUT_CHARS = 80_000
@@ -358,6 +359,46 @@ def _read_raw_transcript(event: dict[str, Any]) -> dict[str, Any]:
     return document
 
 
+def _pause_inputs(store: SpeakUpPayloadStore, event: dict[str, Any]) -> dict[str, Any] | None:
+    """Acoustic pause inputs saved by the audio-prep step, or None to use Transcribe word gaps."""
+
+    try:
+        document = store.get_json_artifact(
+            event["user_id"], event["recording_id"], PayloadType.PREPROCESS_REPORT
+        )
+    except PayloadNotFoundError:
+        return None
+    inputs = document.get("data", {}).get("report", {}).get("pause_inputs")
+    return inputs if _valid_pause_inputs(inputs) else None
+
+
+def _valid_intervals(value: Any) -> bool:
+    if not isinstance(value, list):
+        return False
+    previous = 0.0
+    for item in value:
+        if not (isinstance(item, (list, tuple)) and len(item) == 2
+                and all(isinstance(edge, (int, float)) and math.isfinite(edge) for edge in item)):
+            return False
+        start, end = float(item[0]), float(item[1])
+        if not previous <= start <= end:
+            return False
+        previous = end
+    return True
+
+
+def _valid_pause_inputs(inputs: Any) -> bool:
+    """Only trust well-formed pause inputs; anything else falls back to word gaps."""
+
+    if not isinstance(inputs, dict):
+        return False
+    duration = inputs.get("duration_seconds")
+    silero = inputs.get("silero_speech")
+    return (isinstance(duration, (int, float)) and math.isfinite(duration) and duration >= 0
+            and _valid_intervals(inputs.get("energy_silences"))
+            and (silero is None or _valid_intervals(silero)))
+
+
 def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """Run one bounded workflow action without logging audio or transcript text."""
 
@@ -468,7 +509,7 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                                                  "transcript", historical_base="1.0.0")
             analysis_ref = _artifact_reference(recording, event, PayloadType.SPEECH_ANALYSIS,
                                                "speakup-speech-analysis", ANALYSIS_VERSION,
-                                               "speech_analysis", historical_base=("1.0.0", "2.0.0"))
+                                               "speech_analysis", historical_base=("1.0.0", "2.0.0", "3.0.0"))
             transcript_found = store.objects.find_json(
                 event["user_id"], event["project_id"], event["recording_id"],
                 payload_type=PayloadType.TRANSCRIPT,
@@ -501,7 +542,7 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         ]
         text = str(transcripts[0].get("transcript", ""))
         items = document.get("results", {}).get("items") or []
-        metrics = score_transcribe_items(items)
+        metrics = score_transcribe_items(items, acoustic=_pause_inputs(store, event))
         summary_metrics = _compact_metrics(metrics)
         recording, transcript_ref = _ensure_json_artifact(
             store, event, recording, PayloadType.TRANSCRIPT,
@@ -642,9 +683,12 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                         "concrete next action in every category. If rubric_status "
                         "is insufficient_speech, explain that the rubric needs "
                         "the supplied minimum_speaking_seconds before scoring; "
-                        "do not invent scores. Pauses "
-                        "are estimated from Transcribe word gaps, not confirmed "
-                        "acoustic silence. Do not claim to assess tone, volume, "
+                        "do not invent scores. Pauses come from the method "
+                        "named in pause_detection_method: "
+                        "energy_or_silero_and_word_gap means quiet audio, or "
+                        "Silero hearing no speech where the transcript also has "
+                        "a word gap; transcribe_word_gaps means gaps between "
+                        "words only. Treat pause timings as estimates. Do not claim to assess tone, volume, "
                         "or body language. moments is an array of 1-4 objects "
                         "when segments exist, otherwise empty. Each moment has "
                         "segment_id, kind (strength or improve), observation, "

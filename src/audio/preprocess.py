@@ -20,6 +20,7 @@ from src.audio.filters import (
     normalize_speech_level,
 )
 from src.audio.io import decode_audio, write_pcm16
+from src.audio.pause_detection import pause_inputs
 from src.audio.quality import compare_candidate, measure_quality, quality_warnings
 
 
@@ -285,6 +286,20 @@ def prepare_audio(
     )
 
 
+def _add_pause_inputs(prepared: PreparedAudio) -> None:
+    """Measure pauses on the transcription audio so the rubric can use acoustic pauses.
+
+    A failure here must not fail audio preparation: the rubric then falls back to
+    Transcribe word gaps, and the report says why.
+    """
+
+    try:
+        prepared.report["pause_inputs"] = pause_inputs(prepared.transcription, prepared.sample_rate)
+    except Exception as error:  # noqa: BLE001 - optional measurement, recorded below
+        prepared.report["pause_inputs"] = None
+        prepared.report["warnings"].append(f"pause_inputs_failed: {type(error).__name__}")
+
+
 def process_audio_file(
     input_path: str | Path,
     output_directory: str | Path,
@@ -304,6 +319,7 @@ def process_audio_file(
         max_decoded_bytes=config.max_decoded_bytes,
     )
     prepared = prepare_audio(audio, sample_rate, config, source_metadata)
+    _add_pause_inputs(prepared)
 
     reference_path = output_directory / "reference.wav"
     model_path = output_directory / "enhanced_model.wav"
