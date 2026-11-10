@@ -676,6 +676,8 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                         "pauses_per_speaking_minute; only the latter is scored by "
                         "the pauses_inside_sentences band. Between-sentence pauses "
                         "and total_pause_seconds are diagnostic, not scored. "
+                        "Never tell the speaker to cut, shorten or reduce "
+                        "pauses between sentences; they help listeners. "
                         "Use the supplied rubric score bands to judge whether "
                         "each scored metric needs improvement, and treat the "
                         "persisted rubric_scores as authoritative; never invent "
