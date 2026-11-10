@@ -41,6 +41,19 @@ def test_success_path_preserves_the_processing_stage_order():
     assert states["GenerateFeedback"]["Next"] == "Complete"
 
 
+def test_audio_preparation_has_model_runtime_headroom():
+    state = workflow_definition()["States"]["PreprocessAudio"]
+    assert state["TimeoutSeconds"] == 630
+
+    template = TEMPLATE.read_text(encoding="utf-8")
+    audio_block = template.split("  AudioPrepFunction:", 1)[1].split(
+        "  FailureFunction:", 1
+    )[0]
+    assert "Architectures: [x86_64]" in audio_block
+    assert "MemorySize: 3008" in audio_block
+    assert "Timeout: 600" in audio_block
+
+
 @pytest.mark.parametrize(
     ("state_name", "action", "required_fields"),
     [
@@ -135,6 +148,30 @@ def test_admission_and_maintenance_contracts_are_wired():
     assert "MaintenanceCodeS3Version" in template
     assert "s3:DeleteObjectVersion" in template
     assert "MAINTENANCE_SHARD_COUNT: '8'" in template
+
+
+def test_original_upload_automatically_starts_idempotent_processing():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    assert "EventBridgeConfiguration: {EventBridgeEnabled: true}" in template
+    assert "UploadCompletedRule:" in template
+    assert "detail-type: ['Object Created']" in template
+    for extension in ("wav", "mp3", "m4a", "ogg", "webm"):
+        assert f"suffix: '/original.{extension}'" in template
+    assert "Handler: index.upload_handler" in template
+    assert "DeadLetterConfig: {Arn: !GetAtt WorkflowFailureDeadLetterQueue.Arn}" in template
+    assert "RetryPolicy: {MaximumEventAgeInSeconds: 86400, MaximumRetryAttempts: 8}" in template
+    assert "UploadTriggerInvokeConfig:" in template
+    assert "MaximumRetryAttempts: 2" in template
+    assert "OnFailure: {Destination: !GetAtt WorkflowFailureDeadLetterQueue.Arn}" in template
+    assert "UploadTriggerFunctionErrorAlarm:" in template
+
+
+def test_processing_roles_can_resolve_missing_retry_artifacts_and_feedback_is_gated():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    assert template.count("Action: s3:ListBucket") >= 2
+    assert "EnableBedrockFeedback:" in template
+    assert "Default: 'false'" in template
+    assert "ENABLE_BEDROCK_FEEDBACK: !Ref EnableBedrockFeedback" in template
 
 
 def test_migrations_have_safe_defaults_and_production_alarm_guard():

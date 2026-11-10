@@ -119,7 +119,7 @@ def fake_service(document=None):
 def test_deployed_build_does_not_reuse_report_from_other_build(monkeypatch):
     config = AudioPrepConfig(enhancement_backend="none")
     old = report(config)
-    old["producer_version"] = "1.1.0-old-build"
+    old["producer_version"] = "2.0.0-old-build"
     service, _ = fake_service({"data": {"report": old}})
     monkeypatch.setattr(audio_prep, "payloads", lambda: service)
     monkeypatch.setenv("AUDIO_BUILD_DIGEST", "new-build")
@@ -142,7 +142,9 @@ def test_reuses_matching_report_and_returns_deterministic_artifact_references(mo
     monkeypatch.setattr(audio_prep, "payloads", lambda: service)
     result = audio_prep.handler(event(), None)
     assert result["preprocess_reused"] is True
-    assert result["diagnostic_audio_s3_key"].endswith("/artifacts/audio-prep/1.1.0/diagnostic.wav")
+    assert result["diagnostic_audio_s3_key"].endswith(
+        f"/artifacts/audio-prep/{config.pipeline_version}/diagnostic.wav"
+    )
     assert result["transcription_audio_s3_key"] == result["diagnostic_audio_s3_key"]
 
 

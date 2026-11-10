@@ -29,7 +29,7 @@ Parameters:
   CorsAllowedOrigin:
     Type: String
     Default: http://localhost:3000
-    AllowedPattern: '^https?://[^ ]+$'
+    AllowedPattern: '^https://[^ ]+$|^http://localhost:3000$'
   BedrockModelId:
     Type: String
     Default: amazon.nova-lite-v1:0
@@ -58,6 +58,11 @@ Parameters:
     Default: 80000
     MinValue: 4000
     MaxValue: 200000
+  EnableBedrockFeedback:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Generate Bedrock coaching after deterministic analytics.
   ApiCodeS3Key:
     Type: String
     AllowedPattern: '^deployments/.+\.zip$'
@@ -102,7 +107,7 @@ Rules:
   ProductionParameters:
     RuleCondition: !Equals [!Ref Environment, prod]
     Assertions:
-      - Assert: !Not [!Equals [!Select [0, !Split ["://", !Ref CorsAllowedOrigin]], http]]
+      - Assert: !Not [!Equals [!Ref CorsAllowedOrigin, http://localhost:3000]]
         AssertDescription: Production CORS origins must use HTTPS.
       - Assert: !Not [!Equals [!Ref DataBucketName, speakup-dev-private-110359221190-us-east-2]]
         AssertDescription: Production must not use the development data bucket.
@@ -133,6 +138,8 @@ Resources:
         BlockPublicPolicy: true
         RestrictPublicBuckets: true
       VersioningConfiguration: {Status: Enabled}
+      NotificationConfiguration:
+        EventBridgeConfiguration: {EventBridgeEnabled: true}
       CorsConfiguration:
         CorsRules:
           - AllowedHeaders: ['*']
@@ -383,6 +390,14 @@ Resources:
       LogGroupName: !Sub '/aws/lambda/${AWS::StackName}-api'
       RetentionInDays: !Ref LogRetentionDays
       Tags: [{Key: Project, Value: SpeakUp}, {Key: Environment, Value: !Ref Environment}]
+  UploadTriggerFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AWS::StackName}-upload-trigger'
+      RetentionInDays: !Ref LogRetentionDays
+      Tags: [{Key: Project, Value: SpeakUp}, {Key: Environment, Value: !Ref Environment}]
   ProcessorFunctionLogGroup:
     Type: AWS::Logs::LogGroup
     DeletionPolicy: Delete
@@ -477,6 +492,50 @@ Resources:
                 Action: [xray:PutTraceSegments, xray:PutTelemetryRecords]
                 Resource: '*'
 
+  UploadTriggerFunctionRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: validates completed original uploads and idempotently starts their workflow
+        must: [Accept only original-audio object events, Reuse revision and duplicate guards, Keep access owner-scoped]
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: lambda.amazonaws.com}, Action: 'sts:AssumeRole'}]
+      Policies:
+        - PolicyName: UploadTriggerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: WriteLogs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-upload-trigger:*'
+              - Sid: RecordingState
+                Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem]
+                Resource: [!GetAtt RecordingsTable.Arn, !GetAtt RecordingHashesTable.Arn, !GetAtt WorkflowAdmissionsTable.Arn]
+              - Sid: ValidateOriginalObject
+                Effect: Allow
+                Action: [s3:GetObject, s3:GetObjectVersion]
+                Resource: !Sub '${DataBucket.Arn}/users/*'
+              - Sid: StartProcessing
+                Effect: Allow
+                Action: states:StartExecution
+                Resource: !Ref ProcessingStateMachine
+              - Sid: InspectProcessingExecution
+                Effect: Allow
+                Action: states:DescribeExecution
+                Resource: !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:${AWS::StackName}-processing:*'
+              - Sid: SendFailedInvocation
+                Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt WorkflowFailureDeadLetterQueue.Arn
+              - Sid: WriteTraces
+                Effect: Allow
+                Action: [xray:PutTraceSegments, xray:PutTelemetryRecords]
+                Resource: '*'
+
   ProcessorFunctionRole:
     Type: AWS::IAM::Role
     Metadata:
@@ -500,6 +559,10 @@ Resources:
                 Effect: Allow
                 Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject]
                 Resource: !Sub '${DataBucket.Arn}/users/*'
+              - Sid: ListRecordingObjects
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt DataBucket.Arn
               - Sid: RecordingState
                 Effect: Allow
                 Action: [dynamodb:GetItem, dynamodb:UpdateItem]
@@ -545,6 +608,10 @@ Resources:
                 Effect: Allow
                 Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject]
                 Resource: !Sub '${DataBucket.Arn}/users/*'
+              - Sid: ListRecordingObjects
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt DataBucket.Arn
               - Sid: RecordingState
                 Effect: Allow
                 Action: [dynamodb:GetItem, dynamodb:UpdateItem]
@@ -651,6 +718,55 @@ Resources:
           AWS_TOTAL_MAX_ATTEMPTS: '2'
       Code: {S3Bucket: !Ref DataBucket, S3Key: !Ref ApiCodeS3Key, S3ObjectVersion: !Ref ApiCodeS3Version}
 
+  UploadTriggerFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: UploadTriggerFunctionLogGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: converts a validated original-object event into one idempotent workflow execution
+        must: [Never trust event scope without validating the key, Propagate transient failures for EventBridge retry]
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-upload-trigger'
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: index.upload_handler
+      Role: !GetAtt UploadTriggerFunctionRole.Arn
+      MemorySize: 256
+      Timeout: 60
+      TracingConfig: {Mode: Active}
+      Environment:
+        Variables:
+          PROJECTS_TABLE: !Ref ProjectsTable
+          RECORDINGS_TABLE: !Ref RecordingsTable
+          RECORDING_HASHES_TABLE: !Ref RecordingHashesTable
+          WORKFLOW_ADMISSIONS_TABLE: !Ref WorkflowAdmissionsTable
+          MAX_ACTIVE_WORKFLOWS: !Ref MaxActiveWorkflows
+          ENFORCE_WORKFLOW_ADMISSIONS: !Ref EnforceWorkflowAdmissions
+          DATA_BUCKET: !Ref DataBucket
+          STATE_MACHINE_ARN: !Ref ProcessingStateMachine
+          URL_EXPIRY_SECONDS: '900'
+          OWNER_PROJECT_INDEX: OwnerProjectCreatedAtIndex
+          MAX_JSON_PAYLOAD_BYTES: '1048576'
+          MAX_TRANSCRIPT_PAYLOAD_BYTES: '5242880'
+          PAYLOAD_RECOVERY_DAYS: '30'
+          ABANDONED_RETENTION_DAYS: '7'
+          AUDIO_MAX_DURATION_SECONDS: !Ref MaxAudioDurationSeconds
+          AUDIO_MAX_UPLOAD_BYTES: !Ref MaxAudioUploadBytes
+          AWS_CONNECT_TIMEOUT_SECONDS: '1'
+          AWS_READ_TIMEOUT_SECONDS: '3'
+          AWS_TOTAL_MAX_ATTEMPTS: '2'
+      Code: {S3Bucket: !Ref DataBucket, S3Key: !Ref ApiCodeS3Key, S3ObjectVersion: !Ref ApiCodeS3Version}
+
+  UploadTriggerInvokeConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    Properties:
+      FunctionName: !Ref UploadTriggerFunction
+      Qualifier: '$LATEST'
+      MaximumEventAgeInSeconds: 21600
+      MaximumRetryAttempts: 2
+      DestinationConfig:
+        OnFailure: {Destination: !GetAtt WorkflowFailureDeadLetterQueue.Arn}
+
   ProcessorFunction:
     Type: AWS::Lambda::Function
     DependsOn: ProcessorFunctionLogGroup
@@ -678,6 +794,7 @@ Resources:
           ENFORCE_WORKFLOW_ADMISSIONS: !Ref EnforceWorkflowAdmissions
           BEDROCK_MODEL_ID: !Ref BedrockModelId
           BEDROCK_MAX_INPUT_CHARS: !Ref BedrockMaxInputChars
+          ENABLE_BEDROCK_FEEDBACK: !Ref EnableBedrockFeedback
           PROCESSOR_BUILD_ID: !Sub '${ProcessorCodeS3Key}:${ProcessorCodeS3Version}'
           ENVIRONMENT: !Ref Environment
           OWNER_PROJECT_INDEX: OwnerProjectCreatedAtIndex
@@ -702,10 +819,10 @@ Resources:
     Properties:
       FunctionName: !Sub '${AWS::StackName}-audio-prep'
       PackageType: Image
-      Architectures: [arm64]
+      Architectures: [x86_64]
       Role: !GetAtt AudioPrepFunctionRole.Arn
-      MemorySize: 2048
-      Timeout: 300
+      MemorySize: 3008
+      Timeout: 600
       EphemeralStorage: {Size: 2048}
       TracingConfig: {Mode: Active}
       Environment:
@@ -721,7 +838,11 @@ Resources:
           MAX_TRANSCRIPT_PAYLOAD_BYTES: '5242880'
           PAYLOAD_RECOVERY_DAYS: '30'
           ABANDONED_RETENTION_DAYS: '7'
-          AUDIO_PIPELINE_VERSION: '1.1.0'
+          AUDIO_PIPELINE_VERSION: '2.0.0'
+          AUDIO_ENHANCEMENT_BACKEND: deepfilternet
+          AUDIO_ENHANCEMENT_MODEL: DeepFilterNet3
+          AUDIO_ENHANCEMENT_ATTENUATION_LIMIT_DB: '18'
+          AUDIO_ORIGINAL_BLEND_FRACTION: '0.75'
           AUDIO_BUILD_DIGEST: !Ref AudioPrepImageUri
           AUDIO_MAX_DURATION_SECONDS: !Ref MaxAudioDurationSeconds
           AUDIO_MAX_UPLOAD_BYTES: !Ref MaxAudioUploadBytes
@@ -826,7 +947,7 @@ Resources:
       DefinitionString: !Sub |
         {
           "Comment":"SpeakUp audio processing workflow","StartAt":"PreprocessAudio","States":{
-            "PreprocessAudio":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","TimeoutSeconds":330,"Parameters":{"FunctionName":"${AudioPrepFunction.Arn}","Payload":{"user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.audio_s3_key"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["Lambda.ServiceException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"StartTranscription"},
+            "PreprocessAudio":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","TimeoutSeconds":630,"Parameters":{"FunctionName":"${AudioPrepFunction.Arn}","Payload":{"user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.audio_s3_key"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["Lambda.ServiceException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"StartTranscription"},
             "StartTranscription":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","Parameters":{"FunctionName":"${ProcessorFunction.Arn}","Payload":{"action":"start","user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.transcription_audio_s3_key"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["Lambda.ServiceException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"WaitForTranscribe"},
             "WaitForTranscribe":{"Type":"Wait","Seconds":15,"Next":"CheckTranscription"},
             "CheckTranscription":{"Type":"Task","Resource":"arn:${AWS::Partition}:states:::lambda:invoke","Parameters":{"FunctionName":"${ProcessorFunction.Arn}","Payload":{"action":"status","user_id.$":"$.user_id","recording_id.$":"$.recording_id","project_id.$":"$.project_id","audio_s3_key.$":"$.audio_s3_key","transcription_job_name.$":"$.transcription_job_name","transcript_s3_key.$":"$.transcript_s3_key","poll_attempts.$":"$.poll_attempts"}},"OutputPath":"$.Payload","Retry":[{"ErrorEquals":["Lambda.ServiceException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":3,"BackoffRate":2,"JitterStrategy":"FULL"}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Next":"TranscriptionStatus"},
@@ -887,6 +1008,9 @@ Resources:
   GetRecordingRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties: {ApiId: !Ref HttpApi, RouteKey: 'GET /recordings/{recordingId}', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}'}
+  GetRecordingArtifactRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: 'GET /recordings/{recordingId}/artifacts/{artifactType}', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}'}
   ConfirmRecordingUploadRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties: {ApiId: !Ref HttpApi, RouteKey: 'POST /recordings/{recordingId}/confirm-upload', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}'}
@@ -919,6 +1043,34 @@ Resources:
   ApiInvokePermission:
     Type: AWS::Lambda::Permission
     Properties: {Action: 'lambda:InvokeFunction', FunctionName: !Ref ApiFunction, Principal: apigateway.amazonaws.com, SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*'}
+
+  UploadCompletedRule:
+    Type: AWS::Events::Rule
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: starts processing from the original S3 object creation without a client process call
+        must: [Match only this bucket, Match only approved original-audio keys, Retry through the shared DLQ]
+    Properties:
+      Name: !Sub '${AWS::StackName}-upload-completed'
+      EventPattern:
+        source: [aws.s3]
+        detail-type: ['Object Created']
+        detail:
+          bucket:
+            name: [!Ref DataBucket]
+          object:
+            key:
+              - suffix: '/original.wav'
+              - suffix: '/original.mp3'
+              - suffix: '/original.m4a'
+              - suffix: '/original.ogg'
+              - suffix: '/original.webm'
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt UploadTriggerFunction.Arn
+          Id: UploadTrigger
+          DeadLetterConfig: {Arn: !GetAtt WorkflowFailureDeadLetterQueue.Arn}
+          RetryPolicy: {MaximumEventAgeInSeconds: 86400, MaximumRetryAttempts: 8}
 
   WorkflowFailureRule:
     Type: AWS::Events::Rule
@@ -986,7 +1138,7 @@ Resources:
             Resource: !GetAtt WorkflowFailureDeadLetterQueue.Arn
             Condition:
               ArnEquals:
-                aws:SourceArn: [!GetAtt WorkflowFailureRule.Arn, !GetAtt WorkflowFailureReconcileRule.Arn, !GetAtt MaintenanceCleanupRule.Arn]
+                aws:SourceArn: [!GetAtt UploadCompletedRule.Arn, !GetAtt WorkflowFailureRule.Arn, !GetAtt WorkflowFailureReconcileRule.Arn, !GetAtt MaintenanceCleanupRule.Arn]
   WorkflowFailureDeadLetterAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -1022,6 +1174,20 @@ Resources:
       Namespace: AWS/Lambda
       MetricName: Errors
       Dimensions: [{Name: FunctionName, Value: !Ref ApiFunction}]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref 'AWS::NoValue']
+  UploadTriggerFunctionErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Automatic upload trigger Lambda errors detected.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{Name: FunctionName, Value: !Ref UploadTriggerFunction}]
       Statistic: Sum
       Period: 300
       EvaluationPeriods: 1
@@ -1099,6 +1265,9 @@ Resources:
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
       AlarmActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref 'AWS::NoValue']
+  UploadTriggerInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties: {Action: 'lambda:InvokeFunction', FunctionName: !Ref UploadTriggerFunction, Principal: events.amazonaws.com, SourceArn: !GetAtt UploadCompletedRule.Arn}
   EventBridgeInvokePermission:
     Type: AWS::Lambda::Permission
     Properties: {Action: 'lambda:InvokeFunction', FunctionName: !Ref FailureFunction, Principal: events.amazonaws.com, SourceArn: !GetAtt WorkflowFailureRule.Arn}
@@ -1143,6 +1312,9 @@ Outputs:
   AudioPrepFunctionName:
     Description: Image-based audio preparation worker name.
     Value: !Ref AudioPrepFunction
+  UploadTriggerFunctionName:
+    Description: Event-driven worker that starts processing after an original upload.
+    Value: !Ref UploadTriggerFunction
   BedrockModelId:
     Description: In-Region model used for coaching feedback.
     Value: !Ref BedrockModelId

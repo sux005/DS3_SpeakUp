@@ -1017,7 +1017,6 @@ class RecordingRepository:
 
         names = {"#revision": "revision"}
         values: dict[str, Any] = {
-            ":expected_revision": expected_revision,
             ":next_revision": expected_revision + 1,
         }
         setters = ["#revision = :next_revision"]
@@ -1101,9 +1100,9 @@ class RecordingRepository:
             )
         admission_values: dict[str, Any] = {
             ":ids": {current["recording_id"]},
-            ":recording_id": current["recording_id"],
         }
         if claim:
+            admission_values[":recording_id"] = current["recording_id"]
             admission_expression = "ADD active_recording_ids :ids"
             if self._enforce_admission_limit:
                 admission_values[":limit"] = self._max_active_workflows

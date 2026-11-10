@@ -109,7 +109,9 @@ def main() -> int:
         "--output-dir", type=Path, default=PROJECT_ROOT / "results" / "real_audio_qa"
     )
     parser.add_argument(
-        "--enhancement-backend", choices=("rnnoise", "none"), default="rnnoise"
+        "--enhancement-backend",
+        choices=("deepfilternet", "rnnoise", "none"),
+        default="deepfilternet",
     )
     args = parser.parse_args()
 

@@ -50,12 +50,12 @@ def test_raw_clip_to_audio_report_and_transcript(name: str, tmp_path: Path, mode
     artifacts = process_clip(source, tmp_path / "prepared", AudioPrepConfig())
     report = json.loads(artifacts["report"].read_text(encoding="utf-8"))
     assert report["source"]["source_sha256"] == source_hash
-    assert report["output"]["sample_rate"] == 16_000
+    assert report["output"]["sample_rate"] == 48_000
     assert report["output"]["timeline_preserved"] is True
     assert report["output"]["enhancement"]["applied"] is True
     assert all(path.is_file() for path in artifacts.values())
     diagnostic = sf.info(artifacts["diagnostic"])
-    assert diagnostic.samplerate == 16_000
+    assert diagnostic.samplerate == 48_000
     assert diagnostic.channels == 1
     assert abs(
         diagnostic.duration

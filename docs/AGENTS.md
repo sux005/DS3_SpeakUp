@@ -116,8 +116,9 @@ for analysis, derives transcript-based speech metrics, and stores versioned
 coaching results in a private serverless AWS backend.
 
 **Status:** active development; development AWS stack exists
-**Primary language(s)/framework(s):** Python 3.13 Lambda, boto3, librosa,
-RNNoise, DynamoDB, S3, Step Functions, CloudFormation
+**Primary language(s)/framework(s):** Python 3.13 Lambda, isolated Python 3.11
+DeepFilterNet audio worker, boto3, librosa, DynamoDB, S3, Step Functions,
+CloudFormation
 
 ## Repo structure
 
@@ -152,6 +153,11 @@ pip install -r requirements.txt
 cp .env.development.example .env.development
 ```
 
+DeepFilterNet-backed local audio processing uses a separate Python 3.11 environment
+with the self-contained `requirements-audio-model.txt`; do not combine it with the
+Python 3.13 `requirements.txt`. The normal test environment does not need to install
+PyTorch or native model wheels.
+
 Use `.env.production.example` as the production schema after the production
 CloudFormation stack is deployed. Never commit `.env.development` or
 `.env.production`, and never put AWS access keys in either file; local AWS CLI
@@ -159,9 +165,15 @@ access uses the short-lived `speakup-dev` profile.
 
 ## Running things
 
-- Run audio preparation: `python -m src.audio.preprocess <input> <output-dir>`
-- Run local six-clip QA with duplicate skipping: `python scripts/run_real_audio_qa.py`
+- Run model-backed audio preparation with the Python 3.11 environment:
+  activate `.venv-audio-v2`, then run
+  `python -m src.audio.preprocess <input> <output-dir>`
+- Run local six-clip QA with duplicate skipping:
+  activate `.venv-audio-v2`, then run
+  `python scripts/run_real_audio_qa.py`
 - Build Lambda packages: `python scripts/build_lambda_packages.py`
+- Calculate transcript WPM: `python scripts/calculate_wpm.py <transcript.json>`
+- Count transcript fillers: `python scripts/count_fillers.py <transcript.json>`
 - Launch notebooks: `jupyter lab notebooks/`
 - Validate locally: `python -m pytest -q --basetemp .test-tmp -p no:cacheprovider`
 - Opt-in deployed workflow smoke test: set `SPEAKUP_LIVE_E2E=1`,
@@ -183,6 +195,10 @@ access uses the short-lived `speakup-dev` profile.
 - Before opening a PR: run `pytest` and make sure it passes. New logic in
   `src/` should come with a test — either in `tests/` or a clear
   assertion-based check in the relevant notebook.
+- macOS and Linux use `.venv/bin/activate`; Windows PowerShell uses
+  `.venv\Scripts\Activate.ps1`. Model-backed work uses CPython 3.11 on every
+  platform. Keep PyTorch requirement markers compatible with macOS plain wheels
+  and Linux/Windows `+cpu` wheels.
 
 ## Code style & conventions
 

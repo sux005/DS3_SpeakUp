@@ -1,0 +1,6 @@
+# Optional legacy RNNoise backend. The default and deployed audio pipeline uses
+# DeepFilterNet and does not need these packages. pyrnnoise 0.4.3 publishes a
+# macOS wheel for macOS 15+; older macOS versions should use the default
+# DeepFilterNet backend instead.
+pyrnnoise==0.4.3
+audiolab==0.4.8

@@ -12,27 +12,6 @@ from src.audio.config import AudioPrepConfig
 EPSILON = np.finfo(np.float32).eps
 
 
-def _safe_sos_filter(sos: np.ndarray, y: np.ndarray) -> np.ndarray:
-    try:
-        return signal.sosfiltfilt(sos, y).astype(np.float32)
-    except ValueError:
-        return signal.sosfilt(sos, y).astype(np.float32)
-
-
-def highpass(y: np.ndarray, sample_rate: int, config: AudioPrepConfig) -> np.ndarray:
-    """Remove sub-speech rumble without altering the signal timeline."""
-
-    cutoff = min(config.highpass_hz, sample_rate * 0.45)
-    sos = signal.butter(
-        config.highpass_order,
-        cutoff,
-        btype="highpass",
-        fs=sample_rate,
-        output="sos",
-    )
-    return _safe_sos_filter(sos, y)
-
-
 def detect_hum_frequency(
     y: np.ndarray, sample_rate: int, config: AudioPrepConfig
 ) -> float | None:
@@ -59,31 +38,6 @@ def detect_hum_frequency(
             best_frequency = candidate
             best_contrast = contrast
     return best_frequency if best_contrast >= config.hum_detection_db else None
-
-
-def remove_hum(
-    y: np.ndarray,
-    sample_rate: int,
-    fundamental_hz: float | None,
-    config: AudioPrepConfig,
-) -> np.ndarray:
-    """Notch a detected mains fundamental and a bounded number of harmonics."""
-
-    if fundamental_hz is None:
-        return y.copy()
-    filtered = y.astype(np.float64)
-    for harmonic in range(1, config.max_hum_harmonics + 1):
-        frequency = fundamental_hz * harmonic
-        if frequency >= sample_rate * 0.45:
-            break
-        numerator, denominator = signal.iirnotch(
-            frequency, config.hum_notch_q, fs=sample_rate
-        )
-        try:
-            filtered = signal.filtfilt(numerator, denominator, filtered)
-        except ValueError:
-            filtered = signal.lfilter(numerator, denominator, filtered)
-    return filtered.astype(np.float32)
 
 
 def _resample(y: np.ndarray, source_rate: int, target_rate: int) -> np.ndarray:
@@ -173,22 +127,6 @@ def blend_with_original(
     return (
         original_fraction * original + (1.0 - original_fraction) * enhanced
     ).astype(np.float32)
-
-
-def presence_equalize(
-    y: np.ndarray, sample_rate: int, config: AudioPrepConfig
-) -> np.ndarray:
-    """Add a small, broad speech-presence lift rather than aggressive EQ."""
-
-    nyquist_guard = sample_rate * 0.45
-    high = min(config.presence_high_hz, nyquist_guard)
-    low = min(config.presence_low_hz, high * 0.8)
-    if low <= 0 or high <= low or config.presence_gain_db <= 0:
-        return y.copy()
-    sos = signal.butter(2, [low, high], btype="bandpass", fs=sample_rate, output="sos")
-    speech_band = _safe_sos_filter(sos, y)
-    added_gain = 10.0 ** (config.presence_gain_db / 20.0) - 1.0
-    return (y + added_gain * speech_band).astype(np.float32)
 
 
 def normalize_speech_level(y: np.ndarray, config: AudioPrepConfig) -> np.ndarray:

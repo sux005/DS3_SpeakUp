@@ -13,14 +13,11 @@ import librosa
 import numpy as np
 
 from src.audio.config import AudioPrepConfig
+from src.audio.enhancement import Enhancer, enhance_speech
 from src.audio.filters import (
     blend_with_original,
     detect_hum_frequency,
-    highpass,
     normalize_speech_level,
-    presence_equalize,
-    remove_hum,
-    rnnoise_enhance,
 )
 from src.audio.io import decode_audio, write_pcm16
 from src.audio.quality import compare_candidate, measure_quality, quality_warnings
@@ -112,16 +109,10 @@ def _candidate_passes(
     ):
         failures.append("SNR_REGRESSION")
     if (
-        candidate_quality["non_silent_fraction"]
-        < reference_quality["non_silent_fraction"] * 0.5
+        comparison["speech_frame_retention_fraction"]
+        < config.minimum_speech_frame_retention
     ):
         failures.append("SPEECH_REMOVAL")
-    if (
-        candidate_quality["reverberation_tail_proxy"]
-        > reference_quality["reverberation_tail_proxy"]
-        + config.maximum_reverb_proxy_increase
-    ):
-        failures.append("REVERBERATION_PROXY_REGRESSION")
     if comparison["waveform_correlation"] < config.minimum_candidate_correlation:
         failures.append("LOW_WAVEFORM_CORRELATION")
     if comparison["si_sdr_db"] < config.minimum_candidate_si_sdr_db:
@@ -139,8 +130,9 @@ def prepare_audio(
     sample_rate: int,
     config: AudioPrepConfig | None = None,
     source_metadata: dict[str, Any] | None = None,
+    enhancer: Enhancer | None = None,
 ) -> PreparedAudio:
-    """Create a diagnostic reference and a conservatively enhanced ASR signal."""
+    """Create a normalized reference and model-driven ASR candidate."""
 
     config = config or AudioPrepConfig()
     audio = np.asarray(audio, dtype=np.float32)
@@ -151,15 +143,17 @@ def prepare_audio(
     canonical = _resample_to_target(mono, sample_rate, config)
 
     detected_hum = detect_hum_frequency(mono, sample_rate, config)
-    fullband_reference = highpass(mono, sample_rate, config)
-    fullband_reference = remove_hum(
-        fullband_reference, sample_rate, detected_hum, config
-    )
+    # V2 deliberately gives the learned enhancer the full-band waveform. The
+    # reference path only removes DC, resamples, and normalizes; fixed denoising,
+    # notch filtering, and presence EQ no longer shape the model input/output.
+    fullband_reference = mono
     enhancement_warning: str | None = None
     try:
-        fullband_model, model_report = rnnoise_enhance(
+        enhancement = (enhancer or enhance_speech)(
             fullband_reference, sample_rate, config
         )
+        fullband_model = enhancement.audio
+        model_report = enhancement.report
     except RuntimeError as error:
         fullband_model = fullband_reference.copy()
         model_report = {
@@ -179,15 +173,9 @@ def prepare_audio(
         _resample_to_target(fullband_reference, sample_rate, config), config
     )
     enhanced_model = _resample_to_target(fullband_model, sample_rate, config)
-    enhanced_model = presence_equalize(
-        enhanced_model, config.target_sample_rate, config
-    )
     enhanced_model = normalize_speech_level(enhanced_model, config)
     enhanced_blended = _resample_to_target(
         fullband_blended, sample_rate, config
-    )
-    enhanced_blended = presence_equalize(
-        enhanced_blended, config.target_sample_rate, config
     )
     enhanced_blended = normalize_speech_level(enhanced_blended, config)
 
@@ -215,18 +203,22 @@ def prepare_audio(
         blended_comparison,
         config,
     )
-    if blended_safe and model_report.get("applied"):
-        diagnostic = enhanced_blended
-        selection = "enhanced_blended"
-        reason = "conservative_blend_passed_distortion_gate"
-    elif model_safe and model_report.get("applied"):
+    if model_safe and model_report.get("applied"):
         diagnostic = enhanced_model
         selection = "enhanced_model"
         reason = "model_passed_distortion_gate"
+    elif blended_safe and model_report.get("applied"):
+        diagnostic = enhanced_blended
+        selection = "enhanced_blended"
+        reason = "model_failed_gate_but_conservative_blend_passed"
     else:
         diagnostic = reference
         selection = "reference"
-        reason = "enhancement_failed_distortion_gate"
+        reason = (
+            "enhancement_not_applied"
+            if not model_report.get("applied")
+            else "enhancement_failed_distortion_gate"
+        )
 
     report: dict[str, Any] = {
         "pipeline_version": config.pipeline_version,
@@ -243,6 +235,13 @@ def prepare_audio(
             "samples": int(len(reference)),
             "timeline_preserved": True,
             "detected_hum_hz": detected_hum,
+            "handcrafted_denoising_applied": False,
+            "conditioning": [
+                "mono_downmix",
+                "dc_offset_removal",
+                "resample",
+                "speech_level_normalization",
+            ],
             "selected_for_transcription": selection,
             "selection_reason": reason,
             "enhancement": model_report,

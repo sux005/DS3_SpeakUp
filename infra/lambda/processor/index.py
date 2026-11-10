@@ -6,6 +6,7 @@ from functools import lru_cache
 from decimal import Decimal
 import hashlib
 import json
+import logging
 import os
 import re
 from typing import Any
@@ -25,6 +26,16 @@ from src.aws_payload.errors import WriteConflictError
 from src.scoring import score_transcribe_items
 
 
+LOGGER = logging.getLogger(__name__)
+LOGGER.setLevel(logging.INFO)
+
+
+def _bedrock_feedback_enabled() -> bool:
+    """Return the explicit deployment feature flag for generative feedback."""
+
+    return os.getenv("ENABLE_BEDROCK_FEEDBACK", "false").strip().lower() == "true"
+
+
 def _build_version(base: str) -> str:
     """Bind replay identifiers to the immutable deployed processor archive."""
 
@@ -36,7 +47,7 @@ def _build_version(base: str) -> str:
 
 TRANSCRIBE_VERSION = _build_version("raw-v1")
 TRANSCRIPT_VERSION = _build_version("1.0.0")
-ANALYSIS_VERSION = _build_version("2.0.0")
+ANALYSIS_VERSION = _build_version("3.0.0")
 FEEDBACK_VERSION = _build_version("2.0.0")
 MAX_TRANSCRIBE_POLLS = 80
 DEFAULT_BEDROCK_MAX_INPUT_CHARS = 80_000
@@ -59,15 +70,21 @@ def _bedrock_input(prompt: dict[str, Any]) -> str:
 
 def _artifact_reference(recording: Any, event: dict[str, Any], payload_type: PayloadType,
                         producer: str, version: str, name: str,
-                        *, historical_base: str | None = None) -> dict[str, Any] | None:
+                        *, historical_base: str | tuple[str, ...] | None = None) -> dict[str, Any] | None:
     reference = recording.payload_refs.get(payload_type.value)
     if reference is None:
         return None
     stored_version = reference.get("producer_version")
     if historical_base and stored_version != version:
         current_base = version.split("-", 1)[0]
+        historical_bases = (
+            (historical_base,) if isinstance(historical_base, str)
+            else historical_base
+        )
+        accepted_bases = (*historical_bases, current_base)
+        accepted_pattern = "|".join(re.escape(base) for base in accepted_bases)
         if not isinstance(stored_version, str) or not re.fullmatch(
-            rf"(?:{re.escape(historical_base)}|{re.escape(current_base)})(?:-[0-9a-f]{{24}})?",
+            rf"(?:{accepted_pattern})(?:-[0-9a-f]{{24}})?",
             stored_version,
         ):
             raise ValueError("Stored artifact reference has an unsupported version")
@@ -117,6 +134,13 @@ def _json_metrics(value: Any) -> dict[str, Any]:
     """Return DynamoDB numeric values as JSON-compatible workflow metrics."""
 
     return json.loads(json.dumps(value, default=lambda number: float(number) if isinstance(number, Decimal) else number))
+
+
+def _compact_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
+    """Keep per-occurrence review data in S3, not the DynamoDB summary."""
+
+    detailed_fields = {"filler_occurrences", "pauses", "long_pauses"}
+    return {key: value for key, value in metrics.items() if key not in detailed_fields}
 
 
 SDK_CONFIG = Config(
@@ -175,7 +199,36 @@ def _validate_workflow_scope(recording: Any, event: dict[str, Any]) -> None:
     if job_name and event.get("transcription_job_name") not in (None, job_name):
         raise ValueError("Workflow Transcribe job scope does not match recording")
     transcript_key = getattr(recording, "raw_transcript_s3_key", None)
-    if transcript_key and event.get("transcript_s3_key") not in (None, transcript_key):
+    allowed_transcript_keys = {transcript_key} if transcript_key else set()
+    if event.get("action") == "feedback":
+        transcript_ref = _artifact_reference(
+            recording,
+            event,
+            PayloadType.TRANSCRIPT,
+            "speakup-transcript-normalizer",
+            TRANSCRIPT_VERSION,
+            "transcript",
+            historical_base="1.0.0",
+        )
+        analysis_ref = _artifact_reference(
+            recording,
+            event,
+            PayloadType.SPEECH_ANALYSIS,
+            "speakup-speech-analysis",
+            ANALYSIS_VERSION,
+            "speech_analysis",
+            historical_base=("1.0.0", "2.0.0"),
+        )
+        if transcript_ref is not None:
+            allowed_transcript_keys.add(transcript_ref["key"])
+        if event.get("analysis_s3_key") is not None and (
+            analysis_ref is None or event["analysis_s3_key"] != analysis_ref["key"]
+        ):
+            raise ValueError("Workflow analysis scope does not match recording")
+    if (
+        allowed_transcript_keys
+        and event.get("transcript_s3_key") not in ({None} | allowed_transcript_keys)
+    ):
         raise ValueError("Workflow transcript scope does not match recording")
 
 
@@ -276,16 +329,19 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         )["TranscriptionJob"]
         attempts = int(event.get("poll_attempts", 0)) + 1
         status = job["TranscriptionJobStatus"]
+        failure_reason = job.get("FailureReason", "")
+        if status == "FAILED":
+            error_message = failure_reason or "Transcription job failed"
+        elif status not in ("COMPLETED", "FAILED") and attempts >= MAX_TRANSCRIBE_POLLS:
+            error_message = "Transcription polling limit exceeded"
+        else:
+            error_message = ""
         return {
             **event,
             "poll_attempts": attempts,
             "transcribe_status": status,
-            "failure_reason": job.get("FailureReason", ""),
-            "error": (
-                "Transcription polling limit exceeded"
-                if status not in ("COMPLETED", "FAILED") and attempts >= MAX_TRANSCRIBE_POLLS
-                else job.get("FailureReason", "Transcription job failed")
-            ),
+            "failure_reason": failure_reason,
+            "error": error_message,
         }
 
     if action == "analyze":
@@ -297,7 +353,7 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                                                  "transcript", historical_base="1.0.0")
             analysis_ref = _artifact_reference(recording, event, PayloadType.SPEECH_ANALYSIS,
                                                "speakup-speech-analysis", ANALYSIS_VERSION,
-                                               "speech_analysis", historical_base="1.0.0")
+                                               "speech_analysis", historical_base=("1.0.0", "2.0.0"))
             transcript_found = store.objects.find_json(
                 event["user_id"], event["project_id"], event["recording_id"],
                 payload_type=PayloadType.TRANSCRIPT,
@@ -331,6 +387,7 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         text = str(transcripts[0].get("transcript", ""))
         items = document.get("results", {}).get("items") or []
         metrics = score_transcribe_items(items)
+        summary_metrics = _compact_metrics(metrics)
         recording, transcript_ref = _ensure_json_artifact(
             store, event, recording, PayloadType.TRANSCRIPT,
             "speakup-transcript-normalizer", TRANSCRIPT_VERSION, "transcript",
@@ -342,26 +399,26 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             {"metrics": metrics},
         )
         if already_analyzed:
-            if _json_metrics(recording.summary_metrics) != metrics:
+            if _json_metrics(recording.summary_metrics) != summary_metrics:
                 raise ValueError("Stored analysis metrics disagree with the raw transcript")
         else:
             try:
                 recording = store.transition_recording(
                     event["user_id"], event["recording_id"], RecordingStatus.ANALYZED,
                     expected_revision=recording.revision,
-                    updates={"summary_metrics": json.loads(json.dumps(metrics), parse_float=Decimal)},
+                    updates={"summary_metrics": json.loads(json.dumps(summary_metrics), parse_float=Decimal)},
                 )
             except WriteConflictError:
                 recording = store.get_recording(event["user_id"], event["recording_id"])
                 if recording.status not in (RecordingStatus.ANALYZED, RecordingStatus.COMPLETE):
                     raise
-                if _json_metrics(recording.summary_metrics) != metrics:
+                if _json_metrics(recording.summary_metrics) != summary_metrics:
                     raise ValueError("Concurrent analysis has different metrics")
         return {
             **event,
             "transcript_s3_key": transcript_ref["key"],
             "analysis_s3_key": analysis_ref["key"],
-            "summary_metrics": metrics,
+            "summary_metrics": summary_metrics,
             "recording_revision": recording.revision,
         }
 
@@ -371,6 +428,34 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             recording, event, PayloadType.FEEDBACK, "speakup-coach", FEEDBACK_VERSION, "feedback",
             historical_base="1.0.0",
         )
+        if not _bedrock_feedback_enabled():
+            if recording.status is RecordingStatus.COMPLETE:
+                return {
+                    **event,
+                    "status": recording.status.value,
+                    "feedback_status": "SKIPPED",
+                }
+            if recording.status is not RecordingStatus.ANALYZED:
+                raise ValueError("Recording is not ready for completion")
+            if not recording.summary_metrics:
+                raise ValueError("Analyzed recording is missing persisted metrics")
+            recording = store.transition_recording(
+                event["user_id"],
+                event["recording_id"],
+                RecordingStatus.COMPLETE,
+                expected_revision=recording.revision,
+            )
+            LOGGER.info(json.dumps({
+                "stage": "feedback",
+                "status": "SKIPPED",
+                "reason": "ENABLE_BEDROCK_FEEDBACK is false",
+                "recording_id": event["recording_id"],
+            }, sort_keys=True))
+            return {
+                **event,
+                "status": recording.status.value,
+                "feedback_status": "SKIPPED",
+            }
         if recording.status is RecordingStatus.COMPLETE:
             if feedback_ref is None:
                 raise ValueError("Completed recording is missing feedback")

@@ -26,6 +26,7 @@ def load_processor(monkeypatch):
         "AWS_SECRET_ACCESS_KEY": "test",
         "ENVIRONMENT": "test",
         "BEDROCK_MODEL_ID": "model-test",
+        "ENABLE_BEDROCK_FEEDBACK": "true",
     }.items():
         monkeypatch.setenv(key, value)
     spec = importlib.util.spec_from_file_location("speakup_processor_test", PROCESSOR_PATH)
@@ -178,6 +179,25 @@ def test_status_returns_transcribe_state_and_failure_reason(monkeypatch):
     assert result["transcribe_status"] == "FAILED"
     assert result["failure_reason"] == "codec error"
     assert result["error"] == "codec error"
+
+
+def test_completed_transcription_does_not_emit_failure_error(monkeypatch):
+    module = load_processor(monkeypatch)
+    module.payloads = lambda: FakeStore()
+    module.TRANSCRIBE = SimpleNamespace(
+        get_transcription_job=lambda **kwargs: {
+            "TranscriptionJob": {"TranscriptionJobStatus": "COMPLETED"}
+        }
+    )
+
+    result = module.handler(
+        event("status", transcription_job_name="job-1", transcript_s3_key="raw.json"),
+        None,
+    )
+
+    assert result["transcribe_status"] == "COMPLETED"
+    assert result["failure_reason"] == ""
+    assert result["error"] == ""
 
 
 def test_status_reaches_poll_limit_and_allows_completion_on_final_poll(monkeypatch):
@@ -354,9 +374,17 @@ def test_analyze_normalizes_transcript_and_calculates_fillers(monkeypatch):
     assert metrics["duration_seconds"] == 2.0
     assert metrics["words_per_minute"] == 30.0
     assert metrics["filler_words"] == {"um": 1}
+    assert "filler_occurrences" not in metrics
+    assert "pauses" not in metrics
+    assert "long_pauses" not in metrics
     assert metrics["rubric_status"] == "insufficient_speech"
     assert all(score is None for score in metrics["rubric_scores"].values())
     assert [item["artifact_name"] for item in store.artifacts] == ["transcript", "speech_analysis"]
+    analysis = store.artifacts[-1]["data"]["metrics"]
+    assert analysis["filler_occurrences"] == [
+        {"filler": "um", "start_seconds": 0.0, "end_seconds": 1.0}
+    ]
+    assert analysis["pauses"] == []
     assert store.transitions[-1][0] is RecordingStatus.ANALYZED
 
 
@@ -442,13 +470,16 @@ def test_analyze_replays_historical_metrics_without_replacing_artifacts(monkeypa
         (PayloadType.TRANSCRIPT, "speakup-transcript-normalizer", "transcript"),
         (PayloadType.SPEECH_ANALYSIS, "speakup-speech-analysis", "speech_analysis"),
     ):
+        producer_version = (
+            "2.0.0" if payload_type is PayloadType.SPEECH_ANALYSIS else "1.0.0"
+        )
         store.recording.payload_refs[payload_type.value] = {
             "key": artifact_key("user-1", "project-1", "recording-1", producer=producer,
-                                producer_version="1.0.0", artifact_name=name,
+                                producer_version=producer_version, artifact_name=name,
                                 content_type="application/json"),
             "user_id": "user-1", "project_id": "project-1", "recording_id": "recording-1",
             "payload_type": payload_type.value, "producer": producer,
-            "producer_version": "1.0.0",
+            "producer_version": producer_version,
         }
     module.payloads = lambda: store
     result = module.handler(event("analyze", transcript_s3_key="raw.json"), None)
@@ -537,6 +568,91 @@ def test_feedback_reuses_existing_feedback_without_calling_bedrock(monkeypatch):
 
     assert result["status"] == RecordingStatus.COMPLETE.value
     assert store.transitions[-1][2] == {"feedback_s3_key": key}
+
+
+def test_feedback_disabled_completes_without_bedrock(monkeypatch):
+    module = load_processor(monkeypatch)
+    monkeypatch.setenv("ENABLE_BEDROCK_FEEDBACK", "false")
+    store = FakeStore(status=RecordingStatus.ANALYZED)
+    module.payloads = lambda: store
+    module.BEDROCK = SimpleNamespace(
+        converse=lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("Bedrock must not be called")
+        )
+    )
+
+    result = module.handler(event("feedback", summary_metrics={"word_count": 2}), None)
+
+    assert result["status"] == "COMPLETE"
+    assert result["feedback_status"] == "SKIPPED"
+    assert store.transitions[-1][0] is RecordingStatus.COMPLETE
+    assert store.artifacts == []
+
+
+def test_feedback_scope_accepts_only_persisted_normalized_artifacts(monkeypatch):
+    module = load_processor(monkeypatch)
+    monkeypatch.setenv("ENABLE_BEDROCK_FEEDBACK", "false")
+    store = FakeStore(status=RecordingStatus.ANALYZED)
+    store.recording.raw_transcript_s3_key = (
+        "users/user-1/projects/project-1/recordings/recording-1/"
+        "artifacts/aws-transcribe/raw-v1/raw.json"
+    )
+    transcript_key = artifact_key(
+        "user-1", "project-1", "recording-1",
+        producer="speakup-transcript-normalizer",
+        producer_version=module.TRANSCRIPT_VERSION,
+        artifact_name="transcript",
+        content_type="application/json",
+    )
+    analysis_key = artifact_key(
+        "user-1", "project-1", "recording-1",
+        producer="speakup-speech-analysis",
+        producer_version=module.ANALYSIS_VERSION,
+        artifact_name="speech_analysis",
+        content_type="application/json",
+    )
+    store.recording.payload_refs.update({
+        PayloadType.TRANSCRIPT.value: {
+            "key": transcript_key,
+            "user_id": "user-1",
+            "project_id": "project-1",
+            "recording_id": "recording-1",
+            "payload_type": PayloadType.TRANSCRIPT.value,
+            "producer": "speakup-transcript-normalizer",
+            "producer_version": module.TRANSCRIPT_VERSION,
+        },
+        PayloadType.SPEECH_ANALYSIS.value: {
+            "key": analysis_key,
+            "user_id": "user-1",
+            "project_id": "project-1",
+            "recording_id": "recording-1",
+            "payload_type": PayloadType.SPEECH_ANALYSIS.value,
+            "producer": "speakup-speech-analysis",
+            "producer_version": module.ANALYSIS_VERSION,
+        },
+    })
+    module.payloads = lambda: store
+
+    result = module.handler(
+        event(
+            "feedback",
+            transcript_s3_key=transcript_key,
+            analysis_s3_key=analysis_key,
+        ),
+        None,
+    )
+    assert result["status"] == "COMPLETE"
+
+    store.recording.status = RecordingStatus.ANALYZED
+    with pytest.raises(ValueError, match="analysis scope"):
+        module.handler(
+            event(
+                "feedback",
+                transcript_s3_key=transcript_key,
+                analysis_s3_key="users/other/analysis.json",
+            ),
+            None,
+        )
 
 
 def test_feedback_replays_historical_artifact_without_rewriting(monkeypatch):

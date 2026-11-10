@@ -6,7 +6,8 @@ from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 
-from src.aws_payload.models import Project, Recording, RecordingStatus, UploadIntent
+from src.aws_payload.errors import OwnershipViolationError
+from src.aws_payload.models import PayloadType, Project, Recording, RecordingStatus, UploadIntent
 
 
 def load_handler_module():
@@ -265,7 +266,7 @@ def test_public_metrics_are_json_numbers():
     assert body["summary_metrics"] == {"word_count": 12, "words_per_minute": 123.4}
 
 
-def test_public_recording_exposes_rubric_scores_and_pause_details():
+def test_public_recording_exposes_compact_rubric_scores():
     module = load_handler_module()
     recording = Recording(
         "user-1", "project-1", "recording-1", "2026-01-01T00:00:00Z",
@@ -275,13 +276,101 @@ def test_public_recording_exposes_rubric_scores_and_pause_details():
             "rubric_scores": {"speaking_rate": Decimal("4"),
                               "filler_words": Decimal("3"),
                               "pauses_inside_sentences": Decimal("2")},
-            "long_pauses": [{"start_seconds": Decimal("12.5"),
-                             "duration_seconds": Decimal("1.2"),
-                             "inside_sentence": True}],
         },
     )
     body = json.loads(module.reply(200, module._recording_body(recording))["body"])
     assert body["summary_metrics"]["rubric_scores"] == {
         "speaking_rate": 4, "filler_words": 3, "pauses_inside_sentences": 2,
     }
-    assert body["summary_metrics"]["long_pauses"][0]["duration_seconds"] == 1.2
+    assert "long_pauses" not in body["summary_metrics"]
+
+
+def test_artifact_routes_owner_check_and_expose_only_public_data(monkeypatch):
+    module = load_handler_module()
+    calls = []
+    documents = {
+        PayloadType.TRANSCRIPT: {
+            "producer": "private",
+            "data": {"text": "Um, hello.", "items": [{"type": "pronunciation"}]},
+        },
+        PayloadType.SPEECH_ANALYSIS: {
+            "producer": "private",
+            "data": {"metrics": {"filler_occurrences": [{"filler": "um"}]}},
+        },
+        PayloadType.FEEDBACK: {
+            "producer": "private",
+            "data": {"feedback": "Try a shorter opening.", "model_id": "private-model"},
+        },
+    }
+
+    class Store:
+        def get_json_artifact(self, user_id, recording_id, payload_type):
+            calls.append((user_id, recording_id, payload_type))
+            return documents[payload_type]
+
+    monkeypatch.setattr(module, "payloads", lambda: Store())
+    route = "GET /recordings/{recordingId}/artifacts/{artifactType}"
+    responses = {}
+    for artifact_type in ("transcript", "analysis", "feedback"):
+        response = module.handler(
+            authenticated_event(
+                route,
+                path={"recordingId": "recording-1", "artifactType": artifact_type},
+            ),
+            None,
+        )
+        assert response["statusCode"] == 200
+        responses[artifact_type] = json.loads(response["body"])
+
+    assert calls == [
+        ("user-1", "recording-1", PayloadType.TRANSCRIPT),
+        ("user-1", "recording-1", PayloadType.SPEECH_ANALYSIS),
+        ("user-1", "recording-1", PayloadType.FEEDBACK),
+    ]
+    assert responses["transcript"]["data"] == documents[PayloadType.TRANSCRIPT]["data"]
+    assert responses["analysis"]["data"] == documents[PayloadType.SPEECH_ANALYSIS]["data"]
+    assert responses["feedback"]["data"] == {"feedback": "Try a shorter opening."}
+    for response in responses.values():
+        assert "producer" not in response
+
+
+def test_artifact_route_rejects_unknown_type_without_reading_storage(monkeypatch):
+    module = load_handler_module()
+    monkeypatch.setattr(
+        module,
+        "payloads",
+        lambda: SimpleNamespace(
+            get_json_artifact=lambda *_: (_ for _ in ()).throw(
+                AssertionError("storage must not be read")
+            )
+        ),
+    )
+    response = module.handler(
+        authenticated_event(
+            "GET /recordings/{recordingId}/artifacts/{artifactType}",
+            path={"recordingId": "recording-1", "artifactType": "secrets"},
+        ),
+        None,
+    )
+    assert response["statusCode"] == 400
+
+
+def test_artifact_route_hides_cross_owner_recordings(monkeypatch):
+    module = load_handler_module()
+    monkeypatch.setattr(
+        module,
+        "payloads",
+        lambda: SimpleNamespace(
+            get_json_artifact=lambda *_: (_ for _ in ()).throw(
+                OwnershipViolationError("different owner")
+            )
+        ),
+    )
+    response = module.handler(
+        authenticated_event(
+            "GET /recordings/{recordingId}/artifacts/{artifactType}",
+            path={"recordingId": "recording-1", "artifactType": "analysis"},
+        ),
+        None,
+    )
+    assert response["statusCode"] == 404

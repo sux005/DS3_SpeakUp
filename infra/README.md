@@ -11,8 +11,8 @@
 - an API Gateway HTTP API with Cognito JWT authorization
 - Lambda handlers for metadata, pre-signed uploads, and audio processing
 - an image-based librosa/FFmpeg Lambda that prepares diagnostic and ASR audio
-- a Standard Step Functions workflow for audio prep, Transcribe, speech metrics, and Bedrock feedback
-- EventBridge capture of terminal workflow failures
+- a Standard Step Functions workflow for audio prep, Transcribe, deterministic speech metrics, and optional Bedrock feedback
+- EventBridge routing for original-upload starts and terminal workflow failures
 - CloudWatch logs with finite retention and X-Ray tracing
 
 The existing development bucket is adopted with `import-bucket.yaml` before the
@@ -26,6 +26,7 @@ the stack does not delete recordings, users, or DynamoDB data.
 - stack name: `speakup-dev`
 - frontend origin: `http://localhost:3000`
 - Bedrock model: in-Region `amazon.nova-lite-v1:0`
+- Bedrock feedback: disabled by default with `EnableBedrockFeedback=false`
 - CloudWatch retention: 14 days
 - audio preparation limit: 10 minutes and 100 MiB per recording
 
@@ -74,8 +75,8 @@ await fetch(upload.upload_url, {
   headers: upload.required_headers,
   body: file,
 });
-await api.post(`/recordings/${upload.recording_id}/confirm-upload`, {});
-await api.post(`/recordings/${upload.recording_id}/process`, {});
+// The S3 Object Created event confirms and starts processing automatically.
+await pollRecordingUntilTerminal(upload.recording_id);
 ```
 
 The process route conditionally reserves the checksum for one recording per user
@@ -87,8 +88,12 @@ with a checksum already reserved by a processing or complete recording return
 recording with the same bytes. Legacy recordings without a checksum remain
 processable without cross-recording duplicate detection.
 
-The client confirms the upload and then starts processing. Repeated process
-requests return the existing Standard workflow execution. Download routes return 15-minute,
+S3 sends the original-object event through EventBridge to a dedicated trigger
+Lambda. The trigger verifies the reserved object's checksum and length, applies
+duplicate and workflow-admission guards, and starts one deterministic Standard
+workflow execution. Duplicate object events and repeated process requests return
+the existing execution. The confirm and process routes remain idempotent recovery
+endpoints but are not required in the normal client flow. Download routes return 15-minute,
 owner-checked S3 URLs. Normal deletion is recoverable for 30 days; permanent
 deletion requires the exact recording ID as confirmation.
 
@@ -109,9 +114,9 @@ ways to create an original recording. This is a planned interface contract;
   previews it, and submits it. The original bytes are uploaded unchanged.
 - **Shared submission:** Either source supplies a file/blob, its byte length,
   a content type matching its actual container, and its SHA-256 to
-  `POST /uploads`. Both sources then follow the same signed S3 PUT,
-  `confirm-upload`, `process`, and
-  status-polling sequence above. Do not relabel a browser-generated blob as WAV
+  `POST /uploads`. Both sources then follow the same signed S3 PUT and
+  status-polling sequence; the object event starts processing automatically.
+  Do not relabel a browser-generated blob as WAV
   merely to pass validation.
 - **Browser recording format:** `MediaRecorder` chooses from formats the
   browser supports; it does not guarantee WAV or MP3. The backend accepts
@@ -139,10 +144,13 @@ original-download backend routes already exist.
 
 The HTTP API reserves an owner-scoped recording with its original file length,
 content type, and SHA-256. The client uploads the unchanged bytes with the
-returned signed headers, confirms the S3 object, and explicitly starts
-processing. The Standard Step Functions workflow runs audio preparation,
-Amazon Transcribe, speech analysis, and Bedrock feedback. The processor stores
-versioned artifacts and compact recording metadata; the frontend can poll
+returned signed headers. S3 publishes the completed object event through
+EventBridge, which idempotently starts the Standard Step Functions workflow;
+the normal client does not call confirm or process routes. The workflow runs
+audio preparation, Amazon Transcribe, and deterministic speech analysis.
+Bedrock coaching runs only when `EnableBedrockFeedback=true`; otherwise the
+recording completes after analytics. The processor stores versioned artifacts
+and compact recording metadata; the frontend can poll
 `GET /recordings/{recordingId}` for lifecycle status and metrics. Original audio
 is not overwritten during processing.
 
@@ -234,10 +242,12 @@ explicit CloudFormation change.
 
 ## Audio-preparation image
 
-The native RNNoise, librosa, SciPy, libsndfile, and FFmpeg dependencies live in a
-separate Lambda container image. Before deploying, confirm the selected Region in AWS
-Settings > View all projects > Overview > Additional Info > Region. The development
-project currently uses `us-east-2`.
+The DeepFilterNet3 model, CPU PyTorch runtime, librosa, SciPy, libsndfile, and
+FFmpeg dependencies live in a separate Python 3.11 Lambda container image. The
+legacy RNNoise backend remains available for local compatibility but is not bundled
+in the production image. Before deploying, confirm the selected Region in AWS Settings > View all
+projects > Overview > Additional Info > Region. The development project currently
+uses `us-east-2`.
 
 Bootstrap the retained ECR repository once:
 
@@ -246,7 +256,10 @@ aws cloudformation deploy --template-file infra/audio-prep-image.yaml `
   --stack-name speakup-audio-images --profile speakup-dev --region us-east-2
 ```
 
-Build and push an ARM64 image with an immutable version tag:
+Build and push an x86-64 image with an immutable version tag. The image build downloads
+the DeepFilterNet3 checkpoint from the matching `v0.5.6` source tag, verifies its pinned
+SHA-256, and embeds it in the immutable image, so runtime processing does not download
+model weights:
 
 ```powershell
 $repositoryUri = aws cloudformation describe-stacks `
@@ -254,9 +267,9 @@ $repositoryUri = aws cloudformation describe-stacks `
   --query "Stacks[0].Outputs[?OutputKey=='RepositoryUri'].OutputValue" --output text
 aws ecr get-login-password --profile speakup-dev --region us-east-2 |
   docker login --username AWS --password-stdin ($repositoryUri -split '/')[0]
-docker buildx build --platform linux/arm64 `
+docker buildx build --platform linux/amd64 --provenance=false `
   -f infra/lambda/audio_prep/Dockerfile `
-  -t "${repositoryUri}:1.1.0" --push .
+  -t "${repositoryUri}:2.0.0" --push .
 ```
 
 Resolve the pushed image digest with `aws ecr describe-images`, then pass
@@ -266,15 +279,20 @@ versioned artifacts under each recording's
 `artifacts/audio-prep/<pipeline-version>-<image-identity-hash>/` prefix and reuses
 them when the original ETag and configuration fingerprint match. The digest URI
 is hashed into the artifact version.
-Version 1.1.0 stores the conditioned reference, model-only
-candidate, conservative dry/wet blend, selected diagnostic signal, and quality report.
+Version 2.0.0 stores the 48 kHz normalized reference, DeepFilterNet model candidate,
+conservative dry/model blend, selected diagnostic signal, and quality report. The model
+candidate is preferred when it passes the distortion gate; the blend and reference are
+fallbacks. The audio worker uses the account-supported 3,008 MB memory maximum and a
+10-minute Lambda timeout so the configured 10-minute recording limit has CPU and memory
+headroom; the Step Functions task timeout is 10.5 minutes.
 
 ## Cost and privacy notes
 
 The stack uses on-demand/serverless capacity and has no provisioned concurrency.
 Charges are usage-based for S3, DynamoDB (including GSI writes and strong
 base-table re-reads after list queries), API Gateway, Lambda, Step Functions,
-Transcribe, Bedrock, and logs. Bedrock output is capped at 800 tokens per recording.
+Transcribe, optional Bedrock, and logs. When enabled, Bedrock output is capped
+at 800 tokens per recording.
 Step Functions logs errors without execution payloads, so transcripts are not copied
 into workflow logs. Deleted S3 object versions expire after 30 days; abandoned
 multipart uploads are removed after 7 days.
