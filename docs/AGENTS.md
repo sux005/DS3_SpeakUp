@@ -166,9 +166,11 @@ access uses the short-lived `speakup-dev` profile.
 ## Running things
 
 - Run model-backed audio preparation with the Python 3.11 environment:
-  `.venv-audio-v2/Scripts/python -m src.audio.preprocess <input> <output-dir>`
+  activate `.venv-audio-v2`, then run
+  `python -m src.audio.preprocess <input> <output-dir>`
 - Run local six-clip QA with duplicate skipping:
-  `.venv-audio-v2/Scripts/python scripts/run_real_audio_qa.py`
+  activate `.venv-audio-v2`, then run
+  `python scripts/run_real_audio_qa.py`
 - Build Lambda packages: `python scripts/build_lambda_packages.py`
 - Calculate transcript WPM: `python scripts/calculate_wpm.py <transcript.json>`
 - Count transcript fillers: `python scripts/count_fillers.py <transcript.json>`
@@ -193,6 +195,10 @@ access uses the short-lived `speakup-dev` profile.
 - Before opening a PR: run `pytest` and make sure it passes. New logic in
   `src/` should come with a test — either in `tests/` or a clear
   assertion-based check in the relevant notebook.
+- macOS and Linux use `.venv/bin/activate`; Windows PowerShell uses
+  `.venv\Scripts\Activate.ps1`. Model-backed work uses CPython 3.11 on every
+  platform. Keep PyTorch requirement markers compatible with macOS plain wheels
+  and Linux/Windows `+cpu` wheels.
 
 ## Code style & conventions
 

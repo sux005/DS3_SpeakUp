@@ -20,13 +20,13 @@ every supported function, model, parameter, return value, and exception.
 Build the four zip-based Lambda artifacts (`api`, `processor`,
 `workflow_failure`, and `maintenance`) with:
 
-```powershell
+```bash
 python scripts/build_lambda_packages.py
 ```
 
 Run the local test suite with an ignored temporary directory:
 
-```powershell
+```bash
 python -m pytest -q --basetemp .test-tmp -p no:cacheprovider
 ```
 
@@ -99,23 +99,36 @@ reference remain safety fallbacks. The original recording is never overwritten.
 The official DeepFilterNet native runtime requires CPython 3.11. For local
 model-backed audio work, create a dedicated 3.11 environment and install the
 self-contained model requirements. Do not combine them with the Python 3.13
-development requirements:
+development requirements. On macOS, install Python 3.11 first with
+`brew install python@3.11` when it is not already available.
+
+macOS and Linux:
+
+```bash
+python3.11 -m venv .venv-audio-v2
+source .venv-audio-v2/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements-audio-model.txt
+```
+
+Windows PowerShell:
 
 ```powershell
 py -3.11 -m venv .venv-audio-v2
 .\.venv-audio-v2\Scripts\python -m pip install -r requirements-audio-model.txt
 ```
 
-Run it locally with:
+After activation, run the same platform-neutral commands on macOS, Linux, or
+Windows:
 
-```powershell
-.\.venv-audio-v2\Scripts\python -m src.audio.preprocess path\to\recording.wav results\prepared
+```bash
+python -m src.audio.preprocess path/to/recording.wav results/prepared
 ```
 
 Generate the reproducible synthetic before/after example with:
 
-```powershell
-.\.venv-audio-v2\Scripts\python scripts\generate_audio_prep_example.py
+```bash
+python scripts/generate_audio_prep_example.py
 ```
 
 The output directory contains `reference.wav`, `enhanced_model.wav`,
@@ -125,7 +138,8 @@ configuration, speech-preservation measurements, warnings, and which signal pass
 the distortion-aware transcription gate.
 
 For local QA with the private `data/raw/SPEAKUP 1.mp4` through `SPEAKUP 6.mp4`
-recordings, run `.\.venv-audio-v2\Scripts\python scripts/run_real_audio_qa.py`.
+recordings, activate `.venv-audio-v2` and run
+`python scripts/run_real_audio_qa.py`.
 The command writes one
 ignored `results/real_audio_qa/<clip>/` directory per source file. Each
 `report.json` records the source filename and SHA-256 of the exact input bytes.
@@ -181,9 +195,9 @@ Run the same deterministic rubric calculation used by the AWS processor against
 raw Amazon Transcribe JSON, a stored SpeakUp transcript payload, or the local
 Faster Whisper transcript format:
 
-```powershell
-python scripts\calculate_wpm.py path\to\transcript.json
-python scripts\count_fillers.py path\to\transcript.json
+```bash
+python scripts/calculate_wpm.py path/to/transcript.json
+python scripts/count_fillers.py path/to/transcript.json
 ```
 
 Both commands print JSON and require word timestamps. WPM follows the finalized
@@ -211,11 +225,16 @@ reference files and `check_transcript_accuracy.py`.
 
 Create a level-matched listening example with:
 
-```powershell
-python scripts\create_audio_ab_example.py `
-  results\prepared\reference.wav results\prepared\diagnostic.wav `
-  results\prepared\ab_example.wav
+```bash
+python scripts/create_audio_ab_example.py \
+  results/prepared/reference.wav results/prepared/diagnostic.wav \
+  results/prepared/ab_example.wav
 ```
+
+The legacy RNNoise backend is not required by the default pipeline. Developers
+who explicitly need it can install `requirements-rnnoise.txt`; its pinned macOS
+wheel requires macOS 15 or newer. See [the macOS setup guide](docs/macos-setup.md)
+for the complete supported workflow and troubleshooting notes.
 
 ## Repository guidelines
 
