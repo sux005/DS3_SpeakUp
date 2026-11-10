@@ -272,5 +272,6 @@ See `docs/aws-payload-api.md` for the storage contract and staged GSI migration,
 `docs/aws-payload-package-reference.md` for the complete function-level Python
 reference, `docs/aws-api-file-flowchart.md` for the editable AWS API file and
 runtime dependency map, `src/aws_payload/README.md` for a concise API overview, and
-`infra/README.md` for packaging, deployment, cost, and cleanup. Amazon
+`infra/README.md` for packaging, deployment, cost, and cleanup. `docs/research/README.md` indexes the
+research behind the rubric cutoffs, the proposed pause method, and the Bedrock prompt. Amazon
 Transcribe is currently blocked while the AWS project remains on the Free plan.
