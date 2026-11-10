@@ -404,6 +404,59 @@ def test_analyze_normalizes_transcript_and_calculates_fillers(monkeypatch):
     assert store.transitions[-1][0] is RecordingStatus.ANALYZED
 
 
+def test_analyze_uses_acoustic_pause_inputs_from_audio_prep_report(monkeypatch):
+    module = load_processor(monkeypatch)
+    store = FakeStore()
+    words = [("so", 0.0, 1.0), ("today", 1.0, 2.0), ("we", 2.6, 3.0), ("talk", 3.0, 4.0)]
+    store.stream_bytes = json.dumps({"results": {
+        "transcripts": [{"transcript": "so today we talk"}],
+        "items": [{"type": "pronunciation", "start_time": str(start), "end_time": str(end),
+                   "alternatives": [{"content": word}]} for word, start, end in words],
+    }}).encode()
+    report = {"data": {"report": {"pause_inputs": {
+        "energy_silences": [[2.0, 2.6]],
+        "silero_speech": [[0.0, 2.0], [2.6, 4.0]],
+        "duration_seconds": 4.0,
+    }}}}
+    store.get_json_artifact = lambda user_id, recording_id, payload_type: (
+        report if payload_type == module.PayloadType.PREPROCESS_REPORT else store.transcript)
+    module.payloads = lambda: store
+
+    result = module.handler(event("analyze", transcript_s3_key="raw.json"), None)
+
+    metrics = result["summary_metrics"]
+    assert metrics["pause_detection_method"] == "energy_or_silero_and_word_gap"
+    assert metrics["pauses_inside_sentences"] == 1
+
+
+def test_malformed_pause_inputs_are_ignored(monkeypatch):
+    module = load_processor(monkeypatch)
+    good = {"energy_silences": [[1.0, 1.5]], "silero_speech": None, "duration_seconds": 3}
+    assert module._valid_pause_inputs(good)
+    for bad in ({**good, "energy_silences": [[2.0, 1.0]]}, {**good, "energy_silences": [["a", 1]]},
+                {**good, "energy_silences": [[1.0, 2.0], [1.5, 3.0]]}, {**good, "silero_speech": "x"},
+                {**good, "duration_seconds": float("nan")}, {**good, "energy_silences": None}):
+        assert not module._valid_pause_inputs(bad)
+
+
+def test_analyze_falls_back_to_word_gaps_without_a_report(monkeypatch):
+    module = load_processor(monkeypatch)
+    store = FakeStore()
+    store.stream_bytes = json.dumps({"results": {"transcripts": [{"transcript": "hi"}], "items": [
+        {"type": "pronunciation", "start_time": "0.0", "end_time": "1.0", "alternatives": [{"content": "hi"}]},
+    ]}}).encode()
+
+    def missing(*args, **kwargs):
+        raise module.PayloadNotFoundError("no report")
+
+    store.get_json_artifact = missing
+    module.payloads = lambda: store
+
+    result = module.handler(event("analyze", transcript_s3_key="raw.json"), None)
+
+    assert result["summary_metrics"]["pause_detection_method"] == "transcribe_word_gaps"
+
+
 def test_analyze_rejects_oversized_raw_transcript(monkeypatch):
     module = load_processor(monkeypatch)
     store = FakeStore()
