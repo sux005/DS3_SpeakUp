@@ -1,96 +1,251 @@
 # SpeakUp
 
-SpeakUp is a DS3 public-speaking diagnostics platform. Its backend stores
-original recordings without rewriting them during processing, prepares speech
-for analysis, produces timestamped transcripts and speech metrics, and stores
-versioned coaching feedback in private AWS resources. The current Next.js
-interface lives in [`frontend/web`](frontend/web/README.md) and still uses
-sample data rather than the live API.
+SpeakUp is a DS3 public-speaking coach. A student records or uploads a practice
+talk, and SpeakUp scores three things on a 0 to 4 scale: speaking rate, filler
+words, and pauses inside sentences. It then shows a timestamped transcript with
+the fillers and pauses marked, plus written coaching feedback.
 
-## AWS payload API
+**Status:** the AWS backend is deployed for development. The web app in
+`frontend/web` runs on sample data and is not connected to the live API yet.
 
-Backend workflows use `src.aws_payload.SpeakUpPayloadStore` for projects,
-recordings, uploads, audio reads, versioned JSON artifacts, playback URLs, and
-recoverable deletion. S3 stores audio and large payloads; DynamoDB stores
-owner-scoped metadata, lifecycle state, summary metrics, and compact S3
-references. See [the API guide](docs/aws-payload-api.md) and
-[package README](src/aws_payload/README.md). The
-[complete package reference](docs/aws-payload-package-reference.md) documents
-every supported function, model, parameter, return value, and exception.
+## How it works
 
-Build the four zip-based Lambda artifacts (`api`, `processor`,
-`workflow_failure`, and `maintenance`) with:
+![SpeakUp pipeline](docs/flowchart/speakup_flowchart.png)
+
+1. The browser uploads the original recording straight to a private S3 bucket.
+   The original is never changed.
+2. The S3 upload event starts a Step Functions workflow.
+3. **Audio prep** (Lambda container): converts the file to 48 kHz mono and
+   removes background noise with DeepFilterNet3.
+4. **Transcription:** Amazon Transcribe (en-US) returns the words with
+   timestamps and punctuation.
+5. **Scoring:** plain Python code in `src/scoring/` counts words per minute,
+   fillers and pauses, then scores them with the rubric in
+   [`src/scoring/rubrics/speaking-2026-10-31.csv`](src/scoring/rubrics/speaking-2026-10-31.csv).
+6. **Feedback:** Amazon Bedrock writes structured coaching (an overview, four
+   categories and timestamped moments) from the scores. It only runs when the
+   stack is deployed with `EnableBedrockFeedback=true`. See
+   [docs/bedrock-upload-pipeline.md](docs/bedrock-upload-pipeline.md).
+7. Results are saved to S3 and DynamoDB, and the web app reads them through
+   API Gateway after the user signs in with Cognito.
+
+Step by step detail: [docs/full-pipeline-walkthrough.md](docs/full-pipeline-walkthrough.md).
+
+## Models and why we picked them
+
+| Step | Model | Why |
+| --- | --- | --- |
+| Noise cleanup | DeepFilterNet3 | Removes background noise while keeping speech intact, and runs on CPU inside Lambda |
+| Speech to text | Amazon Transcribe (en-US) | Keeps um and uh in the transcript (normal Whisper dropped most of them) and gives word timestamps and punctuation |
+| Pause detection | Volume (energy) plus Silero VAD, checked against Transcribe word timing | Also catches pauses filled with laughter, clapping or breathing, which are not quiet. Falls back to Transcribe word gaps when the audio-prep step has no pause data |
+| Feedback | Amazon Bedrock: Nova Lite (`converse` mode) or `openai.gpt-oss-20b` through the Mantle endpoint (`mantle-chat` mode) | Runs in our Region (`us-east-2`). Mantle was added because the dev account hit Bedrock Runtime's daily token limit. The scores come from code, so the model only writes the wording |
+
+The research behind every rubric cutoff, the filler word list, the pause rules
+and the Bedrock prompt is in [docs/research/](docs/research/README.md). Start
+with [RUBRIC_README.md](docs/research/RUBRIC_README.md).
+
+## Setup
+
+You only need the steps for the part you are working on.
+
+| I want to... | Steps |
+| --- | --- |
+| Run the tests or work on scoring and the API code | 1, 2, 3 |
+| Work on the web app | 1, 4 |
+| Run noise cleanup on my own audio | 1, 5 |
+| Run a recording through the real AWS pipeline | 1, 2, 6, 7 |
+| Deploy or change AWS resources | 1, 2, 6, then [infra/README.md](infra/README.md) |
+
+### 1. Install the tools and clone the repo
+
+You need Git, plus:
+
+- **Python 3.13** for the main code and tests
+- **Python 3.11** only for noise cleanup (DeepFilterNet needs it)
+- **Node.js 20.9 or newer** only for the web app
+- **AWS CLI 2.32 or newer** only for AWS work
+
+On macOS with Homebrew:
 
 ```bash
-python scripts/build_lambda_packages.py
+brew install git python@3.13 python@3.11 node awscli
 ```
 
-Run the local test suite with an ignored temporary directory:
+On Windows, install the same tools from their websites. Then:
+
+```bash
+git clone https://github.com/sux005/DS3_SpeakUp.git
+cd DS3_SpeakUp
+```
+
+### 2. Set up Python and run the tests
+
+macOS and Linux:
+
+```bash
+python3.13 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements-dev.txt
+cp .env.development.example .env.development
+```
+
+Windows PowerShell:
+
+```powershell
+py -3.13 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements-dev.txt
+Copy-Item .env.development.example .env.development
+```
+
+Run the tests:
 
 ```bash
 python -m pytest -q --basetemp .test-tmp -p no:cacheprovider
 ```
 
+Everything should pass. The tests do not need AWS, audio files or model downloads.
+
+`.env.development` holds resource names, not passwords. Never put AWS keys in it.
+
+### 3. Score a transcript on your computer
+
+The same scoring code the AWS pipeline uses can run on any transcript with word
+timestamps (raw Amazon Transcribe JSON, a SpeakUp transcript, or local Whisper
+output):
+
+```bash
+python scripts/calculate_wpm.py frontend/sample-payloads/transcript.json
+python scripts/count_fillers.py frontend/sample-payloads/transcript.json
+```
+
+The sample transcript is only five words long, so it prints
+`"rubric_status": "insufficient_speech"` and no score. Use a real transcript to
+get scores.
+
+To make a transcript from your own audio without AWS, install the optional
+Whisper model and see [Local transcription](#local-transcription-and-accuracy-review):
+
+```bash
+pip install -r requirements-transcription.txt
+```
+
+### 4. Run the web app
+
+```bash
+cd frontend/web
+npm install
+npm run dev
+```
+
+Open http://localhost:3000. It uses the sample data in `frontend/web/data/`, so
+no AWS is needed. The `/login` page is a placeholder and lets anyone in.
+
+The results page plays a demo talk that is not in the repo, because we don't
+commit audio. Without it the page still works and shows a "No audio file found"
+note. To add it, see "Demo audio" in [frontend/web/README.md](frontend/web/README.md). Screens and file layout are in
+[frontend/web/README.md](frontend/web/README.md), and the API it will call is in
+[docs/aws-payload-api.md](docs/aws-payload-api.md).
+
+### 5. Run noise cleanup on your own audio
+
+DeepFilterNet needs its own Python 3.11 environment. Keep it separate from `.venv`.
+
+macOS and Linux:
+
+```bash
+python3.11 -m venv .venv-audio-v2
+source .venv-audio-v2/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements-audio-model.txt
+python -m src.audio.preprocess path/to/recording.wav results/prepared
+```
+
+Windows PowerShell:
+
+```powershell
+py -3.11 -m venv .venv-audio-v2
+.\.venv-audio-v2\Scripts\python -m pip install -r requirements-audio-model.txt
+.\.venv-audio-v2\Scripts\python -m src.audio.preprocess path\to\recording.wav results\prepared
+```
+
+The output files are explained in [Audio preparation](#audio-preparation).
+`results/` is ignored by Git, so your audio stays on your computer.
+
+### 6. Get AWS access
+
+Ask the project lead for your own AWS sign-in. Never share logins or create
+access keys. Then:
+
+```bash
+aws login --profile speakup-dev
+aws sts get-caller-identity --profile speakup-dev
+```
+
+Use Region `us-east-2` for every command. Details and troubleshooting:
+[docs/team-aws-access.md](docs/team-aws-access.md).
+
+### 7. Run a recording through the real pipeline
+
+With `.venv` active and AWS access working:
+
+```bash
+python scripts/run_live_pipeline.py path/to/recording.wav
+```
+
+The script makes a test user, uploads the file the same way the web app will,
+waits for the workflow to finish and saves a log of every step. Add
+`--log path/to/log.jsonl` to choose where the log goes.
+
+### Setup problems
+
+Most install problems on Mac (PyTorch, DeepFilterNet, missing Python versions,
+Docker on Apple Silicon) are covered in [docs/macos-setup.md](docs/macos-setup.md).
+
 ## Repository structure
 
 ```text
 .
-├── README.md
-├── .env.development.example
-├── .gitignore
-├── requirements.txt
-├── requirements-dev.txt
-├── docs/                    # API contracts and design notes
-├── infra/                   # CloudFormation and Lambda handlers
-├── scripts/                 # Packaging, migrations, and local QA
+├── docs/
+│   ├── research/            # Why the rubric, models and prompt are what they are
+│   ├── flowchart/           # Pipeline diagram
+│   └── *.md                 # API contract, pipeline walkthrough, AWS and setup guides
+├── frontend/
+│   ├── sample-payloads/     # Example API responses
+│   └── web/                 # Next.js web app
+├── infra/                   # CloudFormation templates and Lambda handlers
+├── scripts/                 # Local scoring, QA, packaging and live pipeline runs
 ├── src/
-│   ├── audio/               # Audio preparation
-│   ├── aws_payload/         # Backend storage and lifecycle API
-│   └── transcription/       # Optional local ASR
+│   ├── audio/               # Audio prep and noise cleanup
+│   ├── aws_payload/         # Storage and recording lifecycle code for S3 and DynamoDB
+│   ├── scoring/             # Rubric, fillers, pauses and the rubric CSV
+│   └── transcription/       # Optional local Whisper transcription
 ├── tests/
 ├── notebooks/
-│   └── README.md
-├── frontend/
-│   └── README.md
-├── data/
-│   ├── raw/
-│   └── processed/
-├── results/
-└── models/
+├── results/                 # Local outputs, ignored by Git
+└── models/                  # Downloaded model files, ignored by Git
 ```
 
-The backend HTTP contract is in
-[docs/aws-payload-api.md](docs/aws-payload-api.md); deployment and migration
-instructions are in [infra/README.md](infra/README.md). Operational guides cover
-the [sign-in process](docs/sign-in-process.md),
-[Bedrock upload stage](docs/bedrock-upload-pipeline.md), and
-[noise-cancellation A/B method](docs/research/noise_cancellation_ab.md).
+## Docs
 
-## Quick start
+| Doc | What it covers |
+| --- | --- |
+| [docs/full-pipeline-walkthrough.md](docs/full-pipeline-walkthrough.md) | Every step from upload to results, and which file does it |
+| [docs/aws-payload-api.md](docs/aws-payload-api.md) | API routes and response shapes for the frontend |
+| [frontend/sample-payloads/](frontend/sample-payloads/README.md) | Example response for every API route |
+| [docs/aws-payload-package-reference.md](docs/aws-payload-package-reference.md) | Every function in `src/aws_payload` |
+| [docs/rubric-csv-format.md](docs/rubric-csv-format.md) | How to edit the rubric CSV |
+| [docs/research/](docs/research/README.md) | Rubric, filler, pause and prompt research |
+| [infra/README.md](infra/README.md) | Deploying, Lambda packages, the audio image, costs and cleanup |
+| [docs/team-aws-access.md](docs/team-aws-access.md) | Getting AWS access |
+| [docs/sign-in-process.md](docs/sign-in-process.md) | How sign-in works |
+| [docs/bedrock-upload-pipeline.md](docs/bedrock-upload-pipeline.md) | The Bedrock feedback step, its modes and how to turn it on |
+| [docs/research/noise_cancellation_ab.md](docs/research/noise_cancellation_ab.md) | How to compare raw and cleaned audio |
+| [docs/macos-setup.md](docs/macos-setup.md) | Mac setup and fixes |
+| [docs/AGENTS.md](docs/AGENTS.md) | Repo guide for AI coding tools |
 
-1. Create a virtual environment:
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   ```
-2. Install dependencies (use `requirements-dev.txt` for the optional Moto tests):
-   ```bash
-   pip install -r requirements-dev.txt
-   ```
-3. Copy the example environment file:
-   ```bash
-   cp .env.development.example .env.development
-   ```
-   On Windows PowerShell, use `Copy-Item .env.development.example .env.development`.
-   The development example contains the deployed stack's non-secret resource identifiers.
-   `.env.development` and `.env.production` are ignored by Git; only their `.example`
-   schemas belong on GitHub. The production example remains blank until `speakup-prod`
-   is deployed, so development resources cannot be used accidentally in production.
-
-   Do not place AWS access keys in an env file. For local AWS CLI access, use the
-   short-lived `speakup-dev` profile documented in `infra/README.md`.
-4. Run the local tests with the command above. Live AWS tests require explicit
-   opt-in and credentials; ordinary test runs do not contact AWS.
+Build the zip-based Lambda packages with `python scripts/build_lambda_packages.py`.
 
 ## Audio preparation
 
@@ -100,34 +255,7 @@ hum-notch, or presence-EQ denoising. The learned output is selected first when i
 passes the speech-preservation gate; a conservative dry/model blend and the normalized
 reference remain safety fallbacks. The original recording is never overwritten.
 
-The official DeepFilterNet native runtime requires CPython 3.11. For local
-model-backed audio work, create a dedicated 3.11 environment and install the
-self-contained model requirements. Do not combine them with the Python 3.13
-development requirements. On macOS, install Python 3.11 first with
-`brew install python@3.11` when it is not already available.
-
-macOS and Linux:
-
-```bash
-python3.11 -m venv .venv-audio-v2
-source .venv-audio-v2/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements-audio-model.txt
-```
-
-Windows PowerShell:
-
-```powershell
-py -3.11 -m venv .venv-audio-v2
-.\.venv-audio-v2\Scripts\python -m pip install -r requirements-audio-model.txt
-```
-
-After activation, run the same platform-neutral commands on macOS, Linux, or
-Windows:
-
-```bash
-python -m src.audio.preprocess path/to/recording.wav results/prepared
-```
+Set up `.venv-audio-v2` as in [setup step 5](#5-run-noise-cleanup-on-your-own-audio).
 
 Generate the reproducible synthetic before/after example with:
 
