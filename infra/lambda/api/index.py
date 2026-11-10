@@ -615,6 +615,27 @@ def _dispatch(event: dict[str, Any]) -> dict[str, Any]:
                 str(path.get("artifactType") or ""),
             ),
         )
+    if route == "GET /recordings/{recordingId}/review":
+        recording = store.get_recording(user_id, recording_id)
+        if recording.status is not RecordingStatus.COMPLETE:
+            raise InvalidTransitionError("Recording review is not available until processing is complete")
+        transcript = _artifact_body(store, user_id, recording_id, "transcript")["data"]
+        feedback_document = store.get_json_artifact(user_id, recording_id, PayloadType.FEEDBACK)
+        feedback_data = feedback_document.get("data")
+        if not isinstance(feedback_data, Mapping) or not isinstance(feedback_data.get("feedback"), str):
+            raise PayloadIntegrityError("stored feedback is invalid")
+        feedback = {"feedback": feedback_data["feedback"]}
+        for field in ("schema_version", "categories", "moments", "metrics"):
+            if field in feedback_data:
+                feedback[field] = feedback_data[field]
+        return reply(
+            200,
+            {
+                "recording_id": recording_id,
+                "transcript": transcript,
+                "feedback": feedback,
+            },
+        )
     if route == "POST /recordings/{recordingId}/confirm-upload":
         return reply(200, _recording_body(store.confirm_upload(user_id, recording_id)))
     if route == "GET /recordings/{recordingId}/download":
