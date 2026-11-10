@@ -10,7 +10,12 @@ export function SiteNav() {
         <Link href="/" className="text-teal">
           MY PRESENTATIONS
         </Link>
-        <span className="text-muted">DEMO / JAMES</span>
+        <Link href="/rubric" className="text-teal">
+          RUBRIC
+        </Link>
+        <Link href="/login" className="text-muted">
+          SIGN IN
+        </Link>
       </nav>
     </header>
   );

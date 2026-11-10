@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# demo audio stays local (see README "Demo audio")
+/public/demo/*.mp3
