@@ -149,7 +149,7 @@ test.describe("responsive route smoke", () => {
 
     await page.goto("/");
     await page.keyboard.press("Tab");
-    await expect(page.getByRole("link", { name: "speakup" })).toBeFocused();
+    await expect(page.getByRole("link", { name: "SpeakUp" })).toBeFocused();
     await page.keyboard.press("Tab");
     await expect(page.getByRole("link", { name: "MY PRESENTATIONS" })).toBeFocused();
   });

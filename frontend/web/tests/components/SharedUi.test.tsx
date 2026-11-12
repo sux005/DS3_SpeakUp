@@ -41,7 +41,7 @@ describe("shared UI components", () => {
   it("exposes site navigation links and keeps the theme switch available", () => {
     render(<SiteNav />);
     expect(screen.getByRole("banner")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "speakup" }).getAttribute("href")).toBe("/");
+    expect(screen.getByRole("link", { name: "SpeakUp" }).getAttribute("href")).toBe("/");
     expect(screen.getByRole("link", { name: "MY PRESENTATIONS" }).getAttribute("href")).toBe("/");
     expect(screen.getByRole("link", { name: "RUBRIC" }).getAttribute("href")).toBe("/rubric");
     expect(screen.getByRole("link", { name: "SIGN IN (DEMO)" }).getAttribute("href")).toBe("/login");
