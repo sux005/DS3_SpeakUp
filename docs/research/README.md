@@ -21,6 +21,7 @@ here and will go up as separate PRs for the team to review.
 |---|---|
 | `FILLER_RUBRIC.md`, `FILLER_WORD_BANK.md` | Which words count as fillers, and the cutoffs with sources |
 | `PAUSE_RESEARCH.md` | Which pauses count, and why pauses between sentences are not penalized |
+| `TRANSCRIPTION_MODEL_CHOICE.md` | Why we use Amazon Transcribe instead of Whisper, and what we compared |
 
 ## Test results
 
