@@ -121,7 +121,7 @@ Whisper small's gaps found the most pauses, but every transcriber's gaps were wr
 | Cost at our volume | **Transcribe** | Yes |
 | Effort to run | **Transcribe** | Yes |
 | Pauses from word gaps | Whisper small | No, none was accurate enough. We plan a separate detector |
-| Privacy | Whisper | No, we will just have to implemenet the opt-out and the notice. |
+| Privacy | Whisper | No, we will just have to implement the opt-out and the notice. |
 
 ## Limits
 
