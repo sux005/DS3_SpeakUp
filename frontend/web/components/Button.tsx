@@ -4,7 +4,7 @@ import type { ComponentProps } from "react";
 type Variant = "primary" | "secondary" | "accent";
 
 const variants: Record<Variant, string> = {
-  primary: "border-teal bg-teal text-cream",
+  primary: "border-teal bg-teal text-cream dark:border-peach dark:bg-peach dark:text-night",
   secondary: "border-ink bg-pale text-ink",
   accent: "border-peach bg-peach text-night",
 };
