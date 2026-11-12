@@ -14,17 +14,19 @@ export function PageHeading({
   crumbHref,
   title,
   subtitle,
+  showBackArrow = true,
 }: {
   crumb: string;
   crumbHref?: string;
-  title: string;
+  title: ReactNode;
   subtitle: string;
+  showBackArrow?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-2.5">
       {crumbHref ? (
         <Link href={crumbHref} className="font-mono text-xs text-teal">
-          ← {crumb}
+          {showBackArrow && "← "}{crumb}
         </Link>
       ) : (
         <p className="font-mono text-xs text-teal">{crumb}</p>

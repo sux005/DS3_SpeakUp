@@ -158,6 +158,12 @@ with the self-contained `requirements-audio-model.txt`; do not combine it with t
 Python 3.13 `requirements.txt`. The normal test environment does not need to install
 PyTorch or native model wheels.
 
+For the local frontend demo, use Node.js 20.9 or newer and run `npm ci` in
+`frontend/web/`. The frontend uses Next.js, Vitest, React Testing Library, and
+Playwright; it does not call the AWS backend. The integrated frontend retains
+the MVP rubric/demo-login routes and unused API helpers. Transcript review uses
+timed words with filler highlighting, filters, and click-to-seek playback.
+
 Use `.env.production.example` as the production schema after the production
 CloudFormation stack is deployed. Never commit `.env.development` or
 `.env.production`, and never put AWS access keys in either file; local AWS CLI
@@ -176,6 +182,11 @@ access uses the short-lived `speakup-dev` profile.
 - Count transcript fillers: `python scripts/count_fillers.py <transcript.json>`
 - Launch notebooks: `jupyter lab notebooks/`
 - Validate locally: `python -m pytest -q --basetemp .test-tmp -p no:cacheprovider`
+- Validate the frontend from `frontend/web/`: `npm run lint` and
+  `npm run test:all` (coverage-gated unit/integration tests, production build,
+  and Playwright browser tests). `npm run test:e2e` alone requires a prior
+  `npm run build`. In environments that restrict Turbopack worker ports,
+  use `npx next build --webpack` for the production-build check.
 - Opt-in deployed workflow smoke test: set `SPEAKUP_LIVE_E2E=1`,
   `SPEAKUP_E2E_API_URL`, `SPEAKUP_E2E_JWT`, and `SPEAKUP_E2E_WAV_PATH` to a
   non-private spoken-English WAV, then run
@@ -199,6 +210,10 @@ access uses the short-lived `speakup-dev` profile.
   `.venv\Scripts\Activate.ps1`. Model-backed work uses CPython 3.11 on every
   platform. Keep PyTorch requirement markers compatible with macOS plain wheels
   and Linux/Windows `+cpu` wheels.
+
+- Frontend unit, component, and route integration tests live in
+  `frontend/web/tests/`; browser tests live in `frontend/web/e2e/`. Run
+  `npm run test:all` from `frontend/web/` before opening a frontend PR.
 
 ## Code style & conventions
 

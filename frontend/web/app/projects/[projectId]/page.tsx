@@ -1,20 +1,19 @@
-import { notFound } from "next/navigation";
+"use client";
+
+import { Suspense } from "react";
+import { useParams } from "next/navigation";
 import { ButtonLink } from "@/components/Button";
 import { PageHeading, PageShell } from "@/components/PageHeading";
 import { ProgressCharts } from "@/components/ProgressCharts";
+import { useDemoStore } from "@/lib/demo-store";
 import {
   formatClock,
   formatDate,
   formatTake,
   getProject,
   getTakes,
-  projects,
 } from "@/lib/recordings";
 import type { Take } from "@/lib/types";
-
-export function generateStaticParams() {
-  return projects.map((project) => ({ projectId: project.project_id }));
-}
 
 const columns = "md:grid-cols-[minmax(0,360px)_minmax(0,280px)_1fr_140px]";
 
@@ -23,6 +22,7 @@ function TakeResult({ take }: { take: Take }) {
   if (m) {
     return `${m.words_per_minute} / ${m.fillers_per_100_words} / ${m.pauses_per_speaking_minute}`;
   }
+  if (take.status === "COMPLETE") return "Local demo · no scores";
   if (take.status === "FAILED") return take.failure_reason ?? "Failed";
   return "Processing…";
 }
@@ -43,22 +43,23 @@ function TakeAction({ take }: { take: Take }) {
   );
 }
 
-export default async function ProjectPage({
-  params,
-}: {
-  params: Promise<{ projectId: string }>;
-}) {
-  const { projectId } = await params;
-  const project = getProject(projectId);
-  if (!project) notFound();
+export default function ProjectPage() {
+  return <Suspense fallback={<PageShell><p>Loading presentation…</p></PageShell>}><ProjectContent /></Suspense>;
+}
 
-  const takes = getTakes(projectId);
-  const projectNumber = String(projects.indexOf(project) + 1).padStart(2, "0");
+function ProjectContent() {
+  const { projectId } = useParams<{ projectId: string }>();
+  const { projects, recordings, ready } = useDemoStore();
+  if (!ready) return <PageShell><p>Loading presentation…</p></PageShell>;
+  const project = getProject(projects, projectId);
+  if (!project) return <PageShell><p>Presentation not found.</p><ButtonLink href="/">All presentations</ButtonLink></PageShell>;
+
+  const takes = getTakes(recordings, projectId);
 
   return (
     <PageShell>
       <PageHeading
-        crumb={`ALL PRESENTATIONS / PROJECT ${projectNumber}`}
+        crumb="ALL PRESENTATIONS"
         crumbHref="/"
         title={project.project_title}
         subtitle={`${takes.length} attempts · Created ${formatDate(project.created_at, true)}`}
