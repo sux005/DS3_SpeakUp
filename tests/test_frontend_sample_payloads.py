@@ -63,6 +63,42 @@ def test_review_artifact_samples_match_public_contract():
     assert set(feedback["data"]) == {"feedback"}
 
 
+def test_review_sample_matches_structured_feedback_contract():
+    review = load("review.json")
+    transcript = load("transcript.json")
+    summary = next(
+        item for item in load("project-recordings.json")["items"]
+        if item["recording_id"] == review["recording_id"]
+    )["summary_metrics"]
+
+    assert set(review) == {"recording_id", "transcript", "feedback", "summary_metrics"}
+    assert review["transcript"] == transcript["data"]
+    assert review["summary_metrics"] == summary
+
+    feedback = review["feedback"]
+    assert set(feedback) == {"feedback", "schema_version", "categories", "moments", "metrics"}
+    assert feedback["schema_version"] == 2
+    assert set(feedback["categories"]) == {"general", "pace", "fillers", "pauses"}
+    for note in feedback["categories"].values():
+        assert set(note) == {"observation", "next_step"}
+    assert 1 <= len(feedback["moments"]) <= 4
+    for moment in feedback["moments"]:
+        assert set(moment) == {
+            "id", "start_seconds", "end_seconds", "text", "kind", "observation", "next_step",
+        }
+        assert moment["kind"] in {"strength", "improve"}
+        assert 0 <= moment["start_seconds"] < moment["end_seconds"]
+
+
+def test_web_app_data_is_an_exact_copy_of_the_samples():
+    web_data = FIXTURE_DIR.parent / "web" / "data"
+    # The web demo renames its sample project, and its browser tests rely on that name.
+    for fixture in FIXTURE_DIR.glob("*.json"):
+        if fixture.name == "projects.json":
+            continue
+        assert (web_data / fixture.name).read_bytes() == fixture.read_bytes(), fixture.name
+
+
 def test_upload_sample_cannot_target_a_real_endpoint():
     reservation = load("upload-reservation.json")
 

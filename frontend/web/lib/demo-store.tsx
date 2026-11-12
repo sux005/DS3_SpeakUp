@@ -5,7 +5,7 @@ import projectsJson from "@/data/projects.json";
 import recordingsJson from "@/data/project-recordings.json";
 import transcriptJson from "@/data/transcript.json";
 import analysisJson from "@/data/analysis.json";
-import feedbackJson from "@/data/feedback.json";
+import reviewJson from "@/data/review.json";
 import limitsJson from "@/data/account-limits.json";
 import type { Project, Recording, RecordingReview, RecordingStatus } from "@/lib/types";
 
@@ -25,7 +25,7 @@ type DemoContextValue = DemoState & {
 
 const STORAGE_KEY = "speakup-frontend-demo-v1";
 const seedRecordingId = transcriptJson.recording_id;
-if (analysisJson.recording_id !== seedRecordingId || feedbackJson.recording_id !== seedRecordingId) {
+if (analysisJson.recording_id !== seedRecordingId || reviewJson.recording_id !== seedRecordingId) {
   throw new Error("Demo review artifacts must belong to one recording");
 }
 
@@ -35,9 +35,10 @@ const initialState: DemoState = {
   reviews: {
     [seedRecordingId]: {
       recording_id: seedRecordingId,
-      transcript: transcriptJson.data,
+      transcript: reviewJson.transcript,
+      summary_metrics: reviewJson.summary_metrics,
       analysis: analysisJson.data.metrics,
-      feedback: feedbackJson.data,
+      feedback: reviewJson.feedback,
     } as RecordingReview,
   },
 };

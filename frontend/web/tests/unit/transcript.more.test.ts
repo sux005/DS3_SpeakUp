@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { toSentences } from "@/lib/transcript";
 import type { AnalysisMetrics, TranscriptItem } from "@/lib/types";
+import { pause, summaryMetrics } from "../fixtures";
 
 const metrics = (overrides: Partial<AnalysisMetrics> = {}): AnalysisMetrics => ({
-  duration_seconds: 1, words_per_minute: 120, fillers_per_100_words: 0, pauses_per_speaking_minute: 0,
-  rubric_scores: { speaking_rate: null, filler_words: null, pauses_inside_sentences: null },
+  ...summaryMetrics({
+    duration_seconds: 1,
+    rubric_scores: { speaking_rate: null, filler_words: null, pauses_inside_sentences: null },
+  }),
   filler_occurrences: [], pauses: [], long_pauses: [], ...overrides,
 });
 const word = (content: string, start = 0, end = 0.5): TranscriptItem => ({ type: "pronunciation", start_time: String(start), end_time: String(end), alternatives: [{ content }] });
@@ -16,7 +19,7 @@ describe("transcript malformed and boundary inputs", () => {
     ]);
   });
   it("tags a pause at the sentence end while ignoring metrics outside it", () => {
-    const result = toSentences([word("Hello", 1, 2), { type: "punctuation", alternatives: [{ content: "." }] }], metrics({ pauses: [{ start_seconds: 2, end_seconds: 2.5 }] }));
+    const result = toSentences([word("Hello", 1, 2), { type: "punctuation", alternatives: [{ content: "." }] }], metrics({ pauses: [pause(2, 2.5)] }));
     expect(result[0].tag).toBe("PAUSE");
   });
   it("skips malformed timestamps without poisoning later valid sentences", () => {
