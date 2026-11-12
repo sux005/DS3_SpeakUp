@@ -157,7 +157,7 @@ describe("results route", () => {
     render(<ResultsPage />);
     expect(screen.getByRole("heading", { name: "Your demo recording" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Analysis is not connected" })).toBeTruthy();
-    expect(screen.queryByText("The transcript")).toBeNull();
+    expect(screen.queryByText("Transcript")).toBeNull();
     expect(screen.getByRole("link", { name: "Practice again →" }).getAttribute("href")).toBe("/projects/project-1/new");
   });
 

@@ -119,7 +119,7 @@ function ResultsContent() {
       {review && (
         <div className="flex w-full flex-col gap-10 md:flex-row">
           <section className="flex min-w-0 flex-1 flex-col gap-4">
-            <h2 className="font-display text-2xl font-bold text-ink">The transcript</h2>
+            <h2 className="font-display text-2xl font-bold text-ink">Transcript</h2>
             {sentences.length > 0 ? (
               <>
               <div className="flex gap-3">{(["all", "fillers", "pauses"] as const).map((value) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{value.toUpperCase()}</button>)}</div>
