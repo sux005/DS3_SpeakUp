@@ -154,8 +154,9 @@ recording completes after analytics. The processor stores versioned artifacts
 and compact recording metadata; the frontend can poll
 `GET /recordings/{recordingId}` for lifecycle status and metrics. Original audio
 is not overwritten during processing. When processing completes, clients can
-fetch timed transcript words and category and moment feedback from
-`GET /recordings/{recordingId}/review`.
+fetch timed transcript words and summary metrics from
+`GET /recordings/{recordingId}/review`; category and moment feedback is present
+when Bedrock coaching runs.
 
 Speech analysis applies the finalized 2026-10-31 rubric. It scores speaking
 rate, scored fillers per 100 spoken words, and inside-sentence pauses per

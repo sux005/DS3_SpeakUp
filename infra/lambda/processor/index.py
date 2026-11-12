@@ -49,6 +49,7 @@ def _build_version(base: str) -> str:
 TRANSCRIBE_VERSION = _build_version("raw-v1")
 TRANSCRIPT_VERSION = _build_version("1.0.0")
 ANALYSIS_VERSION = _build_version("4.0.0")
+HISTORICAL_ANALYSIS_VERSIONS = ("1.0.0", "2.0.0", "3.0.0")
 FEEDBACK_VERSION = _build_version("3.0.0")
 MAX_TRANSCRIBE_POLLS = 80
 DEFAULT_BEDROCK_MAX_INPUT_CHARS = 80_000
@@ -333,7 +334,7 @@ def _validate_workflow_scope(recording: Any, event: dict[str, Any]) -> None:
             "speakup-speech-analysis",
             ANALYSIS_VERSION,
             "speech_analysis",
-            historical_base=("1.0.0", "2.0.0"),
+            historical_base=HISTORICAL_ANALYSIS_VERSIONS,
         )
         if transcript_ref is not None:
             allowed_transcript_keys.add(transcript_ref["key"])
@@ -509,7 +510,7 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                                                  "transcript", historical_base="1.0.0")
             analysis_ref = _artifact_reference(recording, event, PayloadType.SPEECH_ANALYSIS,
                                                "speakup-speech-analysis", ANALYSIS_VERSION,
-                                               "speech_analysis", historical_base=("1.0.0", "2.0.0", "3.0.0"))
+                                               "speech_analysis", historical_base=HISTORICAL_ANALYSIS_VERSIONS)
             transcript_found = store.objects.find_json(
                 event["user_id"], event["project_id"], event["recording_id"],
                 payload_type=PayloadType.TRANSCRIPT,
@@ -687,9 +688,11 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                         "the supplied minimum_speaking_seconds before scoring; "
                         "do not invent scores. Pauses come from the method "
                         "named in pause_detection_method: "
-                        "energy_or_silero_and_word_gap means quiet audio, or "
+                        "energy_or_silero_and_word_gap means quiet audio within "
+                        "transcript word gaps, or "
                         "Silero hearing no speech where the transcript also has "
-                        "a word gap; transcribe_word_gaps means gaps between "
+                        "a word gap; energy_only means quiet audio within "
+                        "transcript word gaps; transcribe_word_gaps means gaps between "
                         "words only. Treat pause timings as estimates. Do not claim to assess tone, volume, "
                         "or body language. moments is an array of 1-4 objects "
                         "when segments exist, otherwise empty. Each moment has "

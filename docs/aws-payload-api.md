@@ -83,6 +83,9 @@ producer metadata, or the Bedrock model ID.
 
 `GET /recordings/{recordingId}/review` returns HTTP 409 until processing is
 `COMPLETE`. Its `transcript` object contains `text` and timed Transcribe `items`.
+The response also includes `summary_metrics`. When Bedrock coaching is disabled
+or feedback is unavailable, `feedback` is `null`; the transcript and metrics
+remain available for review.
 Its `feedback` object contains the existing `feedback` summary string, plus
 `schema_version: 2`, `categories`, `moments`, and `metrics` for new
 recordings. The four categories are `general`, `pace`, `fillers`, and `pauses`;
@@ -117,7 +120,7 @@ AWS error text is not returned to clients.
   "schema_version": 1,
   "payload_type": "speech-analysis.v1",
   "producer": "speakup-speech-analysis",
-  "producer_version": "3.0.0",
+  "producer_version": "4.0.0",
   "created_at": "2026-10-27T12:00:00.000Z",
   "data": {
     "metrics": {
@@ -168,8 +171,10 @@ Scores are `null` and `rubric_status` is `insufficient_speech` below 60 seconds
 of estimated speaking time. The compact recording response also reports
 unscored watch words, between-sentence pauses, and total pause time. The S3
 analysis artifact adds every scored filler occurrence and detected pause with
-timestamps, including the long-pause subset. Pause detection uses Transcribe
-word gaps, so it estimates acoustic silence. Older recordings retain their
+timestamps, including the long-pause subset. Pause detection uses acoustic
+energy silences within word gaps, optionally combined with Silero non-speech;
+missing acoustic inputs fall back to Transcribe word gaps. The
+`pause_detection_method` field names the method used. Older recordings retain their
 original versioned analysis on replay.
 
 When Bedrock feedback is enabled, its prompt includes the persisted summary

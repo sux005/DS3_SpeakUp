@@ -30,6 +30,20 @@ def test_combine_adds_noisy_pause_only_when_silero_and_word_gap_agree():
     assert combine(energy, words, None) == [(1.0, 1.5)]
 
 
+def test_energy_pause_does_not_count_transcribed_word_time():
+    words = [(0.0, 1.0), (1.5, 2.5), (3.0, 4.0)]
+    assert combine([(1.0, 2.0), (2.6, 3.0)], words, None) == [(1.0, 1.5), (2.6, 3.0)]
+
+    result = score_transcribe_items(word_items(words), acoustic={
+        "energy_silences": [(1.0, 2.0), (2.6, 3.0)],
+        "silero_speech": None,
+        "duration_seconds": 4.0,
+    })
+    assert result["pause_detection_method"] == "energy_only"
+    assert result["total_pause_seconds"] == 0.9
+    assert result["speaking_duration_seconds"] == 3.1
+
+
 def test_scorer_uses_acoustic_pauses_and_punctuation():
     items = word_items([(0, 1), (2, 3), (4, 5)], sentence_end_after={1})
     acoustic = {"energy_silences": [(1.0, 1.6)], "silero_speech": [(0, 1), (2, 3), (4, 5)], "duration_seconds": 5}

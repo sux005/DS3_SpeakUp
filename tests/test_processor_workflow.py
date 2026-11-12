@@ -658,7 +658,8 @@ def test_feedback_disabled_completes_without_bedrock(monkeypatch):
     assert store.artifacts == []
 
 
-def test_feedback_scope_accepts_only_persisted_normalized_artifacts(monkeypatch):
+@pytest.mark.parametrize("analysis_version", ["3.0.0", "current"])
+def test_feedback_scope_accepts_only_persisted_normalized_artifacts(monkeypatch, analysis_version):
     module = load_processor(monkeypatch)
     monkeypatch.setenv("ENABLE_BEDROCK_FEEDBACK", "false")
     store = FakeStore(status=RecordingStatus.ANALYZED)
@@ -676,7 +677,7 @@ def test_feedback_scope_accepts_only_persisted_normalized_artifacts(monkeypatch)
     analysis_key = artifact_key(
         "user-1", "project-1", "recording-1",
         producer="speakup-speech-analysis",
-        producer_version=module.ANALYSIS_VERSION,
+        producer_version=(module.ANALYSIS_VERSION if analysis_version == "current" else analysis_version),
         artifact_name="speech_analysis",
         content_type="application/json",
     )
@@ -697,7 +698,7 @@ def test_feedback_scope_accepts_only_persisted_normalized_artifacts(monkeypatch)
             "recording_id": "recording-1",
             "payload_type": PayloadType.SPEECH_ANALYSIS.value,
             "producer": "speakup-speech-analysis",
-            "producer_version": module.ANALYSIS_VERSION,
+            "producer_version": (module.ANALYSIS_VERSION if analysis_version == "current" else analysis_version),
         },
     })
     module.payloads = lambda: store
@@ -821,6 +822,7 @@ def test_feedback_prompt_includes_timed_segments_and_explicit_categories(monkeyp
     assert "General feedback covers message and clarity and is not rubric scored" in system
     assert "only the rate is scored by the filler_words band" in system
     assert "only the latter is scored by the pauses_inside_sentences band" in system
+    assert "energy_only means quiet audio within transcript word gaps" in system
     assert "long_pauses" not in system
     rubric = prompt["rubric"]
     assert rubric["version"] == "2026-10-31"

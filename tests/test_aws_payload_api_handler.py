@@ -6,7 +6,7 @@ from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 
-from src.aws_payload.errors import OwnershipViolationError
+from src.aws_payload.errors import OwnershipViolationError, PayloadNotFoundError
 from src.aws_payload.models import PayloadType, Project, Recording, RecordingStatus, UploadIntent
 
 
@@ -286,6 +286,41 @@ def test_review_route_returns_timed_transcript_and_feedback(monkeypatch):
     assert body["feedback"]["moments"][0]["id"] == "s1"
     assert body["feedback"]["categories"]["pace"]["next_step"] == "Keep this pace."
     assert "model_id" not in body["feedback"]
+
+
+def test_review_route_returns_transcript_and_metrics_when_feedback_disabled(monkeypatch):
+    module = load_handler_module()
+    recording = Recording(
+        "user-1", "project-1", "recording-1", "2026-01-01T00:00:00Z",
+        "2026-01-01T00:01:00Z", status=RecordingStatus.COMPLETE,
+        summary_metrics={"words_per_minute": 150},
+    )
+
+    class Store:
+        def get_recording(self, user_id, recording_id):
+            assert (user_id, recording_id) == ("user-1", "recording-1")
+            return recording
+
+        def get_json_artifact(self, user_id, recording_id, payload_type):
+            assert (user_id, recording_id) == ("user-1", "recording-1")
+            if payload_type is PayloadType.TRANSCRIPT:
+                return {"data": {"text": "hello", "items": []}}
+            if payload_type is PayloadType.FEEDBACK:
+                raise PayloadNotFoundError("feedback was not generated")
+            raise AssertionError(payload_type)
+
+    monkeypatch.setattr(module, "payloads", lambda: Store())
+    response = module.handler(
+        authenticated_event("GET /recordings/{recordingId}/review", path={"recordingId": "recording-1"}),
+        None,
+    )
+    assert response["statusCode"] == 200
+    assert json.loads(response["body"]) == {
+        "recording_id": "recording-1",
+        "transcript": {"text": "hello", "items": []},
+        "feedback": None,
+        "summary_metrics": {"words_per_minute": 150},
+    }
 
 
 def test_review_route_hides_artifacts_until_complete(monkeypatch):

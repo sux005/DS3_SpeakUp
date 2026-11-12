@@ -620,20 +620,25 @@ def _dispatch(event: dict[str, Any]) -> dict[str, Any]:
         if recording.status is not RecordingStatus.COMPLETE:
             raise InvalidTransitionError("Recording review is not available until processing is complete")
         transcript = _artifact_body(store, user_id, recording_id, "transcript")["data"]
-        feedback_document = store.get_json_artifact(user_id, recording_id, PayloadType.FEEDBACK)
-        feedback_data = feedback_document.get("data")
-        if not isinstance(feedback_data, Mapping) or not isinstance(feedback_data.get("feedback"), str):
-            raise PayloadIntegrityError("stored feedback is invalid")
-        feedback = {"feedback": feedback_data["feedback"]}
-        for field in ("schema_version", "categories", "moments", "metrics"):
-            if field in feedback_data:
-                feedback[field] = feedback_data[field]
+        try:
+            feedback_document = store.get_json_artifact(user_id, recording_id, PayloadType.FEEDBACK)
+        except PayloadNotFoundError:
+            feedback = None
+        else:
+            feedback_data = feedback_document.get("data")
+            if not isinstance(feedback_data, Mapping) or not isinstance(feedback_data.get("feedback"), str):
+                raise PayloadIntegrityError("stored feedback is invalid")
+            feedback = {"feedback": feedback_data["feedback"]}
+            for field in ("schema_version", "categories", "moments", "metrics"):
+                if field in feedback_data:
+                    feedback[field] = feedback_data[field]
         return reply(
             200,
             {
                 "recording_id": recording_id,
                 "transcript": transcript,
                 "feedback": feedback,
+                "summary_metrics": dict(recording.summary_metrics),
             },
         )
     if route == "POST /recordings/{recordingId}/confirm-upload":

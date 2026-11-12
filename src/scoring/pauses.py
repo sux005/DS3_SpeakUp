@@ -1,7 +1,8 @@
 """Pause detection chosen 2026-11-09: energy 0.3 s OR (Silero no-speech AND a transcript word gap).
 
-The quiet parts come from a loudness (energy) detector. Pauses filled with laughter, clapping or
-breathing are not quiet, so a second check adds any stretch where Silero hears no speech AND the
+The quiet parts come from a loudness (energy) detector and are limited to transcript word gaps.
+Pauses filled with laughter, clapping or breathing are not quiet, so a second check adds any
+stretch where Silero hears no speech AND the
 transcript has a word gap. Silences the detector split in two (for example by a tongue click) are
 merged back when they are under 0.3 s apart with no word between them.
 
@@ -52,9 +53,9 @@ def combine(energy_silences: Sequence[Interval], word_spans: Sequence[Interval],
             silero_speech: Sequence[Interval] | None, total_seconds: float | None = None) -> list[Interval]:
     """Energy pauses, plus Silero-and-word-gap pauses that energy missed, merged."""
 
-    pauses = longer_than(energy_silences)
+    word_gaps = gaps_between(word_spans, total_seconds)
+    pauses = longer_than(intersect(energy_silences, word_gaps))
     if silero_speech is not None:
-        word_gaps = gaps_between(word_spans)
         silero_gaps = gaps_between(silero_speech, total_seconds)
         for extra in longer_than(intersect(silero_gaps, word_gaps)):
             if not any(start < extra[1] and end > extra[0] for start, end in pauses):

@@ -22,7 +22,8 @@ against the public-field contract, but they do not exercise a browser UI.
 ## Recording review screen contract
 
 After a recording reaches `COMPLETE`, request
-`GET /recordings/{recordingId}/review`. Show four coaching cards for general
+`GET /recordings/{recordingId}/review`. When `feedback` is null, show the timed
+transcript and `summary_metrics` without coaching cards. Otherwise show four coaching cards for general
 speech, pace (including WPM), filler words, and pauses. Each card should put
 the measured value or observation beside the specific `next_step`, so the user
 can see what to practice. Keep the short overview above the cards.
