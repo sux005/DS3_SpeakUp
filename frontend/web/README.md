@@ -1,69 +1,50 @@
 # SpeakUp frontend
 
-A rough Next.js skeleton of the SpeakUp screens from the Figma file. It runs on fake JSON, so it works without AWS. Nothing is connected to the backend yet.
+This Next.js frontend is a local, interactive preview of the SpeakUp presentation practice flow. It does not call AWS or generate speech analysis.
 
-## Run it
+## Run locally
 
-You need [Node.js](https://nodejs.org) 20.9 or newer. Check with `node -v`.
+Use Node.js 20.9 or newer. From `frontend/web`:
 
 ```bash
-cd frontend/web
 npm install
 npm run dev
 ```
 
-Then open [http://localhost:3000](http://localhost:3000). Pages update when you save a file. Press `Ctrl+C` to stop the server.
+Open [http://localhost:3000](http://localhost:3000). Run `npm run lint` and `npm run build` to check the app.
 
-`npm install` is only needed the first time, and again after `package.json` changes.
-
-## Screens
-
-| Figma screen | URL |
-| --- | --- |
-| A · Your presentations | [/](http://localhost:3000/) |
-| B · Project & progress | [/projects/project-demo-day](http://localhost:3000/projects/project-demo-day) |
-| C · Record or upload | [/projects/project-demo-day/new](http://localhost:3000/projects/project-demo-day/new) |
-| D · Analyzing | [/recordings/ec4bb4c2-f423-5f06-86b7-5ee814c4b598/analyzing](http://localhost:3000/recordings/ec4bb4c2-f423-5f06-86b7-5ee814c4b598/analyzing) |
-| E1 · Results | [/recordings/8f2d9305-51f8-5ea1-9dbf-d5fc94b87f08](http://localhost:3000/recordings/8f2d9305-51f8-5ea1-9dbf-d5fc94b87f08) |
-
-Screen D shows whichever stage matches the recording's status. The failed sample recording is at `/recordings/63c7255c-c5fd-5d77-86c2-b9ad4ec15498/analyzing`.
-
-## Fake data
-
-`data/` is a copy of [`frontend/sample-payloads/`](../sample-payloads/README.md), Arjun's sample API responses. The copy is needed because Next.js can't import files from outside `frontend/web`.
-
-If the samples change, refresh the copy from the repo root:
+## Tests
 
 ```bash
-cp frontend/sample-payloads/*.json frontend/web/data/
+npm run test       # unit and component/integration tests
+npm run test:coverage # instrument frontend source for unit/integration coverage
+npm run test:all   # coverage, production build, and browser tests
 ```
 
-## Where things are
+The browser suite runs against a local production server on port 3102. It uses the local demo fixtures and browser storage; it does not need the backend or AWS. On macOS it uses installed Google Chrome when available. On other systems install Playwright Chromium with `npx playwright install chromium` or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to a Chromium-compatible browser.
+Run `npm run build` first when invoking `npm run test:e2e` by itself; `npm run test:all` includes the build.
+The coverage report measures unit and integration execution of the frontend source. Browser tests are reported separately by Playwright.
 
-| Path | What's there |
+## Try the flow
+
+1. On the home page, choose **New presentation** and upload or record audio immediately. A title is optional; the presentation is created when you start the demo review. You can also open the seeded [Demo Day presentation](http://localhost:3000/projects/project-demo-day).
+2. For another attempt in an existing presentation, choose **New attempt**. Preview or discard the audio before starting the demo processing flow.
+3. Watch the recording move through simulated processing stages, then open its review. The local recording can be played during this browser session.
+4. The seeded [sample review](http://localhost:3000/recordings/8f2d9305-51f8-5ea1-9dbf-d5fc94b87f08) shows example transcript, metrics, and coaching. Those artifacts belong only to that recording. New recordings show no invented scores.
+
+Presentation and recording state is held in `lib/demo-store.tsx`, seeded from `data/`, and saved in browser `localStorage`. Recording audio uses an in-memory object URL, so playback is unavailable after a full page reload. Clear the `speakup-frontend-demo-v1` localStorage entry to reset the preview.
+
+## Code map
+
+| Path | Purpose |
 | --- | --- |
-| `app/page.tsx` | Screen A |
-| `app/projects/[projectId]/` | Screens B and C |
-| `app/recordings/[recordingId]/` | Screens D and E1 |
-| `components/` | Shared pieces: nav, buttons, headings, progress charts |
-| `lib/recordings.ts` | Reads the fake data and formats dates, times and scores |
-| `lib/types.ts` | The shape of each API response |
-| `public/figma/` | Mascot and waveform images exported from Figma |
+| `app/` | Presentation, recording, status, and review routes |
+| `lib/demo-store.tsx` | Single client-side source for presentations, recordings, reviews, and status progression |
+| `lib/recordings.ts` | Pure selectors and display formatting |
+| `components/RecorderUploader.tsx` | Microphone capture, file selection, and local preview |
+| `components/AudioReviewPlayer.tsx` | Playback and time-linked review moments |
+| `data/` | Seed API payloads for this frontend preview |
 
-## Not connected yet
+`frontend/sample-payloads/` contains the original example API payloads. The runtime reads only `frontend/web/data/`; when refreshing demo examples, update that set deliberately and keep recording IDs consistent across transcript, analysis, and feedback.
 
-These are placeholders until the app talks to AWS:
-
-- **Data:** everything comes from `data/`. Replace the JSON imports in `lib/recordings.ts` and in `app/recordings/[recordingId]/page.tsx` with API calls. The routes are in [docs/aws-payload-api.md](../../docs/aws-payload-api.md).
-- **Sign-in:** there's no Cognito login yet. API calls need the JWT as `Authorization: Bearer <token>`.
-- **Recording and upload:** the buttons on screen C don't do anything yet. The upload flow is `POST /uploads`, then `PUT` the file, then poll the recording's status.
-- **Analyzing:** screen D doesn't refresh. It should poll `GET /recordings/{recordingId}` until `COMPLETE` or `FAILED`.
-- **Audio playback:** the waveform on screen E1 is a static image.
-- **File types:** screen C accepts WAV, MP3 and M4A, as in the Figma design currently. Check what is wanted to be accepted in the MVP.
-
-## Checks
-
-```bash
-npm run lint
-npm run build
-```
+The AWS API contract is documented in [docs/aws-payload-api.md](../../docs/aws-payload-api.md). Authentication, upload, processing, and generated analysis still require backend integration.

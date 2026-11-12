@@ -1,35 +1,26 @@
-import projectsJson from "@/data/projects.json";
-import recordingsJson from "@/data/project-recordings.json";
 import type { Project, Recording, Take } from "@/lib/types";
 
-// Fake data for now. When the app talks to AWS, these come from
-// GET /projects and GET /projects/{projectId}/recordings.
-export const projects = projectsJson.items as Project[];
-export const recordings = recordingsJson.items as Recording[];
-
-export function getProject(projectId: string) {
+export function getProject(projects: Project[], projectId: string) {
   return projects.find((project) => project.project_id === projectId);
 }
 
-// Oldest first, so the first recording is Take 01.
-export function getTakes(projectId: string): Take[] {
+// Attempt labels are display order; recording_id remains the durable identity.
+export function getTakes(recordings: Recording[], projectId: string): Take[] {
   return recordings
     .filter((recording) => recording.project_id === projectId)
-    .sort((a, b) => a.created_at.localeCompare(b.created_at))
+    .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.recording_id.localeCompare(b.recording_id))
     .map((recording, index) => ({ ...recording, take: index + 1 }));
 }
 
-export function getTake(recordingId: string) {
-  const recording = recordings.find((r) => r.recording_id === recordingId);
-  if (!recording) return undefined;
-  return getTakes(recording.project_id).find((t) => t.recording_id === recordingId);
+export function getTake(recordings: Recording[], recordingId: string) {
+  const recording = recordings.find((item) => item.recording_id === recordingId);
+  return recording && getTakes(recordings, recording.project_id).find((take) => take.recording_id === recordingId);
 }
 
 export function formatTake(take: number) {
   return `Take ${String(take).padStart(2, "0")}`;
 }
 
-// 66 seconds -> "01:06"
 export function formatClock(seconds: number) {
   const minutes = Math.floor(seconds / 60);
   const rest = Math.floor(seconds % 60);
@@ -45,7 +36,6 @@ export function formatDate(iso: string, withYear = false) {
   });
 }
 
-// Scores are null when a recording has under 60 seconds of speech.
 export function formatScore(score: number | null) {
   return score === null ? "Not scored" : `${score}/4`;
 }

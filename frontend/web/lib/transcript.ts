@@ -16,8 +16,12 @@ export function toSentences(items: TranscriptItem[], metrics: AnalysisMetrics) {
   for (const item of items) {
     const word = item.alternatives[0]?.content ?? "";
     if (item.type === "pronunciation") {
+      if (!word.trim()) continue;
       const start = Number(item.start_time);
       const end = Number(item.end_time);
+      // Transcribe timestamps are required to place a word in the review
+      // timeline. Ignore malformed items rather than leaking NaN into the UI.
+      if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
       if (!current) {
         current = { start, end, text: word };
       } else {

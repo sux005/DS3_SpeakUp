@@ -152,6 +152,10 @@ pip install -r requirements.txt
 cp .env.development.example .env.development
 ```
 
+For the local frontend demo, use Node.js 20.9 or newer and run `npm ci` in
+`frontend/web/`. The frontend uses Next.js, Vitest, React Testing Library, and
+Playwright; it does not call the AWS backend.
+
 Use `.env.production.example` as the production schema after the production
 CloudFormation stack is deployed. Never commit `.env.development` or
 `.env.production`, and never put AWS access keys in either file; local AWS CLI
@@ -164,6 +168,10 @@ access uses the short-lived `speakup-dev` profile.
 - Build Lambda packages: `python scripts/build_lambda_packages.py`
 - Launch notebooks: `jupyter lab notebooks/`
 - Validate locally: `python -m pytest -q --basetemp .test-tmp -p no:cacheprovider`
+- Validate the frontend from `frontend/web/`: `npm run lint` and
+  `npm run test:all` (coverage-gated unit/integration tests, production build,
+  and Playwright browser tests). `npm run test:e2e` alone requires a prior
+  `npm run build`.
 - Opt-in deployed workflow smoke test: set `SPEAKUP_LIVE_E2E=1`,
   `SPEAKUP_E2E_API_URL`, `SPEAKUP_E2E_JWT`, and `SPEAKUP_E2E_WAV_PATH` to a
   non-private spoken-English WAV, then run
@@ -183,6 +191,9 @@ access uses the short-lived `speakup-dev` profile.
 - Before opening a PR: run `pytest` and make sure it passes. New logic in
   `src/` should come with a test — either in `tests/` or a clear
   assertion-based check in the relevant notebook.
+- Frontend unit, component, and route integration tests live in
+  `frontend/web/tests/`; browser tests live in `frontend/web/e2e/`. Run
+  `npm run test:all` from `frontend/web/` before opening a frontend PR.
 
 ## Code style & conventions
 
