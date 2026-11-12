@@ -3,8 +3,9 @@
 SpeakUp is a DS3 public-speaking diagnostics platform. Its backend stores
 original recordings without rewriting them during processing, prepares speech
 for analysis, produces timestamped transcripts and speech metrics, and stores
-versioned coaching feedback in private AWS resources. The frontend has not been
-implemented yet.
+versioned coaching feedback in private AWS resources. A Next.js frontend
+skeleton lives in [`frontend/web`](frontend/web/README.md) and currently uses
+sample data rather than the live API.
 
 ## AWS payload API
 
