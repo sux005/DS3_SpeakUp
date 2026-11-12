@@ -8,8 +8,13 @@ scipy>=1.15,<2
 librosa==0.11.0
 soundfile>=0.13,<0.15
 soxr>=1.0,<2
-torch==2.5.1+cpu
-torchaudio==2.5.1+cpu
+# PyTorch publishes explicit +cpu wheels for Linux/Windows, while macOS CPU/MPS
+# wheels use the plain version. Platform markers keep one requirements file
+# usable on Linux, Windows, Intel Mac, and Apple Silicon Mac.
+torch==2.5.1+cpu; sys_platform != "darwin"
+torchaudio==2.5.1+cpu; sys_platform != "darwin"
+torch==2.5.1; sys_platform == "darwin"
+torchaudio==2.5.1; sys_platform == "darwin"
 deepfilternet==0.5.6
 deepfilterlib==0.5.6
 av==18.1.0

@@ -1,0 +1,64 @@
+{
+  "items": [
+    {
+      "user_id": "demo-user",
+      "project_id": "project-demo-day",
+      "recording_id": "8f2d9305-51f8-5ea1-9dbf-d5fc94b87f08",
+      "created_at": "2026-11-04T18:00:00.000Z",
+      "updated_at": "2026-11-04T18:02:14.000Z",
+      "status": "COMPLETE",
+      "content_type": "audio/webm",
+      "revision": 4,
+      "content_length": 2480134,
+      "audio_prep_status": "COMPLETED",
+      "summary_metrics": {
+        "rubric_version": "2026-10-31",
+        "rubric_status": "scored",
+        "pause_detection_method": "transcribe_word_gaps",
+        "transcribed_word_count": 135,
+        "word_count": 132,
+        "duration_seconds": 66.0,
+        "speaking_duration_seconds": 63.0,
+        "words_per_minute": 120.0,
+        "filler_words": {"um": 2, "uh": 1},
+        "filler_count": 3,
+        "fillers_per_100_words": 2.27,
+        "watch_words": {"like": 2},
+        "pauses_inside_sentences": 8,
+        "pauses_between_sentences": 2,
+        "pauses_per_speaking_minute": 7.62,
+        "total_pause_seconds": 3.0,
+        "rubric_scores": {
+          "speaking_rate": 3,
+          "filler_words": 3,
+          "pauses_inside_sentences": 4
+        }
+      }
+    },
+    {
+      "user_id": "demo-user",
+      "project_id": "project-demo-day",
+      "recording_id": "ec4bb4c2-f423-5f06-86b7-5ee814c4b598",
+      "created_at": "2026-11-04T17:30:00.000Z",
+      "updated_at": "2026-11-04T17:30:08.000Z",
+      "status": "TRANSCRIBING",
+      "content_type": "audio/webm",
+      "revision": 2,
+      "content_length": 1912044,
+      "audio_prep_status": "COMPLETED"
+    },
+    {
+      "user_id": "demo-user",
+      "project_id": "project-demo-day",
+      "recording_id": "63c7255c-c5fd-5d77-86c2-b9ad4ec15498",
+      "created_at": "2026-11-04T16:15:00.000Z",
+      "updated_at": "2026-11-04T16:16:40.000Z",
+      "status": "FAILED",
+      "content_type": "audio/webm",
+      "revision": 3,
+      "content_length": 1781133,
+      "failure_reason": "Processing failed"
+    }
+  ],
+  "next_cursor": null
+}

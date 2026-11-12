@@ -166,9 +166,11 @@ access uses the short-lived `speakup-dev` profile.
 ## Running things
 
 - Run model-backed audio preparation with the Python 3.11 environment:
-  `.venv-audio-v2/Scripts/python -m src.audio.preprocess <input> <output-dir>`
+  activate `.venv-audio-v2`, then run
+  `python -m src.audio.preprocess <input> <output-dir>`
 - Run local six-clip QA with duplicate skipping:
-  `.venv-audio-v2/Scripts/python scripts/run_real_audio_qa.py`
+  activate `.venv-audio-v2`, then run
+  `python scripts/run_real_audio_qa.py`
 - Build Lambda packages: `python scripts/build_lambda_packages.py`
 - Calculate transcript WPM: `python scripts/calculate_wpm.py <transcript.json>`
 - Count transcript fillers: `python scripts/count_fillers.py <transcript.json>`
@@ -193,6 +195,10 @@ access uses the short-lived `speakup-dev` profile.
 - Before opening a PR: run `pytest` and make sure it passes. New logic in
   `src/` should come with a test — either in `tests/` or a clear
   assertion-based check in the relevant notebook.
+- macOS and Linux use `.venv/bin/activate`; Windows PowerShell uses
+  `.venv\Scripts\Activate.ps1`. Model-backed work uses CPython 3.11 on every
+  platform. Keep PyTorch requirement markers compatible with macOS plain wheels
+  and Linux/Windows `+cpu` wheels.
 
 ## Code style & conventions
 
@@ -277,5 +283,6 @@ See `docs/aws-payload-api.md` for the storage contract and staged GSI migration,
 `docs/aws-payload-package-reference.md` for the complete function-level Python
 reference, `docs/aws-api-file-flowchart.md` for the editable AWS API file and
 runtime dependency map, `src/aws_payload/README.md` for a concise API overview, and
-`infra/README.md` for packaging, deployment, cost, and cleanup. Amazon
+`infra/README.md` for packaging, deployment, cost, and cleanup. `docs/research/README.md` indexes the
+research behind the rubric cutoffs, the proposed pause method, and the Bedrock prompt. Amazon
 Transcribe is currently blocked while the AWS project remains on the Free plan.
