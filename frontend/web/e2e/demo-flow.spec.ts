@@ -97,10 +97,12 @@ test.describe("analysis and review states", () => {
     await startWithCleanDemo(page);
     await page.goto(`/recordings/${completeRecordingId}`);
     await expect(page.getByRole("heading", { name: "Your results" })).toBeVisible();
-    await expect(page.getByText("120 WPM")).toBeVisible();
+    // 120 WPM shows on the score card and again on the pace coaching card.
+    await expect(page.getByText("120 WPM").first()).toBeVisible();
     await expect(page.getByRole("heading", { name: "The transcript" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Coaching" })).toBeVisible();
     await expect(page.getByText("FOR YOUR NEXT TAKE")).toBeVisible();
+    await expect(page.getByText('Take a breath instead of saying "um" before your first sentence.')).toBeVisible();
   });
 
   test("guards a review that is still processing", async ({ page }) => {

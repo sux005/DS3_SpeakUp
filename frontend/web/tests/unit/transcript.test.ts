@@ -1,13 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { toSentences } from "@/lib/transcript";
 import type { AnalysisMetrics, TranscriptItem } from "@/lib/types";
+import { pause, summaryMetrics } from "../fixtures";
 
 const metrics = (overrides: Partial<AnalysisMetrics> = {}): AnalysisMetrics => ({
-  duration_seconds: 10,
-  words_per_minute: 120,
-  fillers_per_100_words: 1,
-  pauses_per_speaking_minute: 1,
-  rubric_scores: { speaking_rate: 3, filler_words: 3, pauses_inside_sentences: 3 },
+  ...summaryMetrics({ fillers_per_100_words: 1, pauses_per_speaking_minute: 1 }),
   filler_occurrences: [],
   pauses: [],
   long_pauses: [],
@@ -38,13 +35,13 @@ describe("toSentences", () => {
   it("tags filler before pause when both occur inside the same sentence", () => {
     const result = toSentences([pronunciation("I", 0, 1), pronunciation("think", 1.1, 2), punctuation(".")], metrics({
       filler_occurrences: [{ filler: "think", start_seconds: 1.5, end_seconds: 1.7 }],
-      pauses: [{ start_seconds: 1.8, end_seconds: 2.2 }],
+      pauses: [pause(1.8, 2.2)],
     }));
     expect(result[0].tag).toBe("FILLER");
   });
 
   it("tags pauses at inclusive sentence boundaries and ignores unrelated metrics", () => {
-    const result = toSentences([pronunciation("Boundary", 3, 4), punctuation("!")], metrics({ pauses: [{ start_seconds: 3, end_seconds: 3.1 }] }));
+    const result = toSentences([pronunciation("Boundary", 3, 4), punctuation("!")], metrics({ pauses: [pause(3, 3.1)] }));
     expect(result[0]).toMatchObject({ text: "Boundary!", tag: "PAUSE" });
     expect(toSentences([], metrics())).toMatchObject([]);
   });
