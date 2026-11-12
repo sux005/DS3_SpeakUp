@@ -212,6 +212,11 @@ access uses the short-lived `speakup-dev` profile.
   choose buckets, tables, indexes, or raw keys.
 - Keep HTTP recording responses on the explicit public serializer in the API
   adapter; do not return DynamoDB items, payload references, or workflow IDs.
+- Completed review responses include transcript and summary metrics; feedback is
+  null when no feedback artifact exists.
+- Ground Bedrock coaching in persisted metrics and the matching rubric CSV bands.
+  General feedback is unscored; pace, scored filler rate, and inside-sentence
+  pause rate use their existing calculator scores.
 - Share checksum parsing and active-workflow status rules through
   `src/aws_payload/checksum.py` and `src/aws_payload/policy.py`.
 - Require `content_length` for HTTP upload reservations; sign it into the PUT,
@@ -221,6 +226,12 @@ access uses the short-lived `speakup-dev` profile.
   failures through the workflow, EventBridge fallback, and stale-workflow
   reconciler. Active workflows cannot be soft-deleted.
 - Keep Regional AWS resources in the project's selected Region, `us-east-2`.
+- Pauses: the audio-prep worker stores `pause_inputs` (energy silences + Silero VAD
+  speech, `src/audio/pause_detection.py`) in its report; the processor passes them to
+  `score_transcribe_items(..., acoustic=...)`. Missing inputs fall back to Transcribe
+  word gaps. Acoustic intervals count only within transcript word gaps, and
+  `pause_detection_method` says which ran. `silero-vad` lives only in
+  the audio worker requirements.
 - Never log audio bytes, transcript text, credentials, or pre-signed URLs.
 
 ## Git / PR workflow

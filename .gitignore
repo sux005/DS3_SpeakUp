@@ -45,6 +45,7 @@ build/
 .test-tmp-pr/
 .review-tmp/
 .review-test-tmp/
+.tmp-pr5/
 
 # Runtime rubrics belong in src/scoring/rubrics so Lambda packages include them.
 /rubrics/

@@ -18,3 +18,4 @@ torchaudio==2.5.1; sys_platform == "darwin"
 deepfilternet==0.5.6
 deepfilterlib==0.5.6
 av==18.1.0
+silero-vad==6.2.3

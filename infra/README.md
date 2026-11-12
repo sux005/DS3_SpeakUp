@@ -46,6 +46,7 @@ real production frontend origin before deploying a production stack.
 - `POST /uploads`
 - `GET /projects/{projectId}/recordings`
 - `GET /recordings/{recordingId}`
+- `GET /recordings/{recordingId}/review`
 - `POST /recordings/{recordingId}/confirm-upload`
 - `GET /recordings/{recordingId}/download`
 - `POST /recordings/{recordingId}/process`
@@ -152,7 +153,10 @@ Bedrock coaching runs only when `EnableBedrockFeedback=true`; otherwise the
 recording completes after analytics. The processor stores versioned artifacts
 and compact recording metadata; the frontend can poll
 `GET /recordings/{recordingId}` for lifecycle status and metrics. Original audio
-is not overwritten during processing.
+is not overwritten during processing. When processing completes, clients can
+fetch timed transcript words and summary metrics from
+`GET /recordings/{recordingId}/review`; category and moment feedback is present
+when Bedrock coaching runs.
 
 Speech analysis applies the finalized 2026-10-31 rubric. It scores speaking
 rate, scored fillers per 100 spoken words, and inside-sentence pauses per
@@ -292,7 +296,7 @@ The stack uses on-demand/serverless capacity and has no provisioned concurrency.
 Charges are usage-based for S3, DynamoDB (including GSI writes and strong
 base-table re-reads after list queries), API Gateway, Lambda, Step Functions,
 Transcribe, optional Bedrock, and logs. When enabled, Bedrock output is capped
-at 800 tokens per recording.
+at 1200 tokens per recording for structured review feedback.
 Step Functions logs errors without execution payloads, so transcripts are not copied
 into workflow logs. Deleted S3 object versions expire after 30 days; abandoned
 multipart uploads are removed after 7 days.

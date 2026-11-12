@@ -19,6 +19,21 @@ from src.aws_payload.errors import WriteConflictError
 PROCESSOR_PATH = Path(__file__).resolve().parents[1] / "infra/lambda/processor/index.py"
 
 
+def coaching_response(*, segment_id=None):
+    answer = {
+        "overview": "Clear opening; slow down before the main point.",
+        "categories": {
+            name: {"observation": f"Measured {name} needs attention.",
+                   "next_step": f"Practice one {name} change on the next take."}
+            for name in ("general", "pace", "fillers", "pauses")
+        },
+        "moments": ([{"segment_id": segment_id, "kind": "improve",
+                     "observation": "The opening moves past the main point.",
+                     "next_step": "Pause after the first sentence."}] if segment_id else []),
+    }
+    return {"output": {"message": {"content": [{"text": json.dumps(answer)}]}}}
+
+
 def load_processor(monkeypatch):
     for key, value in {
         "AWS_DEFAULT_REGION": "us-east-2",
@@ -60,7 +75,8 @@ class FakeStore:
             transcription_job_name=None,
             raw_transcript_s3_key=None,
             summary_metrics=(
-                {"word_count": 2} if status in (RecordingStatus.ANALYZED, RecordingStatus.COMPLETE)
+                {"rubric_version": "2026-10-31", "word_count": 2}
+                if status in (RecordingStatus.ANALYZED, RecordingStatus.COMPLETE)
                 else {}
             ),
             payload_refs=(
@@ -388,6 +404,59 @@ def test_analyze_normalizes_transcript_and_calculates_fillers(monkeypatch):
     assert store.transitions[-1][0] is RecordingStatus.ANALYZED
 
 
+def test_analyze_uses_acoustic_pause_inputs_from_audio_prep_report(monkeypatch):
+    module = load_processor(monkeypatch)
+    store = FakeStore()
+    words = [("so", 0.0, 1.0), ("today", 1.0, 2.0), ("we", 2.6, 3.0), ("talk", 3.0, 4.0)]
+    store.stream_bytes = json.dumps({"results": {
+        "transcripts": [{"transcript": "so today we talk"}],
+        "items": [{"type": "pronunciation", "start_time": str(start), "end_time": str(end),
+                   "alternatives": [{"content": word}]} for word, start, end in words],
+    }}).encode()
+    report = {"data": {"report": {"pause_inputs": {
+        "energy_silences": [[2.0, 2.6]],
+        "silero_speech": [[0.0, 2.0], [2.6, 4.0]],
+        "duration_seconds": 4.0,
+    }}}}
+    store.get_json_artifact = lambda user_id, recording_id, payload_type: (
+        report if payload_type == module.PayloadType.PREPROCESS_REPORT else store.transcript)
+    module.payloads = lambda: store
+
+    result = module.handler(event("analyze", transcript_s3_key="raw.json"), None)
+
+    metrics = result["summary_metrics"]
+    assert metrics["pause_detection_method"] == "energy_or_silero_and_word_gap"
+    assert metrics["pauses_inside_sentences"] == 1
+
+
+def test_malformed_pause_inputs_are_ignored(monkeypatch):
+    module = load_processor(monkeypatch)
+    good = {"energy_silences": [[1.0, 1.5]], "silero_speech": None, "duration_seconds": 3}
+    assert module._valid_pause_inputs(good)
+    for bad in ({**good, "energy_silences": [[2.0, 1.0]]}, {**good, "energy_silences": [["a", 1]]},
+                {**good, "energy_silences": [[1.0, 2.0], [1.5, 3.0]]}, {**good, "silero_speech": "x"},
+                {**good, "duration_seconds": float("nan")}, {**good, "energy_silences": None}):
+        assert not module._valid_pause_inputs(bad)
+
+
+def test_analyze_falls_back_to_word_gaps_without_a_report(monkeypatch):
+    module = load_processor(monkeypatch)
+    store = FakeStore()
+    store.stream_bytes = json.dumps({"results": {"transcripts": [{"transcript": "hi"}], "items": [
+        {"type": "pronunciation", "start_time": "0.0", "end_time": "1.0", "alternatives": [{"content": "hi"}]},
+    ]}}).encode()
+
+    def missing(*args, **kwargs):
+        raise module.PayloadNotFoundError("no report")
+
+    store.get_json_artifact = missing
+    module.payloads = lambda: store
+
+    result = module.handler(event("analyze", transcript_s3_key="raw.json"), None)
+
+    assert result["summary_metrics"]["pause_detection_method"] == "transcribe_word_gaps"
+
+
 def test_analyze_rejects_oversized_raw_transcript(monkeypatch):
     module = load_processor(monkeypatch)
     store = FakeStore()
@@ -589,7 +658,8 @@ def test_feedback_disabled_completes_without_bedrock(monkeypatch):
     assert store.artifacts == []
 
 
-def test_feedback_scope_accepts_only_persisted_normalized_artifacts(monkeypatch):
+@pytest.mark.parametrize("analysis_version", ["3.0.0", "current"])
+def test_feedback_scope_accepts_only_persisted_normalized_artifacts(monkeypatch, analysis_version):
     module = load_processor(monkeypatch)
     monkeypatch.setenv("ENABLE_BEDROCK_FEEDBACK", "false")
     store = FakeStore(status=RecordingStatus.ANALYZED)
@@ -607,7 +677,7 @@ def test_feedback_scope_accepts_only_persisted_normalized_artifacts(monkeypatch)
     analysis_key = artifact_key(
         "user-1", "project-1", "recording-1",
         producer="speakup-speech-analysis",
-        producer_version=module.ANALYSIS_VERSION,
+        producer_version=(module.ANALYSIS_VERSION if analysis_version == "current" else analysis_version),
         artifact_name="speech_analysis",
         content_type="application/json",
     )
@@ -628,7 +698,7 @@ def test_feedback_scope_accepts_only_persisted_normalized_artifacts(monkeypatch)
             "recording_id": "recording-1",
             "payload_type": PayloadType.SPEECH_ANALYSIS.value,
             "producer": "speakup-speech-analysis",
-            "producer_version": module.ANALYSIS_VERSION,
+            "producer_version": (module.ANALYSIS_VERSION if analysis_version == "current" else analysis_version),
         },
     })
     module.payloads = lambda: store
@@ -655,15 +725,16 @@ def test_feedback_scope_accepts_only_persisted_normalized_artifacts(monkeypatch)
         )
 
 
-def test_feedback_replays_historical_artifact_without_rewriting(monkeypatch):
+@pytest.mark.parametrize("old_version", ["1.0.0", "2.0.0"])
+def test_feedback_replays_historical_artifact_without_rewriting(monkeypatch, old_version):
     module = load_processor(monkeypatch)
     key = artifact_key("user-1", "project-1", "recording-1", producer="speakup-coach",
-                       producer_version="1.0.0", artifact_name="feedback",
+                       producer_version=old_version, artifact_name="feedback",
                        content_type="application/json")
     store = FakeStore(status=RecordingStatus.COMPLETE, feedback_ref={
         "key": key, "user_id": "user-1", "project_id": "project-1",
         "recording_id": "recording-1", "payload_type": PayloadType.FEEDBACK.value,
-        "producer": "speakup-coach", "producer_version": "1.0.0",
+        "producer": "speakup-coach", "producer_version": old_version,
     })
     module.payloads = lambda: store
     result = module.handler(event("feedback"), None)
@@ -690,11 +761,15 @@ def test_feedback_generates_and_persists_model_output(monkeypatch):
     module = load_processor(monkeypatch)
     store = FakeStore(
         status=RecordingStatus.ANALYZED,
-        transcript={"data": {"text": "x" * 10_000}},
+        transcript={"data": {"text": "Hello world.", "items": [
+            {"type": "pronunciation", "start_time": "0.2", "end_time": "0.5", "alternatives": [{"content": "Hello"}]},
+            {"type": "pronunciation", "start_time": "0.6", "end_time": "1.0", "alternatives": [{"content": "world"}]},
+            {"type": "punctuation", "alternatives": [{"content": "."}]},
+        ]}},
     )
     module.payloads = lambda: store
     module.BEDROCK = SimpleNamespace(
-        converse=lambda **kwargs: {"output": {"message": {"content": [{"text": "Practice pauses."}]}}}
+        converse=lambda **kwargs: coaching_response(segment_id="s1")
     )
 
     result = module.handler(
@@ -704,27 +779,124 @@ def test_feedback_generates_and_persists_model_output(monkeypatch):
 
     assert result["status"] == RecordingStatus.COMPLETE.value
     assert "transcript_text" not in result
-    assert store.artifacts[-1]["data"]["feedback"] == "Practice pauses."
+    feedback = store.artifacts[-1]["data"]
+    assert feedback["feedback"] == "Clear opening; slow down before the main point."
+    assert set(feedback["categories"]) == {"general", "pace", "fillers", "pauses"}
+    assert feedback["moments"] == [{
+        "id": "s1", "start_seconds": 0.2, "end_seconds": 1.0,
+        "text": "Hello world.", "kind": "improve",
+        "observation": "The opening moves past the main point.",
+        "next_step": "Pause after the first sentence.",
+    }]
+    assert feedback["schema_version"] == 2
+
+
+def test_feedback_prompt_includes_timed_segments_and_explicit_categories(monkeypatch):
+    module = load_processor(monkeypatch)
+    store = FakeStore(status=RecordingStatus.ANALYZED, transcript={"data": {
+        "text": "Start here. Then continue.",
+        "items": [
+            {"type": "pronunciation", "start_time": "0.0", "end_time": "0.4", "alternatives": [{"content": "Start"}]},
+            {"type": "pronunciation", "start_time": "0.5", "end_time": "0.8", "alternatives": [{"content": "here"}]},
+            {"type": "punctuation", "alternatives": [{"content": "."}]},
+            {"type": "pronunciation", "start_time": "1.2", "end_time": "1.5", "alternatives": [{"content": "Then"}]},
+            {"type": "pronunciation", "start_time": "1.6", "end_time": "2.0", "alternatives": [{"content": "continue"}]},
+            {"type": "punctuation", "alternatives": [{"content": "."}]},
+        ],
+    }})
+    module.payloads = lambda: store
+    calls = []
+    module.BEDROCK = SimpleNamespace(
+        converse=lambda **kwargs: (calls.append(kwargs) or coaching_response(segment_id="s2"))
+    )
+
+    module.handler(event("feedback"), None)
+
+    prompt = json.loads(calls[0]["messages"][0]["content"][0]["text"])
+    assert prompt["segments"] == [
+        {"id": "s1", "start_seconds": 0.0, "end_seconds": 0.8, "text": "Start here."},
+        {"id": "s2", "start_seconds": 1.2, "end_seconds": 2.0, "text": "Then continue."},
+    ]
+    system = calls[0]["system"][0]["text"]
+    assert all(topic in system for topic in ("general", "pace", "fillers", "pauses"))
+    assert "General feedback covers message and clarity and is not rubric scored" in system
+    assert "only the rate is scored by the filler_words band" in system
+    assert "only the latter is scored by the pauses_inside_sentences band" in system
+    assert "energy_only means quiet audio within transcript word gaps" in system
+    assert "long_pauses" not in system
+    rubric = prompt["rubric"]
+    assert rubric["version"] == "2026-10-31"
+    assert rubric["minimum_speaking_seconds"] == 60
+    assert [band for band in rubric["score_bands"]["speaking_rate"] if band["score"] == 4] == [{
+        "score": 4, "min_value": 135.0, "min_inclusive": True,
+        "max_value": 155.0, "max_inclusive": True,
+    }]
+    assert [band for band in rubric["score_bands"]["filler_words"] if band["score"] == 4][0]["max_value"] == 2.0
+    assert [band for band in rubric["score_bands"]["pauses_inside_sentences"] if band["score"] == 4][0]["max_value"] == 9.0
+    assert store.artifacts[-1]["data"]["moments"][0]["start_seconds"] == 1.2
+
+
+def test_timed_segments_keep_punctuation_at_word_limit(monkeypatch):
+    module = load_processor(monkeypatch)
+    items = [
+        {"type": "pronunciation", "start_time": str(index),
+         "end_time": str(index + 0.5), "alternatives": [{"content": "word"}]}
+        for index in range(26)
+    ]
+    items.insert(25, {"type": "punctuation", "alternatives": [{"content": "."}]})
+
+    segments = module._timed_segments(items)
+
+    assert len(segments) == 2
+    assert segments[0]["text"].endswith("word.")
+    assert segments[1]["text"] == "word"
+
+
+def test_feedback_rejects_unanchored_model_moment(monkeypatch):
+    module = load_processor(monkeypatch)
+    store = FakeStore(status=RecordingStatus.ANALYZED, transcript={"data": {
+        "text": "Hello", "items": [
+            {"type": "pronunciation", "start_time": "0.1", "end_time": "0.4", "alternatives": [{"content": "Hello"}]},
+        ],
+    }})
+    module.payloads = lambda: store
+    module.BEDROCK = SimpleNamespace(converse=lambda **kwargs: coaching_response(segment_id="invented"))
+
+    with pytest.raises(ValueError, match="unknown segment"):
+        module.handler(event("feedback"), None)
+    assert store.artifacts == []
 
 
 def test_feedback_uses_persisted_metrics_over_workflow_event(monkeypatch):
     module = load_processor(monkeypatch)
     store = FakeStore(status=RecordingStatus.ANALYZED)
     store.recording.summary_metrics = {
-        "rubric_status": "scored", "rubric_scores": {"speaking_rate": 4},
+        "rubric_version": "2026-10-31", "rubric_status": "scored",
+        "rubric_scores": {"speaking_rate": 4},
     }
     module.payloads = lambda: store
     calls = []
     module.BEDROCK = SimpleNamespace(
-        converse=lambda **kwargs: (calls.append(kwargs) or {
-            "output": {"message": {"content": [{"text": "Practice pauses."}]}}
-        })
+        converse=lambda **kwargs: (calls.append(kwargs) or coaching_response())
     )
 
     module.handler(event("feedback", summary_metrics={"rubric_scores": {"speaking_rate": 0}}), None)
 
     prompt = json.loads(calls[0]["messages"][0]["content"][0]["text"])
     assert prompt["metrics"] == store.recording.summary_metrics
+
+
+def test_feedback_rejects_metrics_from_another_rubric(monkeypatch):
+    module = load_processor(monkeypatch)
+    store = FakeStore(status=RecordingStatus.ANALYZED)
+    store.recording.summary_metrics["rubric_version"] = "older-rubric"
+    module.payloads = lambda: store
+    module.BEDROCK = SimpleNamespace(
+        converse=lambda **kwargs: pytest.fail("mismatched rubric must not call Bedrock")
+    )
+
+    with pytest.raises(ValueError, match="active rubric"):
+        module.handler(event("feedback"), None)
 
 
 def test_feedback_rejects_missing_persisted_metrics(monkeypatch):
@@ -762,9 +934,7 @@ def test_feedback_replay_does_not_call_bedrock_twice(monkeypatch, lost_response)
     module.payloads = lambda: store
     calls = []
     module.BEDROCK = SimpleNamespace(
-        converse=lambda **kwargs: (calls.append(kwargs) or {
-            "output": {"message": {"content": [{"text": "Practice pauses."}]}}
-        })
+        converse=lambda **kwargs: (calls.append(kwargs) or coaching_response())
     )
     method = "put_json_artifact" if lost_response == "artifact" else "transition_recording"
     original = getattr(store, method)
