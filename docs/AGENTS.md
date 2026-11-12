@@ -171,9 +171,18 @@ access uses the short-lived `speakup-dev` profile.
 - Run local six-clip QA with duplicate skipping:
   activate `.venv-audio-v2`, then run
   `python scripts/run_real_audio_qa.py`
+- Compare existing Whisper or Transcribe raw/enhanced transcript files with
+  `python scripts/compare_noise_cancellation.py <raw.json> <enhanced.json>`.
+  Add `--reference-text <reviewed.txt>` before interpreting either condition as
+  more accurate.
+- Run a local Whisper A/B transcription with
+  `python scripts/transcribe_noise_cancellation_pair.py <raw-audio> <enhanced-audio> --output-dir <dir>`.
 - Build Lambda packages: `python scripts/build_lambda_packages.py`
 - Calculate transcript WPM: `python scripts/calculate_wpm.py <transcript.json>`
 - Count transcript fillers: `python scripts/count_fillers.py <transcript.json>`
+- Run a bounded, content-safe Bedrock availability check with
+  `python scripts/smoke_test_bedrock.py` after signing in to the `speakup-dev`
+  profile.
 - Launch notebooks: `jupyter lab notebooks/`
 - Validate locally: `python -m pytest -q --basetemp .test-tmp -p no:cacheprovider`
 - Opt-in deployed workflow smoke test: set `SPEAKUP_LIVE_E2E=1`,
@@ -272,6 +281,9 @@ See `docs/aws-payload-api.md` for the storage contract and staged GSI migration,
 `docs/aws-payload-package-reference.md` for the complete function-level Python
 reference, `docs/aws-api-file-flowchart.md` for the editable AWS API file and
 runtime dependency map, `src/aws_payload/README.md` for a concise API overview, and
-`infra/README.md` for packaging, deployment, cost, and cleanup. `docs/research/README.md` indexes the
+`infra/README.md` for packaging, deployment, cost, and cleanup. See
+`docs/sign-in-process.md` for app-user and developer authentication and
+`docs/bedrock-upload-pipeline.md` for Bedrock diagnosis and end-to-end
+verification. `docs/research/README.md` indexes the
 research behind the rubric cutoffs, the proposed pause method, and the Bedrock prompt. Amazon
 Transcribe is currently blocked while the AWS project remains on the Free plan.

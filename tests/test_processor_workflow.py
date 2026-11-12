@@ -686,7 +686,7 @@ def test_feedback_rejects_foreign_artifact_reference(monkeypatch):
     assert store.transitions == []
 
 
-def test_feedback_generates_and_persists_model_output(monkeypatch):
+def test_feedback_generates_and_persists_model_output(monkeypatch, caplog):
     module = load_processor(monkeypatch)
     store = FakeStore(
         status=RecordingStatus.ANALYZED,
@@ -694,7 +694,11 @@ def test_feedback_generates_and_persists_model_output(monkeypatch):
     )
     module.payloads = lambda: store
     module.BEDROCK = SimpleNamespace(
-        converse=lambda **kwargs: {"output": {"message": {"content": [{"text": "Practice pauses."}]}}}
+        converse=lambda **kwargs: {
+            "output": {"message": {"content": [{"text": "Practice pauses."}]}},
+            "stopReason": "end_turn",
+            "usage": {"inputTokens": 40, "outputTokens": 3, "totalTokens": 43},
+        }
     )
 
     result = module.handler(
@@ -705,6 +709,10 @@ def test_feedback_generates_and_persists_model_output(monkeypatch):
     assert result["status"] == RecordingStatus.COMPLETE.value
     assert "transcript_text" not in result
     assert store.artifacts[-1]["data"]["feedback"] == "Practice pauses."
+    assert '"stage": "feedback.bedrock"' in caplog.text
+    assert '"total_tokens": 43' in caplog.text
+    assert "Practice pauses." not in caplog.text
+    assert "secret" not in caplog.text
 
 
 def test_feedback_uses_persisted_metrics_over_workflow_event(monkeypatch):
