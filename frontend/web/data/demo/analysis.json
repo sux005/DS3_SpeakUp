@@ -1,0 +1,373 @@
+{
+ "recording_id": "8f2d9305-51f8-5ea1-9dbf-d5fc94b87f08",
+ "artifact_type": "analysis",
+ "data": {
+  "metrics": {
+   "rubric_version": "2026-10-31",
+   "rubric_status": "scored",
+   "pause_detection_method": "transcribe_word_gaps",
+   "transcribed_word_count": 307,
+   "word_count": 275,
+   "duration_seconds": 123.06,
+   "speaking_duration_seconds": 106.44,
+   "words_per_minute": 134.08,
+   "filler_words": {
+    "um": 11,
+    "uh": 21
+   },
+   "filler_count": 32,
+   "filler_occurrences": [
+    {
+     "filler": "um",
+     "start_seconds": 1.29,
+     "end_seconds": 1.56
+    },
+    {
+     "filler": "um",
+     "start_seconds": 9.94,
+     "end_seconds": 10.34
+    },
+    {
+     "filler": "um",
+     "start_seconds": 13.73,
+     "end_seconds": 14.06
+    },
+    {
+     "filler": "um",
+     "start_seconds": 14.69,
+     "end_seconds": 15.16
+    },
+    {
+     "filler": "um",
+     "start_seconds": 15.67,
+     "end_seconds": 15.99
+    },
+    {
+     "filler": "uh",
+     "start_seconds": 17.13,
+     "end_seconds": 17.26
+    },
+    {
+     "filler": "um",
+     "start_seconds": 18.99,
+     "end_seconds": 19.5
+    },
+    {
+     "filler": "um",
+     "start_seconds": 20.67,
+     "end_seconds": 21.1
+    },
+    {
+     "filler": "uh",
+     "start_seconds": 23.23,
+     "end_seconds": 23.43
+    },
+    {
+     "filler": "uh",
+     "start_seconds": 24.52,
+     "end_seconds": 24.71
+    },
+    {
+     "filler": "uh",
+     "start_seconds": 30.91,
+     "end_seconds": 31.19
+    },
+    {
+     "filler": "uh",
+     "start_seconds": 34.43,
+     "end_seconds": 34.55
+    },
+    {
+     "filler": "um",
+     "start_seconds": 36.43,
+     "end_seconds": 36.93
+    },
+    {
+     "filler": "uh",
+     "start_seconds": 39.87,
+     "end_seconds": 39.99
+    },
+    {
+     "filler": "um",
+     "start_seconds": 49.22,
+     "end_seconds": 49.5
+    },
+    {
+     "filler": "uh",
+     "start_seconds": 51.06,
+     "end_seconds": 51.14
+    },
+    {
+     "filler": "uh",
+     "start_seconds": 52.26,
+     "end_seconds": 52.42
+    },
+    {
+     "filler": "uh",
+     "start_seconds": 54.74,
+     "end_seconds": 54.86
+    },
+    {
+     "filler": "uh",
+     "start_seconds": 57.54,
+     "end_seconds": 57.7
+    },
+    {
+     "filler": "um",
+     "start_seconds": 58.71,
+     "end_seconds": 59.17
+    },
+    {
+     "filler": "uh",
+     "start_seconds": 63.83,
+     "end_seconds": 63.94
+    },
+    {
+     "filler": "uh",
+     "start_seconds": 68.9,
+     "end_seconds": 69.1
+    },
+    {
+     "filler": "uh",
+     "start_seconds": 73.68,
+     "end_seconds": 73.88
+    },
+    {
+     "filler": "uh",
+     "start_seconds": 74.96,
+     "end_seconds": 75.25
+    },
+    {
+     "filler": "uh",
+     "start_seconds": 86.64,
+     "end_seconds": 86.76
+    },
+    {
+     "filler": "um",
+     "start_seconds": 92.18,
+     "end_seconds": 92.67
+    },
+    {
+     "filler": "uh",
+     "start_seconds": 93.24,
+     "end_seconds": 93.48
+    },
+    {
+     "filler": "uh",
+     "start_seconds": 96.4,
+     "end_seconds": 96.59
+    },
+    {
+     "filler": "uh",
+     "start_seconds": 98.13,
+     "end_seconds": 98.36
+    },
+    {
+     "filler": "uh",
+     "start_seconds": 107.51,
+     "end_seconds": 108.07
+    },
+    {
+     "filler": "uh",
+     "start_seconds": 109.03,
+     "end_seconds": 109.31
+    },
+    {
+     "filler": "uh",
+     "start_seconds": 122.59,
+     "end_seconds": 122.98
+    }
+   ],
+   "fillers_per_100_words": 11.64,
+   "watch_words": {
+    "so": 6
+   },
+   "pauses_inside_sentences": 19,
+   "pauses_between_sentences": 10,
+   "pauses_per_speaking_minute": 10.71,
+   "total_pause_seconds": 16.62,
+   "pauses": [
+    {
+     "start_seconds": 6.84,
+     "end_seconds": 7.17,
+     "duration_seconds": 0.33,
+     "inside_sentence": true
+    },
+    {
+     "start_seconds": 10.94,
+     "end_seconds": 11.29,
+     "duration_seconds": 0.35,
+     "inside_sentence": true
+    },
+    {
+     "start_seconds": 12.65,
+     "end_seconds": 13.09,
+     "duration_seconds": 0.44,
+     "inside_sentence": true
+    },
+    {
+     "start_seconds": 15.16,
+     "end_seconds": 15.67,
+     "duration_seconds": 0.51,
+     "inside_sentence": true
+    },
+    {
+     "start_seconds": 18.21,
+     "end_seconds": 18.99,
+     "duration_seconds": 0.78,
+     "inside_sentence": false
+    },
+    {
+     "start_seconds": 21.1,
+     "end_seconds": 21.83,
+     "duration_seconds": 0.73,
+     "inside_sentence": true
+    },
+    {
+     "start_seconds": 25.44,
+     "end_seconds": 25.88,
+     "duration_seconds": 0.44,
+     "inside_sentence": true
+    },
+    {
+     "start_seconds": 28.26,
+     "end_seconds": 29.71,
+     "duration_seconds": 1.45,
+     "inside_sentence": false
+    },
+    {
+     "start_seconds": 31.19,
+     "end_seconds": 31.51,
+     "duration_seconds": 0.32,
+     "inside_sentence": true
+    },
+    {
+     "start_seconds": 33.99,
+     "end_seconds": 34.43,
+     "duration_seconds": 0.44,
+     "inside_sentence": true
+    },
+    {
+     "start_seconds": 35.89,
+     "end_seconds": 36.43,
+     "duration_seconds": 0.54,
+     "inside_sentence": false
+    },
+    {
+     "start_seconds": 36.93,
+     "end_seconds": 37.27,
+     "duration_seconds": 0.34,
+     "inside_sentence": true
+    },
+    {
+     "start_seconds": 43.67,
+     "end_seconds": 43.99,
+     "duration_seconds": 0.32,
+     "inside_sentence": false
+    },
+    {
+     "start_seconds": 44.47,
+     "end_seconds": 44.77,
+     "duration_seconds": 0.3,
+     "inside_sentence": true
+    },
+    {
+     "start_seconds": 48.12,
+     "end_seconds": 49.22,
+     "duration_seconds": 1.1,
+     "inside_sentence": false
+    },
+    {
+     "start_seconds": 54.37,
+     "end_seconds": 54.74,
+     "duration_seconds": 0.37,
+     "inside_sentence": true
+    },
+    {
+     "start_seconds": 56.26,
+     "end_seconds": 56.62,
+     "duration_seconds": 0.36,
+     "inside_sentence": false
+    },
+    {
+     "start_seconds": 59.17,
+     "end_seconds": 59.66,
+     "duration_seconds": 0.49,
+     "inside_sentence": true
+    },
+    {
+     "start_seconds": 66.98,
+     "end_seconds": 67.37,
+     "duration_seconds": 0.39,
+     "inside_sentence": true
+    },
+    {
+     "start_seconds": 68.53,
+     "end_seconds": 68.9,
+     "duration_seconds": 0.37,
+     "inside_sentence": true
+    },
+    {
+     "start_seconds": 70.73,
+     "end_seconds": 71.06,
+     "duration_seconds": 0.33,
+     "inside_sentence": false
+    },
+    {
+     "start_seconds": 73.04,
+     "end_seconds": 73.68,
+     "duration_seconds": 0.64,
+     "inside_sentence": true
+    },
+    {
+     "start_seconds": 80.89,
+     "end_seconds": 82.72,
+     "duration_seconds": 1.83,
+     "inside_sentence": false
+    },
+    {
+     "start_seconds": 85.14,
+     "end_seconds": 85.64,
+     "duration_seconds": 0.5,
+     "inside_sentence": false
+    },
+    {
+     "start_seconds": 103.27,
+     "end_seconds": 103.76,
+     "duration_seconds": 0.49,
+     "inside_sentence": true
+    },
+    {
+     "start_seconds": 105.23,
+     "end_seconds": 106.59,
+     "duration_seconds": 1.36,
+     "inside_sentence": false
+    },
+    {
+     "start_seconds": 108.07,
+     "end_seconds": 108.43,
+     "duration_seconds": 0.36,
+     "inside_sentence": true
+    },
+    {
+     "start_seconds": 113.91,
+     "end_seconds": 114.27,
+     "duration_seconds": 0.36,
+     "inside_sentence": true
+    },
+    {
+     "start_seconds": 118.1,
+     "end_seconds": 118.48,
+     "duration_seconds": 0.38,
+     "inside_sentence": true
+    }
+   ],
+   "long_pauses": [],
+   "rubric_scores": {
+    "speaking_rate": 3,
+    "filler_words": 0,
+    "pauses_inside_sentences": 3
+   }
+  }
+ }
+}

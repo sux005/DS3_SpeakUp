@@ -1,0 +1,3655 @@
+{
+ "recording_id": "8f2d9305-51f8-5ea1-9dbf-d5fc94b87f08",
+ "artifact_type": "transcript",
+ "data": {
+  "text": "However, um, this strategy leads to language style that is far away from the human written text, and not to mention that there are more complex structures, um, in tables or KVs and which will, um, further, um, um, brings more challenges, uh, when doing this. Um, on the other hand, um, data to text generation has, uh, gained success, uh, recently due to the advance of the language models. So this makes us wonder, uh, can text serve as a knowledge interface, uh, for the structure knowledge? Um, so the overall question we want to ask are, uh, can text serve as an interface for the structure knowledge? And would the vocalized knowledge benefit more for the doctoring task? Um, so, in this paper, uh, we propose, uh, the UDTQA framework, uh, as shown in the figure here. So, in a nutshell, uh, our framework, um, mobilize the tables and in Wikipedia and the, uh, Wikidata using a single mobilizer and then jointly index them, uh, with the Wikipedia text. And then when a question comes in, the retriever, Uh, would go into, uh, the joint index to find the relevant documents, and those will be sent to the reader to find the answer. Now let's zoom in to the verbalizer part. So in this work, uh, we verbalize tables row wise, and the input format is illustrated um in uh this figure. So starting with the title, uh, then we would prefix, uh, each of the header with a special token H and each of the cell value with a special token T. Similarly, for uh KB uh we start with the Wikidata subgraphs proposed by the previous work, and here we would treat the central subject entity as a title, and the relation as a header, and the node value as uh the cell.",
+  "items": [
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "However"
+     }
+    ],
+    "start_time": "0.73",
+    "end_time": "1.12"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "um"
+     }
+    ],
+    "start_time": "1.29",
+    "end_time": "1.56"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "this"
+     }
+    ],
+    "start_time": "1.77",
+    "end_time": "2.24"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "strategy"
+     }
+    ],
+    "start_time": "2.33",
+    "end_time": "2.89"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "leads"
+     }
+    ],
+    "start_time": "2.89",
+    "end_time": "3.21"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "to"
+     }
+    ],
+    "start_time": "3.21",
+    "end_time": "3.57"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "language"
+     }
+    ],
+    "start_time": "3.57",
+    "end_time": "4.01"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "style"
+     }
+    ],
+    "start_time": "4.01",
+    "end_time": "4.25"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "that"
+     }
+    ],
+    "start_time": "4.25",
+    "end_time": "4.39"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "is"
+     }
+    ],
+    "start_time": "4.39",
+    "end_time": "4.69"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "far"
+     }
+    ],
+    "start_time": "4.69",
+    "end_time": "5.05"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "away"
+     }
+    ],
+    "start_time": "5.05",
+    "end_time": "5.25"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "from"
+     }
+    ],
+    "start_time": "5.25",
+    "end_time": "5.49"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "5.49",
+    "end_time": "5.65"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "human"
+     }
+    ],
+    "start_time": "5.65",
+    "end_time": "5.93"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "written"
+     }
+    ],
+    "start_time": "5.93",
+    "end_time": "6.33"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "text"
+     }
+    ],
+    "start_time": "6.33",
+    "end_time": "6.84"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "and"
+     }
+    ],
+    "start_time": "7.17",
+    "end_time": "7.42"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "not"
+     }
+    ],
+    "start_time": "7.42",
+    "end_time": "7.61"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "to"
+     }
+    ],
+    "start_time": "7.61",
+    "end_time": "7.69"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "mention"
+     }
+    ],
+    "start_time": "7.69",
+    "end_time": "8.13"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "that"
+     }
+    ],
+    "start_time": "8.13",
+    "end_time": "8.36"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "there"
+     }
+    ],
+    "start_time": "8.37",
+    "end_time": "8.49"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "are"
+     }
+    ],
+    "start_time": "8.49",
+    "end_time": "8.76"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "more"
+     }
+    ],
+    "start_time": "8.76",
+    "end_time": "9.16"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "complex"
+     }
+    ],
+    "start_time": "9.16",
+    "end_time": "9.45"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "structures"
+     }
+    ],
+    "start_time": "9.45",
+    "end_time": "9.93"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "um"
+     }
+    ],
+    "start_time": "9.94",
+    "end_time": "10.34"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "in"
+     }
+    ],
+    "start_time": "10.45",
+    "end_time": "10.94"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "tables"
+     }
+    ],
+    "start_time": "11.29",
+    "end_time": "11.69"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "or"
+     }
+    ],
+    "start_time": "11.69",
+    "end_time": "11.86"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "KVs"
+     }
+    ],
+    "start_time": "11.86",
+    "end_time": "12.29"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "and"
+     }
+    ],
+    "start_time": "12.29",
+    "end_time": "12.65"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "which"
+     }
+    ],
+    "start_time": "13.09",
+    "end_time": "13.33"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "will"
+     }
+    ],
+    "start_time": "13.33",
+    "end_time": "13.65"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "um"
+     }
+    ],
+    "start_time": "13.73",
+    "end_time": "14.06"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "further"
+     }
+    ],
+    "start_time": "14.25",
+    "end_time": "14.59"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "um"
+     }
+    ],
+    "start_time": "14.69",
+    "end_time": "15.16"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "um"
+     }
+    ],
+    "start_time": "15.67",
+    "end_time": "15.99"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "brings"
+     }
+    ],
+    "start_time": "16.0",
+    "end_time": "16.37"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "more"
+     }
+    ],
+    "start_time": "16.37",
+    "end_time": "16.61"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "challenges"
+     }
+    ],
+    "start_time": "16.61",
+    "end_time": "17.12"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "uh"
+     }
+    ],
+    "start_time": "17.13",
+    "end_time": "17.26"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "when"
+     }
+    ],
+    "start_time": "17.33",
+    "end_time": "17.57"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "doing"
+     }
+    ],
+    "start_time": "17.57",
+    "end_time": "17.83"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "this"
+     }
+    ],
+    "start_time": "17.83",
+    "end_time": "18.21"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": "."
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "Um"
+     }
+    ],
+    "start_time": "18.99",
+    "end_time": "19.5"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "on"
+     }
+    ],
+    "start_time": "19.79",
+    "end_time": "19.9"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "19.9",
+    "end_time": "20.03"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "other"
+     }
+    ],
+    "start_time": "20.03",
+    "end_time": "20.23"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "hand"
+     }
+    ],
+    "start_time": "20.23",
+    "end_time": "20.47"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "um"
+     }
+    ],
+    "start_time": "20.67",
+    "end_time": "21.1"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "data"
+     }
+    ],
+    "start_time": "21.83",
+    "end_time": "22.11"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "to"
+     }
+    ],
+    "start_time": "22.11",
+    "end_time": "22.23"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "text"
+     }
+    ],
+    "start_time": "22.23",
+    "end_time": "22.55"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "generation"
+     }
+    ],
+    "start_time": "22.55",
+    "end_time": "22.95"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "has"
+     }
+    ],
+    "start_time": "22.95",
+    "end_time": "23.19"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "uh"
+     }
+    ],
+    "start_time": "23.23",
+    "end_time": "23.43"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "gained"
+     }
+    ],
+    "start_time": "23.59",
+    "end_time": "24.15"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "success"
+     }
+    ],
+    "start_time": "24.15",
+    "end_time": "24.46"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "uh"
+     }
+    ],
+    "start_time": "24.52",
+    "end_time": "24.71"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "recently"
+     }
+    ],
+    "start_time": "24.79",
+    "end_time": "25.44"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "due"
+     }
+    ],
+    "start_time": "25.88",
+    "end_time": "26.07"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "to"
+     }
+    ],
+    "start_time": "26.07",
+    "end_time": "26.21"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "26.21",
+    "end_time": "26.47"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "advance"
+     }
+    ],
+    "start_time": "26.47",
+    "end_time": "26.86"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "of"
+     }
+    ],
+    "start_time": "26.87",
+    "end_time": "27.06"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "27.11",
+    "end_time": "27.39"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "language"
+     }
+    ],
+    "start_time": "27.39",
+    "end_time": "27.72"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "models"
+     }
+    ],
+    "start_time": "27.72",
+    "end_time": "28.26"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": "."
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "So"
+     }
+    ],
+    "start_time": "29.71",
+    "end_time": "29.87"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "this"
+     }
+    ],
+    "start_time": "29.87",
+    "end_time": "30.11"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "makes"
+     }
+    ],
+    "start_time": "30.11",
+    "end_time": "30.27"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "us"
+     }
+    ],
+    "start_time": "30.27",
+    "end_time": "30.51"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "wonder"
+     }
+    ],
+    "start_time": "30.51",
+    "end_time": "30.83"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "uh"
+     }
+    ],
+    "start_time": "30.91",
+    "end_time": "31.19"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "can"
+     }
+    ],
+    "start_time": "31.51",
+    "end_time": "31.74"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "text"
+     }
+    ],
+    "start_time": "31.74",
+    "end_time": "32.15"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "serve"
+     }
+    ],
+    "start_time": "32.15",
+    "end_time": "32.47"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "as"
+     }
+    ],
+    "start_time": "32.47",
+    "end_time": "32.63"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "a"
+     }
+    ],
+    "start_time": "32.63",
+    "end_time": "32.81"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "knowledge"
+     }
+    ],
+    "start_time": "32.81",
+    "end_time": "33.07"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "interface"
+     }
+    ],
+    "start_time": "33.07",
+    "end_time": "33.99"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "uh"
+     }
+    ],
+    "start_time": "34.43",
+    "end_time": "34.55"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "for"
+     }
+    ],
+    "start_time": "34.67",
+    "end_time": "34.83"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "34.83",
+    "end_time": "34.99"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "structure"
+     }
+    ],
+    "start_time": "34.99",
+    "end_time": "35.31"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "knowledge"
+     }
+    ],
+    "start_time": "35.31",
+    "end_time": "35.89"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": "?"
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "Um"
+     }
+    ],
+    "start_time": "36.43",
+    "end_time": "36.93"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "so"
+     }
+    ],
+    "start_time": "37.27",
+    "end_time": "37.4"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "37.4",
+    "end_time": "37.56"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "overall"
+     }
+    ],
+    "start_time": "37.56",
+    "end_time": "37.95"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "question"
+     }
+    ],
+    "start_time": "37.95",
+    "end_time": "38.23"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "we"
+     }
+    ],
+    "start_time": "38.23",
+    "end_time": "38.31"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "want"
+     }
+    ],
+    "start_time": "38.31",
+    "end_time": "38.51"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "to"
+     }
+    ],
+    "start_time": "38.51",
+    "end_time": "38.59"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "ask"
+     }
+    ],
+    "start_time": "38.59",
+    "end_time": "39.21"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "are"
+     }
+    ],
+    "start_time": "39.47",
+    "end_time": "39.86"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "uh"
+     }
+    ],
+    "start_time": "39.87",
+    "end_time": "39.99"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "can"
+     }
+    ],
+    "start_time": "40.16",
+    "end_time": "40.47"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "text"
+     }
+    ],
+    "start_time": "40.47",
+    "end_time": "40.95"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "serve"
+     }
+    ],
+    "start_time": "40.95",
+    "end_time": "41.52"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "as"
+     }
+    ],
+    "start_time": "41.55",
+    "end_time": "41.71"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "an"
+     }
+    ],
+    "start_time": "41.71",
+    "end_time": "41.92"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "interface"
+     }
+    ],
+    "start_time": "41.92",
+    "end_time": "42.56"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "for"
+     }
+    ],
+    "start_time": "42.56",
+    "end_time": "42.75"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "42.75",
+    "end_time": "42.91"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "structure"
+     }
+    ],
+    "start_time": "42.91",
+    "end_time": "43.19"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "knowledge"
+     }
+    ],
+    "start_time": "43.19",
+    "end_time": "43.67"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": "?"
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "And"
+     }
+    ],
+    "start_time": "43.99",
+    "end_time": "44.47"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "would"
+     }
+    ],
+    "start_time": "44.77",
+    "end_time": "44.91"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "44.91",
+    "end_time": "44.99"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "vocalized"
+     }
+    ],
+    "start_time": "44.99",
+    "end_time": "45.59"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "knowledge"
+     }
+    ],
+    "start_time": "45.59",
+    "end_time": "45.99"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "benefit"
+     }
+    ],
+    "start_time": "45.99",
+    "end_time": "46.51"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "more"
+     }
+    ],
+    "start_time": "46.51",
+    "end_time": "46.88"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "for"
+     }
+    ],
+    "start_time": "46.88",
+    "end_time": "47.03"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "47.03",
+    "end_time": "47.19"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "doctoring"
+     }
+    ],
+    "start_time": "47.19",
+    "end_time": "47.47"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "task"
+     }
+    ],
+    "start_time": "47.47",
+    "end_time": "48.12"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": "?"
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "Um"
+     }
+    ],
+    "start_time": "49.22",
+    "end_time": "49.5"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "so"
+     }
+    ],
+    "start_time": "49.73",
+    "end_time": "49.97"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "in"
+     }
+    ],
+    "start_time": "50.18",
+    "end_time": "50.3"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "this"
+     }
+    ],
+    "start_time": "50.3",
+    "end_time": "50.62"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "paper"
+     }
+    ],
+    "start_time": "50.62",
+    "end_time": "50.94"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "uh"
+     }
+    ],
+    "start_time": "51.06",
+    "end_time": "51.14"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "we"
+     }
+    ],
+    "start_time": "51.26",
+    "end_time": "51.42"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "propose"
+     }
+    ],
+    "start_time": "51.42",
+    "end_time": "52.09"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "uh"
+     }
+    ],
+    "start_time": "52.26",
+    "end_time": "52.42"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "52.54",
+    "end_time": "52.78"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "UDTQA"
+     }
+    ],
+    "start_time": "52.78",
+    "end_time": "53.62"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "framework"
+     }
+    ],
+    "start_time": "53.62",
+    "end_time": "54.37"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "uh"
+     }
+    ],
+    "start_time": "54.74",
+    "end_time": "54.86"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "as"
+     }
+    ],
+    "start_time": "54.98",
+    "end_time": "55.18"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "shown"
+     }
+    ],
+    "start_time": "55.18",
+    "end_time": "55.34"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "in"
+     }
+    ],
+    "start_time": "55.34",
+    "end_time": "55.42"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "55.42",
+    "end_time": "55.58"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "figure"
+     }
+    ],
+    "start_time": "55.58",
+    "end_time": "55.86"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "here"
+     }
+    ],
+    "start_time": "55.86",
+    "end_time": "56.26"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": "."
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "So"
+     }
+    ],
+    "start_time": "56.62",
+    "end_time": "56.71"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "in"
+     }
+    ],
+    "start_time": "56.74",
+    "end_time": "56.82"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "a"
+     }
+    ],
+    "start_time": "56.82",
+    "end_time": "56.9"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "nutshell"
+     }
+    ],
+    "start_time": "56.9",
+    "end_time": "57.47"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "uh"
+     }
+    ],
+    "start_time": "57.54",
+    "end_time": "57.7"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "our"
+     }
+    ],
+    "start_time": "57.9",
+    "end_time": "58.1"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "framework"
+     }
+    ],
+    "start_time": "58.1",
+    "end_time": "58.61"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "um"
+     }
+    ],
+    "start_time": "58.71",
+    "end_time": "59.17"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "mobilize"
+     }
+    ],
+    "start_time": "59.66",
+    "end_time": "60.61"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "60.66",
+    "end_time": "61.1"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "tables"
+     }
+    ],
+    "start_time": "61.1",
+    "end_time": "61.87"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "and"
+     }
+    ],
+    "start_time": "61.87",
+    "end_time": "62.21"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "in"
+     }
+    ],
+    "start_time": "62.5",
+    "end_time": "62.78"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "Wikipedia"
+     }
+    ],
+    "start_time": "62.78",
+    "end_time": "63.31"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "and"
+     }
+    ],
+    "start_time": "63.31",
+    "end_time": "63.58"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "63.58",
+    "end_time": "63.82"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "uh"
+     }
+    ],
+    "start_time": "63.83",
+    "end_time": "63.94"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "Wikidata"
+     }
+    ],
+    "start_time": "64.02",
+    "end_time": "64.86"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "using"
+     }
+    ],
+    "start_time": "65.14",
+    "end_time": "65.38"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "a"
+     }
+    ],
+    "start_time": "65.38",
+    "end_time": "65.5"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "single"
+     }
+    ],
+    "start_time": "65.5",
+    "end_time": "65.7"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "mobilizer"
+     }
+    ],
+    "start_time": "65.7",
+    "end_time": "66.34"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "and"
+     }
+    ],
+    "start_time": "66.34",
+    "end_time": "66.57"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "then"
+     }
+    ],
+    "start_time": "66.58",
+    "end_time": "66.98"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "jointly"
+     }
+    ],
+    "start_time": "67.37",
+    "end_time": "67.74"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "index"
+     }
+    ],
+    "start_time": "67.74",
+    "end_time": "68.1"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "them"
+     }
+    ],
+    "start_time": "68.1",
+    "end_time": "68.53"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "uh"
+     }
+    ],
+    "start_time": "68.9",
+    "end_time": "69.1"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "with"
+     }
+    ],
+    "start_time": "69.26",
+    "end_time": "69.58"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "69.58",
+    "end_time": "69.7"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "Wikipedia"
+     }
+    ],
+    "start_time": "69.7",
+    "end_time": "70.18"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "text"
+     }
+    ],
+    "start_time": "70.18",
+    "end_time": "70.73"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": "."
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "And"
+     }
+    ],
+    "start_time": "71.06",
+    "end_time": "71.22"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "then"
+     }
+    ],
+    "start_time": "71.22",
+    "end_time": "71.38"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "when"
+     }
+    ],
+    "start_time": "71.38",
+    "end_time": "71.46"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "a"
+     }
+    ],
+    "start_time": "71.46",
+    "end_time": "71.62"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "question"
+     }
+    ],
+    "start_time": "71.62",
+    "end_time": "71.94"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "comes"
+     }
+    ],
+    "start_time": "71.94",
+    "end_time": "72.14"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "in"
+     }
+    ],
+    "start_time": "72.14",
+    "end_time": "72.3"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "72.34",
+    "end_time": "72.46"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "retriever"
+     }
+    ],
+    "start_time": "72.46",
+    "end_time": "73.04"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "Uh"
+     }
+    ],
+    "start_time": "73.68",
+    "end_time": "73.88"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "would"
+     }
+    ],
+    "start_time": "74.0",
+    "end_time": "74.24"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "go"
+     }
+    ],
+    "start_time": "74.24",
+    "end_time": "74.4"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "into"
+     }
+    ],
+    "start_time": "74.4",
+    "end_time": "74.79"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "uh"
+     }
+    ],
+    "start_time": "74.96",
+    "end_time": "75.25"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "75.28",
+    "end_time": "75.68"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "joint"
+     }
+    ],
+    "start_time": "75.68",
+    "end_time": "75.92"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "index"
+     }
+    ],
+    "start_time": "75.92",
+    "end_time": "76.35"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "to"
+     }
+    ],
+    "start_time": "76.35",
+    "end_time": "76.52"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "find"
+     }
+    ],
+    "start_time": "76.52",
+    "end_time": "76.67"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "76.67",
+    "end_time": "76.68"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "relevant"
+     }
+    ],
+    "start_time": "76.68",
+    "end_time": "77.16"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "documents"
+     }
+    ],
+    "start_time": "77.16",
+    "end_time": "77.87"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "and"
+     }
+    ],
+    "start_time": "78.12",
+    "end_time": "78.38"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "those"
+     }
+    ],
+    "start_time": "78.38",
+    "end_time": "78.59"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "will"
+     }
+    ],
+    "start_time": "78.59",
+    "end_time": "78.84"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "be"
+     }
+    ],
+    "start_time": "78.84",
+    "end_time": "79.04"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "sent"
+     }
+    ],
+    "start_time": "79.04",
+    "end_time": "79.28"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "to"
+     }
+    ],
+    "start_time": "79.28",
+    "end_time": "79.36"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "79.36",
+    "end_time": "79.52"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "reader"
+     }
+    ],
+    "start_time": "79.52",
+    "end_time": "79.95"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "to"
+     }
+    ],
+    "start_time": "79.96",
+    "end_time": "80.11"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "find"
+     }
+    ],
+    "start_time": "80.12",
+    "end_time": "80.29"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "80.29",
+    "end_time": "80.44"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "answer"
+     }
+    ],
+    "start_time": "80.44",
+    "end_time": "80.89"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": "."
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "Now"
+     }
+    ],
+    "start_time": "82.72",
+    "end_time": "82.92"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "let's"
+     }
+    ],
+    "start_time": "82.92",
+    "end_time": "83.17"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "zoom"
+     }
+    ],
+    "start_time": "83.17",
+    "end_time": "83.44"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "in"
+     }
+    ],
+    "start_time": "83.44",
+    "end_time": "83.75"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "to"
+     }
+    ],
+    "start_time": "83.76",
+    "end_time": "83.88"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "83.88",
+    "end_time": "83.96"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "verbalizer"
+     }
+    ],
+    "start_time": "83.96",
+    "end_time": "84.67"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "part"
+     }
+    ],
+    "start_time": "84.67",
+    "end_time": "85.14"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": "."
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "So"
+     }
+    ],
+    "start_time": "85.64",
+    "end_time": "85.84"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "in"
+     }
+    ],
+    "start_time": "85.84",
+    "end_time": "86.08"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "this"
+     }
+    ],
+    "start_time": "86.08",
+    "end_time": "86.32"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "work"
+     }
+    ],
+    "start_time": "86.32",
+    "end_time": "86.55"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "uh"
+     }
+    ],
+    "start_time": "86.64",
+    "end_time": "86.76"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "we"
+     }
+    ],
+    "start_time": "86.84",
+    "end_time": "86.96"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "verbalize"
+     }
+    ],
+    "start_time": "86.96",
+    "end_time": "87.84"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "tables"
+     }
+    ],
+    "start_time": "88.0",
+    "end_time": "88.68"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "row"
+     }
+    ],
+    "start_time": "88.68",
+    "end_time": "88.87"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "wise"
+     }
+    ],
+    "start_time": "88.87",
+    "end_time": "89.55"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "and"
+     }
+    ],
+    "start_time": "89.84",
+    "end_time": "90.03"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "90.04",
+    "end_time": "90.2"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "input"
+     }
+    ],
+    "start_time": "90.2",
+    "end_time": "90.61"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "format"
+     }
+    ],
+    "start_time": "90.61",
+    "end_time": "91.02"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "is"
+     }
+    ],
+    "start_time": "91.02",
+    "end_time": "91.48"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "illustrated"
+     }
+    ],
+    "start_time": "91.48",
+    "end_time": "92.18"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "um"
+     }
+    ],
+    "start_time": "92.18",
+    "end_time": "92.67"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "in"
+     }
+    ],
+    "start_time": "92.72",
+    "end_time": "93.11"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "uh"
+     }
+    ],
+    "start_time": "93.24",
+    "end_time": "93.48"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "this"
+     }
+    ],
+    "start_time": "93.48",
+    "end_time": "93.76"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "figure"
+     }
+    ],
+    "start_time": "93.76",
+    "end_time": "94.16"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": "."
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "So"
+     }
+    ],
+    "start_time": "94.44",
+    "end_time": "94.68"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "starting"
+     }
+    ],
+    "start_time": "94.68",
+    "end_time": "95.14"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "with"
+     }
+    ],
+    "start_time": "95.16",
+    "end_time": "95.32"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "95.32",
+    "end_time": "95.44"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "title"
+     }
+    ],
+    "start_time": "95.44",
+    "end_time": "96.15"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "uh"
+     }
+    ],
+    "start_time": "96.4",
+    "end_time": "96.59"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "then"
+     }
+    ],
+    "start_time": "96.73",
+    "end_time": "97.04"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "we"
+     }
+    ],
+    "start_time": "97.04",
+    "end_time": "97.23"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "would"
+     }
+    ],
+    "start_time": "97.23",
+    "end_time": "97.52"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "prefix"
+     }
+    ],
+    "start_time": "97.52",
+    "end_time": "98.12"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "uh"
+     }
+    ],
+    "start_time": "98.13",
+    "end_time": "98.36"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "each"
+     }
+    ],
+    "start_time": "98.52",
+    "end_time": "98.72"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "of"
+     }
+    ],
+    "start_time": "98.72",
+    "end_time": "98.88"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "98.88",
+    "end_time": "99.08"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "header"
+     }
+    ],
+    "start_time": "99.08",
+    "end_time": "99.67"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "with"
+     }
+    ],
+    "start_time": "99.96",
+    "end_time": "100.12"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "a"
+     }
+    ],
+    "start_time": "100.12",
+    "end_time": "100.36"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "special"
+     }
+    ],
+    "start_time": "100.36",
+    "end_time": "100.64"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "token"
+     }
+    ],
+    "start_time": "100.64",
+    "end_time": "101.04"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "H"
+     }
+    ],
+    "start_time": "101.04",
+    "end_time": "101.48"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "and"
+     }
+    ],
+    "start_time": "101.72",
+    "end_time": "102.0"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "each"
+     }
+    ],
+    "start_time": "102.0",
+    "end_time": "102.16"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "of"
+     }
+    ],
+    "start_time": "102.16",
+    "end_time": "102.28"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "102.28",
+    "end_time": "102.46"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "cell"
+     }
+    ],
+    "start_time": "102.46",
+    "end_time": "102.68"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "value"
+     }
+    ],
+    "start_time": "102.68",
+    "end_time": "103.27"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "with"
+     }
+    ],
+    "start_time": "103.76",
+    "end_time": "103.88"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "a"
+     }
+    ],
+    "start_time": "103.88",
+    "end_time": "104.08"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "special"
+     }
+    ],
+    "start_time": "104.08",
+    "end_time": "104.44"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "token"
+     }
+    ],
+    "start_time": "104.44",
+    "end_time": "104.8"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "T"
+     }
+    ],
+    "start_time": "104.8",
+    "end_time": "105.23"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": "."
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "Similarly"
+     }
+    ],
+    "start_time": "106.59",
+    "end_time": "107.22"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "for"
+     }
+    ],
+    "start_time": "107.23",
+    "end_time": "107.51"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "uh"
+     }
+    ],
+    "start_time": "107.51",
+    "end_time": "108.07"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "KB"
+     }
+    ],
+    "start_time": "108.43",
+    "end_time": "109.03"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "uh"
+     }
+    ],
+    "start_time": "109.03",
+    "end_time": "109.31"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "we"
+     }
+    ],
+    "start_time": "109.31",
+    "end_time": "109.63"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "start"
+     }
+    ],
+    "start_time": "109.63",
+    "end_time": "110.06"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "with"
+     }
+    ],
+    "start_time": "110.15",
+    "end_time": "110.34"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "110.35",
+    "end_time": "110.47"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "Wikidata"
+     }
+    ],
+    "start_time": "110.47",
+    "end_time": "111.03"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "subgraphs"
+     }
+    ],
+    "start_time": "111.03",
+    "end_time": "111.83"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "proposed"
+     }
+    ],
+    "start_time": "111.83",
+    "end_time": "112.58"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "by"
+     }
+    ],
+    "start_time": "112.67",
+    "end_time": "112.83"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "112.83",
+    "end_time": "112.99"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "previous"
+     }
+    ],
+    "start_time": "112.99",
+    "end_time": "113.43"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "work"
+     }
+    ],
+    "start_time": "113.43",
+    "end_time": "113.91"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "and"
+     }
+    ],
+    "start_time": "114.27",
+    "end_time": "114.51"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "here"
+     }
+    ],
+    "start_time": "114.51",
+    "end_time": "114.75"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "we"
+     }
+    ],
+    "start_time": "114.75",
+    "end_time": "114.91"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "would"
+     }
+    ],
+    "start_time": "114.91",
+    "end_time": "115.27"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "treat"
+     }
+    ],
+    "start_time": "115.27",
+    "end_time": "115.74"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "115.74",
+    "end_time": "115.91"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "central"
+     }
+    ],
+    "start_time": "115.91",
+    "end_time": "116.46"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "subject"
+     }
+    ],
+    "start_time": "116.46",
+    "end_time": "116.74"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "entity"
+     }
+    ],
+    "start_time": "116.74",
+    "end_time": "117.15"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "as"
+     }
+    ],
+    "start_time": "117.15",
+    "end_time": "117.27"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "a"
+     }
+    ],
+    "start_time": "117.27",
+    "end_time": "117.39"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "title"
+     }
+    ],
+    "start_time": "117.39",
+    "end_time": "118.1"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "and"
+     }
+    ],
+    "start_time": "118.48",
+    "end_time": "118.9"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "118.91",
+    "end_time": "119.03"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "relation"
+     }
+    ],
+    "start_time": "119.03",
+    "end_time": "119.7"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "as"
+     }
+    ],
+    "start_time": "119.71",
+    "end_time": "119.95"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "a"
+     }
+    ],
+    "start_time": "119.95",
+    "end_time": "120.13"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "header"
+     }
+    ],
+    "start_time": "120.13",
+    "end_time": "120.7"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": ","
+     }
+    ]
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "and"
+     }
+    ],
+    "start_time": "120.95",
+    "end_time": "121.15"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "121.15",
+    "end_time": "121.4"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "node"
+     }
+    ],
+    "start_time": "121.4",
+    "end_time": "121.68"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "value"
+     }
+    ],
+    "start_time": "121.68",
+    "end_time": "122.03"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "as"
+     }
+    ],
+    "start_time": "122.03",
+    "end_time": "122.54"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "uh"
+     }
+    ],
+    "start_time": "122.59",
+    "end_time": "122.98"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "the"
+     }
+    ],
+    "start_time": "123.07",
+    "end_time": "123.31"
+   },
+   {
+    "type": "pronunciation",
+    "alternatives": [
+     {
+      "content": "cell"
+     }
+    ],
+    "start_time": "123.31",
+    "end_time": "123.79"
+   },
+   {
+    "type": "punctuation",
+    "alternatives": [
+     {
+      "content": "."
+     }
+    ]
+   }
+  ]
+ }
+}
