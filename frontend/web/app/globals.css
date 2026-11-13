@@ -39,6 +39,8 @@
   --color-night-line: #345057;
   --color-night-soft: #1b3a42;
   --color-peach: #eea777;
+  /* Scored filler words on the dark listening panel (7.6:1 on night). */
+  --color-rose: #ff9eb5;
   --color-mint: #a8d9cb;
   --color-cream: #fffcf6;
   --color-pale: var(--surface-pale);

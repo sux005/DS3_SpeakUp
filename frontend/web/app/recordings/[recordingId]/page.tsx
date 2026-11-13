@@ -7,6 +7,7 @@ import { ButtonLink } from "@/components/Button";
 import { PageHeading, PageShell } from "@/components/PageHeading";
 import { ProgressCharts } from "@/components/ProgressCharts";
 import { AudioReviewPlayer } from "@/components/AudioReviewPlayer";
+import { SyncedTranscript } from "@/components/SyncedTranscript";
 import { useDemoStore } from "@/lib/demo-store";
 import { formatClock, formatDate, formatScore, formatTake, getProject, getTake, getTakes } from "@/lib/recordings";
 import { toSentences } from "@/lib/transcript";
@@ -20,7 +21,6 @@ function ResultsContent() {
   const { recordingId } = useParams<{ recordingId: string }>();
   const { projects, recordings, reviews, audioUrls, ready } = useDemoStore();
   const [seekRequest, setSeekRequest] = useState<{ seconds: number }>();
-  const [filter, setFilter] = useState<"all" | "fillers" | "pauses">("all");
   const [currentTime, setCurrentTime] = useState(0);
   const [selectedMoment, setSelectedMoment] = useState<FeedbackMoment | undefined>();
   if (!ready) return <PageShell><p>Loading recording…</p></PageShell>;
@@ -93,8 +93,8 @@ function ResultsContent() {
         </div>
       )}
 
-      <section className="flex w-full flex-col gap-4 bg-night p-6">
-        <h2 className="font-display text-2xl font-bold text-cream">Recording playback</h2>
+      <section aria-labelledby="listen-heading" className="flex w-full flex-col gap-6 rounded-md border border-night-line bg-night p-4 sm:p-6">
+        <h2 id="listen-heading" className="font-display text-2xl font-bold text-cream">Listen back</h2>
         <AudioReviewPlayer audioUrl={audioUrls[recordingId]} durationSeconds={metrics?.duration_seconds} seekRequest={seekRequest}
           moments={moments} onTimeChange={setCurrentTime} onMomentSelect={(moment) => {
             if (moment.observation && moment.nextStep) setSelectedMoment({
@@ -114,50 +114,39 @@ function ResultsContent() {
             <p className="mt-1 text-sm text-cream"><span className="font-semibold">Next step:</span> {selectedMoment.next_step}</p>
           </div>
         )}
+        {review && (sentences.length > 0 ? (
+          <SyncedTranscript
+            sentences={sentences}
+            pauses={metrics?.pauses ?? []}
+            moments={feedbackMoments}
+            currentTime={currentTime}
+            canSeek={Boolean(audioUrls[recordingId])}
+            onSeek={(seconds) => setSeekRequest({ seconds })}
+          />
+        ) : (
+          <div className="flex flex-col gap-2">
+            <h3 className="font-display text-xl font-bold text-cream">Transcript</h3>
+            <p className="text-mint">{review.transcript.text || "No transcript available."}</p>
+          </div>
+        ))}
       </section>
 
       {review && (
-        <div className="flex w-full flex-col gap-10 md:flex-row">
-          <section className="flex min-w-0 flex-1 flex-col gap-4">
-            <h2 className="font-display text-2xl font-bold text-ink">Transcript</h2>
-            {sentences.length > 0 ? (
-              <>
-              <div className="flex gap-3">{(["all", "fillers", "pauses"] as const).map((value) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{value.toUpperCase()}</button>)}</div>
-              <ul className="max-h-[560px] overflow-y-auto">
-                {sentences.filter((sentence) => filter === "all" || sentence.tag === (filter === "fillers" ? "FILLER" : "PAUSE")).map((sentence) => (
-                  <li key={sentence.id} className={`flex flex-col gap-1 border-t border-line py-4 sm:flex-row sm:gap-5 ${audioUrls[recordingId] && currentTime >= sentence.start && currentTime <= sentence.end ? "bg-pale" : ""}`}>
-                    <button type="button" disabled={!audioUrls[recordingId]} onClick={() => setSeekRequest({ seconds: Math.max(0, sentence.start - 0.5) })} className="w-36 shrink-0 font-mono text-[11px] text-rust">
-                      {formatClock(sentence.start)}{sentence.tag && ` · ${sentence.tag}`}
-                    </button>
-                    <span className="text-[17px] text-ink">
-                      {sentence.words.map((word, index) => {
-                        const active = currentTime >= word.start && currentTime <= word.end;
-                        const marked = feedbackMoments.some((moment) => word.start >= moment.start_seconds && word.start <= moment.end_seconds);
-                        return <button type="button" disabled={!audioUrls[recordingId]} onClick={() => setSeekRequest({ seconds: Math.max(0, word.start - 0.5) })} key={index} className={`mr-1 rounded-sm transition-colors ${word.filler ? "text-red-700 bg-red-100 font-semibold" : ""} ${active ? "bg-peach px-0.5" : marked ? "bg-pale underline decoration-rust decoration-2 underline-offset-4" : ""}`}>{word.text}</button>;
-                      })}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              </>
-            ) : <p className="text-muted">{review.transcript.text || "No transcript available."}</p>}
-          </section>
-          <aside className="flex w-full flex-col gap-4 bg-pale p-6 md:w-[440px]">
-            <p className="font-mono text-[11px] text-teal">FOR YOUR NEXT TAKE</p>
-            <h2 className="font-display text-[27px] font-bold text-ink">Coaching</h2>
-            <p className="text-base text-ink">{review.feedback?.feedback ?? "Coaching is not available for this recording."}</p>
-            {categories ? (
-              <div className="flex flex-col gap-4">
-                {categoryLabels.map(([key, label]) => {
-                  const category = categories[key] as FeedbackCategory | undefined;
-                  if (!category) return null;
-                  const measurement = key === "general" ? null : categoryMeasurements?.[key];
-                  return <article key={key} className="border-t border-line pt-3"><p className="font-mono text-[11px] text-teal">{label}</p>{measurement && <p className="mt-1 text-sm font-semibold text-teal">{measurement}</p>}<p className="mt-1 text-sm text-ink">{category.observation}</p><p className="mt-1 text-sm text-ink"><span className="font-semibold">Next step:</span> {category.next_step}</p></article>;
-                })}
-              </div>
-            ) : null}
-          </aside>
-        </div>
+        <aside className="flex w-full flex-col gap-4 bg-pale p-6">
+          <p className="font-mono text-[11px] text-teal">FOR YOUR NEXT TAKE</p>
+          <h2 className="font-display text-[27px] font-bold text-ink">Coaching</h2>
+          <p className="text-base text-ink">{review.feedback?.feedback ?? "Coaching is not available for this recording."}</p>
+          {categories ? (
+            <div className="flex flex-col gap-4">
+              {categoryLabels.map(([key, label]) => {
+                const category = categories[key] as FeedbackCategory | undefined;
+                if (!category) return null;
+                const measurement = key === "general" ? null : categoryMeasurements?.[key];
+                return <article key={key} className="border-t border-line pt-3"><p className="font-mono text-[11px] text-teal">{label}</p>{measurement && <p className="mt-1 text-sm font-semibold text-teal">{measurement}</p>}<p className="mt-1 text-sm text-ink">{category.observation}</p><p className="mt-1 text-sm text-ink"><span className="font-semibold">Next step:</span> {category.next_step}</p></article>;
+              })}
+            </div>
+          ) : null}
+        </aside>
       )}
 
       <ProgressCharts takes={getTakes(recordings, take.project_id)} />
