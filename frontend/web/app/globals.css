@@ -50,6 +50,13 @@
   --font-mono: var(--font-dm-mono);
 }
 
+/* Motion tokens (animate skill): one curve family for the whole app. */
+:root {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --duration-press: 160ms;
+  --duration-ui: 200ms;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
@@ -103,4 +110,86 @@ body {
 @keyframes stage-check-in {
   from { opacity: 0; transform: scale(0.75); }
   to { opacity: 1; transform: scale(1); }
+}
+
+/* Keyboard focus: always visible, teal on light surfaces, mint on dark ones. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-teal);
+  outline-offset: 2px;
+}
+[data-surface="dark"] :focus-visible {
+  outline-color: var(--color-mint);
+}
+
+/* ---- Results page motion ----
+   CSS transitions only, so every change can be interrupted mid-way.
+   Named properties only; nothing longer than 200ms. */
+
+/* Any pressable control: a slight press so the interface feels like it heard you. */
+.press {
+  transition: transform var(--duration-press) var(--ease-out);
+}
+.press:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Current transcript sentence: a colour change, not movement. */
+.sentence-row {
+  transition: background-color var(--duration-ui) ease, color var(--duration-ui) ease;
+}
+
+/* Timeline marker bars grow slightly on hover and at the current time. */
+.marker-bar {
+  transition: transform 150ms var(--ease-out), box-shadow 150ms var(--ease-out);
+  transform-origin: bottom;
+}
+.marker-bar[data-now="true"] {
+  transform: scaleY(1.35);
+}
+@media (hover: hover) and (pointer: fine) {
+  .marker:hover .marker-bar {
+    transform: scaleY(1.35);
+  }
+}
+
+/* Full rubric: opens from its own height (grid rows 0fr -> 1fr). */
+.rubric-panel {
+  transition: grid-template-rows var(--duration-ui) var(--ease-out), opacity var(--duration-ui) var(--ease-out);
+}
+.rubric-panel[inert] {
+  opacity: 0;
+}
+.rubric-chevron {
+  display: inline-block;
+  transition: transform var(--duration-ui) var(--ease-out);
+}
+
+/* Elements that appear on demand fade and rise a few pixels. */
+.appear {
+  transition: opacity 150ms var(--ease-out), translate 150ms var(--ease-out);
+  @starting-style {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Keep colour and opacity changes; drop movement and size changes. */
+  .press:active:not(:disabled),
+  .marker-bar[data-now="true"],
+  .marker:hover .marker-bar {
+    transform: none;
+  }
+  .rubric-panel {
+    transition: opacity var(--duration-ui) ease;
+  }
+  .rubric-chevron {
+    transition: none;
+  }
+  .appear {
+    transition: opacity 150ms ease;
+    @starting-style {
+      translate: none;
+    }
+  }
 }
