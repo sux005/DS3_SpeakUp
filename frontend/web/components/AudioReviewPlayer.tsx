@@ -26,6 +26,9 @@ type AudioReviewPlayerProps = {
   moments: ReviewMoment[];
   onTimeChange?: (seconds: number) => void;
   onMomentSelect?: (moment: ReviewMoment) => void;
+  // Called when the audio file can't be loaded, so the page can stop offering
+  // transcript seeking too.
+  onLoadError?: () => void;
 };
 
 function formatClock(seconds: number) {
@@ -42,12 +45,14 @@ export function AudioReviewPlayer({
   moments,
   onTimeChange,
   onMomentSelect,
+  onLoadError,
 }: AudioReviewPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(durationSeconds);
   const [error, setError] = useState<string>();
+  const [loadFailed, setLoadFailed] = useState(false);
   const trackRef = useRef<HTMLDivElement>(null);
   const [trackWidth, setTrackWidth] = useState(0);
 
@@ -76,10 +81,13 @@ export function AudioReviewPlayer({
       setDuration(durationSeconds);
       setPlaying(false);
       setError(undefined);
+      setLoadFailed(false);
     };
     const handleError = () => {
       setPlaying(false);
+      setLoadFailed(true);
       setError("This recording could not be loaded.");
+      onLoadError?.();
     };
 
     audio.addEventListener("timeupdate", updateTime);
@@ -98,17 +106,17 @@ export function AudioReviewPlayer({
       audio.removeEventListener("error", handleError);
       audio.pause();
     };
-  }, [audioUrl, durationSeconds, onTimeChange]);
+  }, [audioUrl, durationSeconds, onTimeChange, onLoadError]);
 
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || !audioUrl || !seekRequest) return;
+    if (!audio || !audioUrl || !seekRequest || loadFailed) return;
     audio.currentTime = seekRequest.seconds;
     onTimeChange?.(seekRequest.seconds);
     audio.play().then(() => setPlaying(true)).catch(() => {
       setError("Playback was blocked. Press play again to retry.");
     });
-  }, [seekRequest, audioUrl, onTimeChange]);
+  }, [seekRequest, audioUrl, onTimeChange, loadFailed]);
 
   const seek = (seconds: number) => {
     const audio = audioRef.current;
@@ -137,7 +145,7 @@ export function AudioReviewPlayer({
     }
   };
 
-  const unavailable = !audioUrl;
+  const unavailable = !audioUrl || loadFailed;
   const max = Math.max(duration, 0);
   // Without a known length (no audio yet), size the timeline to the last moment
   // so coaching moments stay selectable.

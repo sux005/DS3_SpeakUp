@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useState } from "react";
+import { Suspense, useCallback, useState } from "react";
 import { useParams } from "next/navigation";
 import { ButtonLink } from "@/components/Button";
 import { PageHeading, PageShell } from "@/components/PageHeading";
@@ -27,6 +27,8 @@ function ResultsContent() {
   const [currentTime, setCurrentTime] = useState(0);
   const [selectedMoment, setSelectedMoment] = useState<FeedbackMoment | undefined>();
   const [revealRequest, setRevealRequest] = useState<{ seconds: number }>();
+  const [audioFailed, setAudioFailed] = useState(false);
+  const handleAudioError = useCallback(() => setAudioFailed(true), []);
   if (!ready) return <PageShell><p>Loading recording…</p></PageShell>;
   const take = getTake(recordings, recordingId);
   if (!take) return <PageShell><p>Recording not found.</p><ButtonLink href="/">All presentations</ButtonLink></PageShell>;
@@ -62,7 +64,7 @@ function ResultsContent() {
       <section aria-labelledby="listen-heading" data-surface="dark" className="flex w-full flex-col gap-6 rounded-md border border-night-line bg-night p-4 sm:p-6">
         <h2 id="listen-heading" className="font-display text-2xl font-bold text-cream">Listen back</h2>
         <AudioReviewPlayer audioUrl={audioUrls[recordingId]} durationSeconds={metrics?.duration_seconds} seekRequest={seekRequest}
-          moments={moments} onTimeChange={setCurrentTime} onMomentSelect={(moment) => {
+          moments={moments} onTimeChange={setCurrentTime} onLoadError={handleAudioError} onMomentSelect={(moment) => {
             setRevealRequest({ seconds: moment.at });
             if ((moment.kind === "strength" || moment.kind === "improve") && moment.observation && moment.nextStep) setSelectedMoment({
               id: moment.id ?? `${moment.at}`,
@@ -87,7 +89,7 @@ function ResultsContent() {
             pauses={metrics?.pauses ?? []}
             moments={feedbackMoments}
             currentTime={currentTime}
-            canSeek={Boolean(audioUrls[recordingId])}
+            canSeek={Boolean(audioUrls[recordingId]) && !audioFailed}
             onSeek={(seconds) => setSeekRequest({ seconds })}
             revealRequest={revealRequest}
           />
@@ -113,7 +115,7 @@ function ResultsContent() {
         <SummaryFeedback
           review={review}
           metrics={metrics}
-          canSeek={Boolean(audioUrls[recordingId])}
+          canSeek={Boolean(audioUrls[recordingId]) && !audioFailed}
           onSeek={(seconds) => {
             setSeekRequest({ seconds });
             setRevealRequest({ seconds });

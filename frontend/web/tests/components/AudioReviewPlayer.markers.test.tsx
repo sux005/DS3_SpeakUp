@@ -73,6 +73,18 @@ describe("AudioReviewPlayer timeline markers", () => {
     expect(screen.queryByRole("button", { name: "Next moment" })).toBeNull();
   });
 
+  it("switches playback off when the audio file can't be loaded", () => {
+    const onLoadError = vi.fn();
+    const { audio, markers } = renderPlayer({ onLoadError });
+    fireEvent(audio, new Event("error"));
+    expect(onLoadError).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("alert").textContent).toBe("This recording could not be loaded.");
+    expect((screen.getByRole("button", { name: "Play recording" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("slider", { name: "Recording position" }) as HTMLInputElement).disabled).toBe(true);
+    expect((markers[0] as HTMLButtonElement).disabled).toBe(true);
+    expect((markers[2] as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("reports blocked playback from a marker click", async () => {
     Object.defineProperty(HTMLMediaElement.prototype, "play", { configurable: true, value: vi.fn().mockRejectedValue(new Error("blocked")) });
     const { markers } = renderPlayer();
