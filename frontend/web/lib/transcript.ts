@@ -24,7 +24,7 @@ const SAME_MOMENT = 0.02;
 
 // Joins Transcribe's word-by-word items into sentences, marks each filler
 // word found by the analysis, and tags each sentence with the first filler
-// or pause inside it.
+// or pause inside it. Pauses the analysis marks as between sentences don't count.
 export function toSentences(items: TranscriptItem[], metrics: AnalysisMetrics) {
   const isFiller = (start: number) =>
     metrics.filler_occurrences.some((f) => Math.abs(f.start_seconds - start) < SAME_MOMENT);
@@ -63,7 +63,7 @@ export function toSentences(items: TranscriptItem[], metrics: AnalysisMetrics) {
   for (const sentence of sentences) {
     if (metrics.filler_occurrences.some((f) => within(sentence, f.start_seconds))) {
       sentence.tag = "FILLER";
-    } else if (metrics.pauses.some((p) => within(sentence, p.start_seconds))) {
+    } else if (metrics.pauses.some((p) => p.inside_sentence !== false && within(sentence, p.start_seconds))) {
       sentence.tag = "PAUSE";
     }
   }
