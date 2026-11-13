@@ -121,9 +121,10 @@ test.describe("analyzing and results route states", () => {
     await setState(page, baseState([recording("review-with-moment", "COMPLETE", "2026-11-02T00:00:00.000Z")], { "review-with-moment": review }));
     await page.goto("/recordings/review-with-moment");
     await expect(page.getByRole("heading", { name: "Your results" })).toBeVisible();
-    await page.getByRole("button", { name: /Strength/ }).click();
-    await expect(page.getByText("Clear start")).toBeVisible();
-    await expect(page.getByText("Keep this energy.")).toBeVisible();
+    await page.getByRole("button", { name: /^00:00 · Strength/ }).click();
+    const listen = page.getByRole("region", { name: "Listen back" });
+    await expect(listen.getByText("Clear start")).toBeVisible();
+    await expect(listen.getByText("Keep this energy.")).toBeVisible();
   });
 });
 

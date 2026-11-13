@@ -8,12 +8,13 @@ import { PageHeading, PageShell } from "@/components/PageHeading";
 import { ProgressCharts } from "@/components/ProgressCharts";
 import { AudioReviewPlayer } from "@/components/AudioReviewPlayer";
 import { ScoreCards } from "@/components/ScoreCards";
+import { SummaryFeedback } from "@/components/SummaryFeedback";
 import { SyncedTranscript } from "@/components/SyncedTranscript";
 import { momentsFromAnalysis, momentsFromFeedback } from "@/lib/markers";
 import { useDemoStore } from "@/lib/demo-store";
 import { formatClock, formatDate, formatTake, getProject, getTake, getTakes } from "@/lib/recordings";
 import { toSentences } from "@/lib/transcript";
-import type { FeedbackCategory, FeedbackMoment } from "@/lib/types";
+import type { FeedbackMoment } from "@/lib/types";
 
 export default function ResultsPage() {
   return <Suspense fallback={<PageShell><p>Loading recording…</p></PageShell>}><ResultsContent /></Suspense>;
@@ -39,9 +40,6 @@ function ResultsContent() {
   const feedbackMoments = review?.feedback?.moments ?? [];
   const moments = [...momentsFromAnalysis(metrics), ...momentsFromFeedback(feedbackMoments)].sort((a, b) => a.at - b.at);
   const categories = review?.feedback?.categories;
-  const categoryLabels: [keyof NonNullable<typeof categories>, string][] = [
-    ["general", "General speech"],
-  ];
   const takeLabel = formatTake(take.take).toUpperCase();
 
   return (
@@ -112,20 +110,15 @@ function ResultsContent() {
       )}
 
       {review && (
-        <aside className="flex w-full flex-col gap-4 bg-pale p-6">
-          <p className="font-mono text-[11px] text-teal">FOR YOUR NEXT TAKE</p>
-          <h2 className="font-display text-[27px] font-bold text-ink">Coaching</h2>
-          <p className="text-base text-ink">{review.feedback?.feedback ?? "Coaching is not available for this recording."}</p>
-          {categories ? (
-            <div className="flex flex-col gap-4">
-              {categoryLabels.map(([key, label]) => {
-                const category = categories[key] as FeedbackCategory | undefined;
-                if (!category) return null;
-                return <article key={key} className="border-t border-line pt-3"><p className="font-mono text-[11px] text-teal">{label}</p><p className="mt-1 text-sm text-ink">{category.observation}</p><p className="mt-1 text-sm text-ink"><span className="font-semibold">Next step:</span> {category.next_step}</p></article>;
-              })}
-            </div>
-          ) : null}
-        </aside>
+        <SummaryFeedback
+          review={review}
+          metrics={metrics}
+          canSeek={Boolean(audioUrls[recordingId])}
+          onSeek={(seconds) => {
+            setSeekRequest({ seconds });
+            setRevealRequest({ seconds });
+          }}
+        />
       )}
 
       <ProgressCharts takes={getTakes(recordings, take.project_id)} />

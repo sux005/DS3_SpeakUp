@@ -97,9 +97,9 @@ test.describe("analysis and review states", () => {
     await startWithCleanDemo(page);
     await page.goto(`/recordings/${completeRecordingId}`);
     await expect(page.getByRole("heading", { name: "Your results" })).toBeVisible();
-    await expect(page.getByText("134.08 WPM")).toBeVisible();
+    await expect(page.getByRole("region", { name: "Your scores" }).getByText("134.08", { exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Transcript" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Coaching" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Overall summary" })).toBeVisible();
     await expect(page.getByText("FOR YOUR NEXT TAKE")).toBeVisible();
   });
 
