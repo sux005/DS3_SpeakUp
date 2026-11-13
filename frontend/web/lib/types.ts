@@ -27,6 +27,8 @@ export type SummaryMetrics = {
   pauses_per_speaking_minute: number;
   // Optional: older payloads and the short example may leave these out.
   filler_count?: number;
+  // Scored filler counts by word, e.g. { um: 11, uh: 21 }.
+  filler_words?: Record<string, number>;
   // Watch-list words (e.g. "like") are counted but not scored, and the
   // analysis gives no times for them.
   watch_words?: Record<string, number>;
