@@ -64,6 +64,14 @@ describe("clusterMoments", () => {
     expect(clusterMoments([at(10), at(14)], 100, 300)).toHaveLength(1);
   });
 
+  it("never leaves two clusters closer than the minimum gap", () => {
+    const moments = [0, 2.3, 2.6, 4.9, 5.2, 7.5, 9.8, 12.1, 30, 31, 33].map(at);
+    const clusters = clusterMoments(moments, 100, 1000);
+    const gaps = clusters.slice(1).map((cluster, index) => (cluster.percent - clusters[index].percent) * 10);
+    expect(Math.min(...gaps)).toBeGreaterThanOrEqual(24);
+    expect(clusters.reduce((sum, cluster) => sum + cluster.moments.length, 0)).toBe(moments.length);
+  });
+
   it("drops moments outside the recording and handles an unknown size", () => {
     expect(clusterMoments([at(-1), at(150), at(Number.NaN), at(5)], 100, 1000)).toHaveLength(1);
     expect(clusterMoments([at(5)], 0, 1000)).toEqual([]);

@@ -74,7 +74,7 @@ export const MIN_MARKER_GAP_PX = 24;
 
 // Groups moments that would sit closer than minGapPx on a timeline trackWidth
 // pixels wide. Each cluster sits at the average position of its moments, and
-// starts a new group once a moment is minGapPx past the group's first one.
+// no two clusters end up closer than minGapPx, so tap areas never overlap.
 export function clusterMoments(moments: ReviewMoment[], duration: number, trackWidth: number, minGapPx = MIN_MARKER_GAP_PX): MomentCluster[] {
   if (duration <= 0 || trackWidth <= 0) return [];
   const sorted = moments
@@ -91,10 +91,18 @@ export function clusterMoments(moments: ReviewMoment[], duration: number, trackW
       groupStart = px;
     }
   }
-  return groups.map((group) => ({
-    percent: (group.reduce((sum, moment) => sum + moment.at, 0) / group.length / duration) * 100,
-    moments: group,
-  }));
+  const centre = (group: ReviewMoment[]) => group.reduce((sum, moment) => sum + moment.at, 0) / group.length;
+  // Centring can pull neighbours back within the gap; merge those until none are.
+  for (let index = 1; index < groups.length;) {
+    const gapPx = ((centre(groups[index]) - centre(groups[index - 1])) / duration) * trackWidth;
+    if (gapPx < minGapPx) {
+      groups.splice(index - 1, 2, [...groups[index - 1], ...groups[index]]);
+      index = Math.max(1, index - 1);
+    } else {
+      index += 1;
+    }
+  }
+  return groups.map((group) => ({ percent: (centre(group) / duration) * 100, moments: group }));
 }
 
 // The first moment after (or the last before) the given time, for keyboard
