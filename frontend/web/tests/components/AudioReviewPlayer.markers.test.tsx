@@ -62,8 +62,9 @@ describe("AudioReviewPlayer timeline markers", () => {
     const { audio, markers } = renderPlayer();
     audio.currentTime = 40.2;
     fireEvent(audio, new Event("timeupdate"));
-    expect(markers[1].querySelector("span")?.className).toContain("ring-cream");
-    expect(markers[0].querySelector("span:last-child")?.className).not.toContain("ring-2 ring-cream ");
+    expect(markers[1].querySelector(".marker-bar")?.getAttribute("data-now")).toBe("true");
+    expect(markers[1].querySelector(".marker-bar")?.className).toContain("ring-cream");
+    expect(markers[0].querySelector(".marker-bar")?.getAttribute("data-now")).toBe("false");
   });
 
   it("shows no legend or step buttons when there are no moments", () => {

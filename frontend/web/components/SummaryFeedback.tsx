@@ -116,7 +116,7 @@ export function SummaryFeedback({ review, metrics, canSeek, onSeek }: {
                     disabled={!canSeek}
                     onClick={() => onSeek(item.at)}
                     aria-label={`Play from ${formatClock(item.at)}: ${item.label}`}
-                    className="min-h-8 cursor-pointer rounded-sm border border-teal px-2 font-mono text-xs text-teal hover:bg-teal hover:text-cream disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:text-teal"
+                    className="press min-h-8 cursor-pointer rounded-sm border border-teal px-2 font-mono text-xs text-teal hover:bg-teal hover:text-cream disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:text-teal"
                   >
                     ▶ {formatClock(item.at)}
                   </button>

@@ -177,7 +177,7 @@ export function AudioReviewPlayer({
       <div className="flex flex-wrap items-center gap-4">
         <button
           type="button"
-          className="inline-flex min-h-11 min-w-24 items-center justify-center rounded-md border border-peach bg-peach px-5 text-sm font-semibold text-night transition-opacity hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-60"
+          className="press inline-flex min-h-11 min-w-24 cursor-pointer items-center justify-center rounded-md border border-peach bg-peach px-5 text-sm font-semibold text-night hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
           onClick={togglePlayback}
           disabled={unavailable}
           aria-label={playing ? "Pause recording" : "Play recording"}
@@ -201,7 +201,7 @@ export function AudioReviewPlayer({
                 type="button"
                 key={`${first.id ?? first.label}-${first.at}`}
                 style={{ left: `${cluster.percent}%` }}
-                className="group absolute bottom-0 flex h-8 w-6 -translate-x-1/2 cursor-pointer items-end justify-center rounded-sm disabled:cursor-not-allowed disabled:opacity-50"
+                className="marker absolute bottom-0 flex h-8 w-6 -translate-x-1/2 cursor-pointer items-end justify-center rounded-sm disabled:cursor-not-allowed disabled:opacity-50"
                 onClick={() => selectMoment(first)}
                 disabled={unavailable && !cluster.moments.some((moment) => moment.observation)}
                 aria-label={clusterLabel(cluster)}
@@ -212,8 +212,9 @@ export function AudioReviewPlayer({
                 )}
                 <span
                   aria-hidden="true"
-                  className={`block w-1.5 rounded-full ${kindColour[first.kind ?? "improve"]} ${count > 1 ? "h-4" : "h-3"} ${
-                    now ? "ring-2 ring-cream" : "group-hover:ring-2 group-hover:ring-cream/60"
+                  data-now={now}
+                  className={`marker-bar block w-1.5 rounded-full ${kindColour[first.kind ?? "improve"]} ${count > 1 ? "h-4" : "h-3"} ${
+                    now ? "ring-2 ring-cream" : ""
                   }`}
                 />
               </button>
@@ -253,7 +254,7 @@ export function AudioReviewPlayer({
                 aria-label={label}
                 disabled={unavailable || !target}
                 onClick={() => target && selectMoment(target)}
-                className="min-h-9 cursor-pointer rounded-sm border border-night-line px-3 font-mono text-[11px] text-mint hover:border-mint disabled:cursor-not-allowed disabled:opacity-40"
+                className="press min-h-9 cursor-pointer rounded-sm border border-night-line px-3 font-mono text-[11px] text-mint hover:border-mint disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {text}
               </button>

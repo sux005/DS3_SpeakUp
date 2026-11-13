@@ -59,7 +59,7 @@ function ResultsContent() {
         </div>
       )}
 
-      <section aria-labelledby="listen-heading" className="flex w-full flex-col gap-6 rounded-md border border-night-line bg-night p-4 sm:p-6">
+      <section aria-labelledby="listen-heading" data-surface="dark" className="flex w-full flex-col gap-6 rounded-md border border-night-line bg-night p-4 sm:p-6">
         <h2 id="listen-heading" className="font-display text-2xl font-bold text-cream">Listen back</h2>
         <AudioReviewPlayer audioUrl={audioUrls[recordingId]} durationSeconds={metrics?.duration_seconds} seekRequest={seekRequest}
           moments={moments} onTimeChange={setCurrentTime} onMomentSelect={(moment) => {
@@ -75,7 +75,7 @@ function ResultsContent() {
             });
           }} />
         {selectedMoment && (
-          <div className="border border-night-line bg-night-soft p-4 text-mint" aria-live="polite">
+          <div key={selectedMoment.id} className="appear border border-night-line bg-night-soft p-4 text-mint" aria-live="polite">
             <p className="font-mono text-[11px] uppercase text-peach">{selectedMoment.kind === "strength" ? "Strength" : "Try this"} · {selectedMoment.text}</p>
             <p className="mt-2 text-sm">{selectedMoment.observation}</p>
             <p className="mt-1 text-sm text-cream"><span className="font-semibold">Next step:</span> {selectedMoment.next_step}</p>

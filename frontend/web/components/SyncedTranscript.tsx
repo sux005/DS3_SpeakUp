@@ -119,7 +119,7 @@ export function SyncedTranscript({ sentences, pauses, moments = [], currentTime,
               type="button"
               aria-pressed={filter === value}
               onClick={() => setFilter(value)}
-              className={`min-h-8 cursor-pointer rounded-sm border px-2.5 uppercase ${
+              className={`press min-h-8 cursor-pointer rounded-sm border px-2.5 uppercase ${
                 filter === value ? "border-mint bg-mint text-night" : "border-night-line text-mint hover:border-mint"
               }`}
             >
@@ -152,7 +152,7 @@ export function SyncedTranscript({ sentences, pauses, moments = [], currentTime,
                   disabled={!canSeek}
                   aria-current={isActive ? "true" : undefined}
                   onClick={(event) => seekFromSentence(event, sentence)}
-                  className={`flex w-full cursor-pointer flex-col gap-1 px-4 py-3 text-left disabled:cursor-default sm:flex-row sm:gap-4 ${
+                  className={`sentence-row flex w-full cursor-pointer flex-col gap-1 px-4 py-3 text-left disabled:cursor-default sm:flex-row sm:gap-4 ${
                     isActive ? "bg-night-soft text-cream" : "text-mint hover:bg-night-soft/60"
                   }`}
                 >
@@ -212,7 +212,7 @@ export function SyncedTranscript({ sentences, pauses, moments = [], currentTime,
         <button
           type="button"
           onClick={() => setFollowing(true)}
-          className="absolute bottom-3 left-1/2 min-h-10 -translate-x-1/2 cursor-pointer rounded-full bg-mint px-4 font-mono text-[11px] font-semibold uppercase text-night shadow-lg"
+          className="appear press absolute inset-x-0 bottom-3 mx-auto min-h-10 w-fit cursor-pointer rounded-full bg-mint px-4 font-mono text-[11px] font-semibold uppercase text-night shadow-lg"
         >
           ↓ Resume following
         </button>
