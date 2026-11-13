@@ -5,8 +5,12 @@
 // word with a short lead-in. The sentence at the current playback time gets a
 // slightly lighter background. Time comes from the audio player, so the
 // highlight, the progress bar and the markers always agree.
+//
+// Follow mode: while on, the current sentence is kept in view as playback moves.
+// Scrolling the transcript yourself turns it off, so it never fights you, and a
+// "Resume following" button turns it back on. Clicking a sentence also resumes it.
 
-import { Fragment, useMemo, useState, type MouseEvent } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { formatClock } from "@/lib/recordings";
 import { activeSentenceIndex, placePauses, type Sentence } from "@/lib/transcript";
 import type { FeedbackMoment, Pause } from "@/lib/types";
@@ -15,6 +19,17 @@ import type { FeedbackMoment, Pause } from "@/lib/types";
 const WORD_LEAD_IN_SECONDS = 0.5;
 
 type Filter = "all" | "fillers" | "pauses";
+
+// Keep the current sentence about a third of the way down the transcript box.
+const FOLLOW_OFFSET = 0.3;
+// Fallback for browsers without the scrollend event.
+const AUTO_SCROLL_MS = 700;
+// Keys that scroll the transcript box when it has focus.
+const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "]);
+
+function prefersReducedMotion() {
+  return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+}
 
 export type SyncedTranscriptProps = {
   sentences: Sentence[];
@@ -32,13 +47,40 @@ function pauseLabel(pause: Pause) {
 
 export function SyncedTranscript({ sentences, pauses, moments = [], currentTime, canSeek, onSeek }: SyncedTranscriptProps) {
   const [filter, setFilter] = useState<Filter>("all");
+  const [following, setFollowing] = useState(true);
+  const listRef = useRef<HTMLOListElement>(null);
+  const autoScrolling = useRef(false);
   const placement = useMemo(() => placePauses(sentences, pauses), [sentences, pauses]);
   const active = canSeek ? activeSentenceIndex(sentences, currentTime) : -1;
   const fillerCount = sentences.reduce((count, sentence) => count + sentence.words.filter((word) => word.filler).length, 0);
   const shown = sentences.filter((sentence) =>
     filter === "all" || sentence.tag === (filter === "fillers" ? "FILLER" : "PAUSE"));
 
+  function scrollToSentence(index: number) {
+    const list = listRef.current;
+    const row = list?.querySelector<HTMLElement>(`[data-sentence-id="${sentences[index]?.id}"]`);
+    if (!list || !row) return;
+    const top = Math.max(0, row.offsetTop - list.clientHeight * FOLLOW_OFFSET);
+    if (Math.abs(list.scrollTop - top) < 2) return;
+    autoScrolling.current = true;
+    const done = () => { autoScrolling.current = false; };
+    list.addEventListener("scrollend", done, { once: true });
+    window.setTimeout(done, AUTO_SCROLL_MS);
+    list.scrollTo?.({ top, behavior: prefersReducedMotion() ? "auto" : "smooth" });
+  }
+
+  useEffect(() => {
+    if (following && active >= 0) scrollToSentence(active);
+    // scrollToSentence only reads refs and props that are already dependencies.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, following, filter]);
+
+  function stopFollowing() {
+    if (!autoScrolling.current) setFollowing(false);
+  }
+
   function seekFromSentence(event: MouseEvent<HTMLButtonElement>, sentence: Sentence) {
+    setFollowing(true);
     const word = (event.target as HTMLElement).closest<HTMLElement>("[data-start]");
     const start = word ? Number(word.dataset.start) : NaN;
     onSeek(Number.isFinite(start) ? Math.max(sentence.start, start - WORD_LEAD_IN_SECONDS) : sentence.start);
@@ -67,7 +109,17 @@ export function SyncedTranscript({ sentences, pauses, moments = [], currentTime,
         </div>
       </div>
 
-      <ol className="max-h-[480px] overflow-y-auto overscroll-contain rounded-md border border-night-line" aria-label="Transcript sentences">
+      <div className="relative">
+      <ol
+        ref={listRef}
+        className="relative max-h-[480px] overflow-y-auto overscroll-contain rounded-md border border-night-line"
+        aria-label="Transcript sentences"
+        onWheel={stopFollowing}
+        onTouchMove={stopFollowing}
+        onScroll={stopFollowing}
+        onKeyDown={(event) => { if (SCROLL_KEYS.has(event.key) && event.target === event.currentTarget) stopFollowing(); }}
+        tabIndex={0}
+      >
         {shown.map((sentence) => {
           const index = sentences.indexOf(sentence);
           const isActive = index === active;
@@ -136,6 +188,16 @@ export function SyncedTranscript({ sentences, pauses, moments = [], currentTime,
         })}
         {shown.length === 0 && <li className="px-4 py-3 text-mint">Nothing to show for this filter.</li>}
       </ol>
+      {canSeek && !following && (
+        <button
+          type="button"
+          onClick={() => setFollowing(true)}
+          className="absolute bottom-3 left-1/2 min-h-10 -translate-x-1/2 cursor-pointer rounded-full bg-mint px-4 font-mono text-[11px] font-semibold uppercase text-night shadow-lg"
+        >
+          ↓ Resume following
+        </button>
+      )}
+      </div>
     </div>
   );
 }

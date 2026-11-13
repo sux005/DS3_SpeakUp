@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SyncedTranscript } from "@/components/SyncedTranscript";
 import { toSentences, type Sentence } from "@/lib/transcript";
 import type { AnalysisMetrics, Pause, TranscriptItem } from "@/lib/types";
@@ -81,5 +81,72 @@ describe("SyncedTranscript", () => {
     const between = screen.queryAllByText(/^(· natural pause|‖ pause inside sentence), /).length;
     expect(inline + between).toBe(metrics.pauses.length);
     expect(screen.getByRole("button", { name: `Fillers (${metrics.filler_count})` })).toBeTruthy();
+  });
+});
+
+describe("SyncedTranscript follow mode", () => {
+  const scrollTo = vi.fn();
+  const offsetTop = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetTop");
+
+  beforeEach(() => {
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: scrollTo });
+    // jsdom has no layout, so give each sentence row a position.
+    Object.defineProperty(HTMLElement.prototype, "offsetTop", {
+      configurable: true,
+      get() { return Number((this as HTMLElement).dataset.sentenceId ?? 0) * 100; },
+    });
+  });
+
+  afterEach(() => {
+    scrollTo.mockReset();
+    delete (HTMLElement.prototype as Partial<HTMLElement>).scrollTo;
+    if (offsetTop) Object.defineProperty(HTMLElement.prototype, "offsetTop", offsetTop);
+  });
+
+  const props = { sentences, pauses, canSeek: true, onSeek: vi.fn() };
+
+  it("scrolls the current sentence into view as playback moves", () => {
+    const { rerender } = render(<SyncedTranscript {...props} currentTime={1} />);
+    expect(scrollTo).not.toHaveBeenCalled();
+    rerender(<SyncedTranscript {...props} currentTime={4.2} />);
+    expect(scrollTo).toHaveBeenCalledWith({ top: 100, behavior: "smooth" });
+  });
+
+  it("stops following when the reader scrolls, and resumes on request", () => {
+    const { rerender } = render(<SyncedTranscript {...props} currentTime={1} />);
+    expect(screen.queryByRole("button", { name: /Resume following/ })).toBeNull();
+    fireEvent.wheel(screen.getByRole("list", { name: "Transcript sentences" }));
+    rerender(<SyncedTranscript {...props} currentTime={4.2} />);
+    expect(scrollTo).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /Resume following/ }));
+    expect(screen.queryByRole("button", { name: /Resume following/ })).toBeNull();
+    expect(scrollTo).toHaveBeenCalledWith({ top: 100, behavior: "smooth" });
+  });
+
+  it("treats scroll keys on the transcript box as reading, and a sentence click as resuming", () => {
+    render(<SyncedTranscript {...props} currentTime={1} />);
+    const list = screen.getByRole("list", { name: "Transcript sentences" });
+    fireEvent.keyDown(list, { key: "Enter" });
+    expect(screen.queryByRole("button", { name: /Resume following/ })).toBeNull();
+    fireEvent.keyDown(list, { key: "PageDown" });
+    expect(screen.getByRole("button", { name: /Resume following/ })).toBeTruthy();
+    fireEvent.click(within(list).getAllByRole("button")[1]);
+    expect(screen.queryByRole("button", { name: /Resume following/ })).toBeNull();
+  });
+
+  it("jumps instead of gliding when reduced motion is preferred", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("reduce") }));
+    const { rerender } = render(<SyncedTranscript {...props} currentTime={1} />);
+    rerender(<SyncedTranscript {...props} currentTime={4.2} />);
+    expect(scrollTo).toHaveBeenCalledWith({ top: 100, behavior: "auto" });
+    vi.unstubAllGlobals();
+  });
+
+  it("ignores the scroll events its own scrolling causes", () => {
+    const { rerender } = render(<SyncedTranscript {...props} currentTime={1} />);
+    rerender(<SyncedTranscript {...props} currentTime={4.2} />);
+    fireEvent.scroll(screen.getByRole("list", { name: "Transcript sentences" }));
+    expect(screen.queryByRole("button", { name: /Resume following/ })).toBeNull();
   });
 });
