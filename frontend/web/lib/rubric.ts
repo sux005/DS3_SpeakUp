@@ -54,9 +54,9 @@ export const rubric: RubricMetric[] = [
       { score: 0, range: "8 or more" },
     ],
     tips: [
-      "Fillers are frequent. Click the red words in the transcript to hear where they happen, then try a silent pause there instead.",
+      "Fillers are frequent. Click the highlighted fillers in the transcript or on the timeline to hear where they happen, then try a silent pause there instead.",
       "Fillers come up often. Notice whether they cluster at the start of sentences, and pause before you start speaking.",
-      "Some fillers. Pick the spot with the most red words and practise just that part.",
+      "Some fillers. Pick the spot with the most highlighted fillers and practise just that part.",
       "A few fillers. Replace the remaining ones with a short pause.",
       "Very few fillers. Nice work.",
     ],
