@@ -7,10 +7,11 @@ import { ButtonLink } from "@/components/Button";
 import { PageHeading, PageShell } from "@/components/PageHeading";
 import { ProgressCharts } from "@/components/ProgressCharts";
 import { AudioReviewPlayer } from "@/components/AudioReviewPlayer";
+import { ScoreCards } from "@/components/ScoreCards";
 import { SyncedTranscript } from "@/components/SyncedTranscript";
 import { momentsFromAnalysis, momentsFromFeedback } from "@/lib/markers";
 import { useDemoStore } from "@/lib/demo-store";
-import { formatClock, formatDate, formatScore, formatTake, getProject, getTake, getTakes } from "@/lib/recordings";
+import { formatClock, formatDate, formatTake, getProject, getTake, getTakes } from "@/lib/recordings";
 import { toSentences } from "@/lib/transcript";
 import type { FeedbackCategory, FeedbackMoment } from "@/lib/types";
 
@@ -39,19 +40,9 @@ function ResultsContent() {
   const moments = [...momentsFromAnalysis(metrics), ...momentsFromFeedback(feedbackMoments)].sort((a, b) => a.at - b.at);
   const categories = review?.feedback?.categories;
   const categoryLabels: [keyof NonNullable<typeof categories>, string][] = [
-    ["general", "General speech"], ["pace", "Pace"], ["fillers", "Filler words"], ["pauses", "Pauses"],
+    ["general", "General speech"],
   ];
-  const categoryMeasurements = metrics ? {
-    pace: `${metrics.words_per_minute} WPM`,
-    fillers: `${metrics.fillers_per_100_words} fillers / 100 words`,
-    pauses: `${metrics.pauses_per_speaking_minute} pauses / speaking min`,
-  } : null;
   const takeLabel = formatTake(take.take).toUpperCase();
-  const measurements = metrics ? [
-    { label: "PACE", value: `${metrics.words_per_minute} WPM`, score: metrics.rubric_scores.speaking_rate },
-    { label: "FILLERS", value: `${metrics.fillers_per_100_words} / 100 words`, score: metrics.rubric_scores.filler_words },
-    { label: "MID-SENTENCE PAUSES", value: `${metrics.pauses_per_speaking_minute} / speaking min`, score: metrics.rubric_scores.pauses_inside_sentences },
-  ] : [];
 
   return (
     <PageShell>
@@ -63,18 +54,7 @@ function ResultsContent() {
       />
       <ButtonLink href={`/projects/${take.project_id}/new`}>Practice again →</ButtonLink>
 
-      <Link href="/rubric" className="text-teal hover:underline">How scoring works →</Link>
-      {metrics ? (
-        <div className="grid w-full md:grid-cols-3">
-          {measurements.map((measurement) => (
-            <div key={measurement.label} className="flex flex-col gap-2 p-6">
-              <p className="font-mono text-[11px] text-muted">{measurement.label}</p>
-              <p className="font-display text-[28px] font-bold text-ink">{measurement.value}</p>
-              <p className="text-xs text-teal">{formatScore(measurement.score)}</p>
-            </div>
-          ))}
-        </div>
-      ) : (
+      {!metrics && (
         <div className="w-full rounded-md border border-line bg-pale p-6">
           <h2 className="font-display text-2xl font-bold text-ink">Analysis is not connected</h2>
           <p className="mt-2 text-muted">This recording belongs to this presentation and is available for playback during this browser session. The local demo does not generate transcript, scores, or coaching.</p>
@@ -121,6 +101,16 @@ function ResultsContent() {
         ))}
       </section>
 
+      {metrics && (
+        <section aria-labelledby="scores-heading" className="flex w-full flex-col gap-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <h2 id="scores-heading" className="font-display text-2xl font-bold text-ink">Your scores</h2>
+            <Link href="/rubric" className="font-mono text-xs uppercase text-teal hover:underline">How scoring works →</Link>
+          </div>
+          <ScoreCards metrics={metrics} categories={categories} />
+        </section>
+      )}
+
       {review && (
         <aside className="flex w-full flex-col gap-4 bg-pale p-6">
           <p className="font-mono text-[11px] text-teal">FOR YOUR NEXT TAKE</p>
@@ -131,8 +121,7 @@ function ResultsContent() {
               {categoryLabels.map(([key, label]) => {
                 const category = categories[key] as FeedbackCategory | undefined;
                 if (!category) return null;
-                const measurement = key === "general" ? null : categoryMeasurements?.[key];
-                return <article key={key} className="border-t border-line pt-3"><p className="font-mono text-[11px] text-teal">{label}</p>{measurement && <p className="mt-1 text-sm font-semibold text-teal">{measurement}</p>}<p className="mt-1 text-sm text-ink">{category.observation}</p><p className="mt-1 text-sm text-ink"><span className="font-semibold">Next step:</span> {category.next_step}</p></article>;
+                return <article key={key} className="border-t border-line pt-3"><p className="font-mono text-[11px] text-teal">{label}</p><p className="mt-1 text-sm text-ink">{category.observation}</p><p className="mt-1 text-sm text-ink"><span className="font-semibold">Next step:</span> {category.next_step}</p></article>;
               })}
             </div>
           ) : null}

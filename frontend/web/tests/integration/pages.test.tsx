@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Project, Recording, RecordingReview } from "@/lib/types";
@@ -175,7 +175,11 @@ describe("results route", () => {
     };
     render(<ResultsPage />);
     expect(screen.getByRole("heading", { name: "Your results" })).toBeTruthy();
-    expect(screen.getAllByText("140 WPM")).toHaveLength(2);
+    const scores = screen.getByRole("region", { name: "Your scores" });
+    expect(within(scores).getAllByRole("article")).toHaveLength(3);
+    expect(within(scores).getByText("140")).toBeTruthy();
+    expect(within(scores).getByText("Good pace")).toBeTruthy();
+    expect(within(scores).getByText(/Pause once/)).toBeTruthy();
     expect(screen.getByText("Hello.")).toBeTruthy();
     expect(screen.getByText("General speech")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Strength" }));
