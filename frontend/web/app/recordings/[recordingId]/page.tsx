@@ -8,6 +8,7 @@ import { PageHeading, PageShell } from "@/components/PageHeading";
 import { ProgressCharts } from "@/components/ProgressCharts";
 import { AudioReviewPlayer } from "@/components/AudioReviewPlayer";
 import { SyncedTranscript } from "@/components/SyncedTranscript";
+import { momentsFromAnalysis, momentsFromFeedback } from "@/lib/markers";
 import { useDemoStore } from "@/lib/demo-store";
 import { formatClock, formatDate, formatScore, formatTake, getProject, getTake, getTakes } from "@/lib/recordings";
 import { toSentences } from "@/lib/transcript";
@@ -23,6 +24,7 @@ function ResultsContent() {
   const [seekRequest, setSeekRequest] = useState<{ seconds: number }>();
   const [currentTime, setCurrentTime] = useState(0);
   const [selectedMoment, setSelectedMoment] = useState<FeedbackMoment | undefined>();
+  const [revealRequest, setRevealRequest] = useState<{ seconds: number }>();
   if (!ready) return <PageShell><p>Loading recording…</p></PageShell>;
   const take = getTake(recordings, recordingId);
   if (!take) return <PageShell><p>Recording not found.</p><ButtonLink href="/">All presentations</ButtonLink></PageShell>;
@@ -34,21 +36,7 @@ function ResultsContent() {
   const metrics = review?.analysis;
   const sentences = metrics && review ? toSentences(review.transcript.items, metrics) : [];
   const feedbackMoments = review?.feedback?.moments ?? [];
-  const moments = feedbackMoments.length > 0
-    ? feedbackMoments.map((moment) => ({
-      id: moment.id,
-      at: moment.start_seconds,
-      end: moment.end_seconds,
-      label: moment.kind === "strength" ? "Strength" : "Try this",
-      text: moment.text,
-      kind: moment.kind,
-      observation: moment.observation,
-      nextStep: moment.next_step,
-    }))
-    : metrics ? [
-      ...metrics.filler_occurrences.map((f, index) => ({ id: `filler-${index}`, at: f.start_seconds, end: f.end_seconds, label: `Filler: ${f.filler}` })),
-      ...metrics.long_pauses.map((p, index) => ({ id: `pause-${index}`, at: p.start_seconds, end: p.end_seconds, label: "Long pause" })),
-    ].sort((a, b) => a.at - b.at) : [];
+  const moments = [...momentsFromAnalysis(metrics), ...momentsFromFeedback(feedbackMoments)].sort((a, b) => a.at - b.at);
   const categories = review?.feedback?.categories;
   const categoryLabels: [keyof NonNullable<typeof categories>, string][] = [
     ["general", "General speech"], ["pace", "Pace"], ["fillers", "Filler words"], ["pauses", "Pauses"],
@@ -97,12 +85,13 @@ function ResultsContent() {
         <h2 id="listen-heading" className="font-display text-2xl font-bold text-cream">Listen back</h2>
         <AudioReviewPlayer audioUrl={audioUrls[recordingId]} durationSeconds={metrics?.duration_seconds} seekRequest={seekRequest}
           moments={moments} onTimeChange={setCurrentTime} onMomentSelect={(moment) => {
-            if (moment.observation && moment.nextStep) setSelectedMoment({
+            setRevealRequest({ seconds: moment.at });
+            if ((moment.kind === "strength" || moment.kind === "improve") && moment.observation && moment.nextStep) setSelectedMoment({
               id: moment.id ?? `${moment.at}`,
               start_seconds: moment.at,
               end_seconds: moment.end ?? moment.at,
               text: moment.text ?? moment.label,
-              kind: moment.kind ?? "improve",
+              kind: moment.kind,
               observation: moment.observation,
               next_step: moment.nextStep,
             });
@@ -122,6 +111,7 @@ function ResultsContent() {
             currentTime={currentTime}
             canSeek={Boolean(audioUrls[recordingId])}
             onSeek={(seconds) => setSeekRequest({ seconds })}
+            revealRequest={revealRequest}
           />
         ) : (
           <div className="flex flex-col gap-2">
