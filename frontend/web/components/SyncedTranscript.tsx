@@ -38,6 +38,8 @@ export type SyncedTranscriptProps = {
   currentTime: number;
   canSeek: boolean;
   onSeek: (seconds: number) => void;
+  // A new object asks to show the sentence at that time, e.g. after a marker click.
+  revealRequest?: { seconds: number };
 };
 
 function pauseLabel(pause: Pause) {
@@ -45,7 +47,7 @@ function pauseLabel(pause: Pause) {
   return `${seconds.toFixed(1)} s`;
 }
 
-export function SyncedTranscript({ sentences, pauses, moments = [], currentTime, canSeek, onSeek }: SyncedTranscriptProps) {
+export function SyncedTranscript({ sentences, pauses, moments = [], currentTime, canSeek, onSeek, revealRequest }: SyncedTranscriptProps) {
   const [filter, setFilter] = useState<Filter>("all");
   const [following, setFollowing] = useState(true);
   const listRef = useRef<HTMLOListElement>(null);
@@ -74,6 +76,24 @@ export function SyncedTranscript({ sentences, pauses, moments = [], currentTime,
     // scrollToSentence only reads refs and props that are already dependencies.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, following, filter]);
+
+  // A marker click shows its sentence even if the reader had scrolled away or
+  // filtered it out, and turns following back on.
+  const [handledReveal, setHandledReveal] = useState(revealRequest);
+  if (revealRequest !== handledReveal) {
+    setHandledReveal(revealRequest);
+    if (revealRequest) {
+      setFilter("all");
+      setFollowing(true);
+    }
+  }
+  useEffect(() => {
+    if (!revealRequest) return;
+    const index = activeSentenceIndex(sentences, revealRequest.seconds);
+    if (index >= 0) window.requestAnimationFrame(() => scrollToSentence(index));
+    // Runs once per request object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealRequest]);
 
   function stopFollowing() {
     if (!autoScrolling.current) setFollowing(false);

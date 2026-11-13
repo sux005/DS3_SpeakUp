@@ -143,6 +143,18 @@ describe("SyncedTranscript follow mode", () => {
     vi.unstubAllGlobals();
   });
 
+  it("reveals a requested sentence, clearing the filter and resuming following", () => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { callback(0); return 0; });
+    const { rerender } = render(<SyncedTranscript {...props} currentTime={1} />);
+    fireEvent.click(screen.getByRole("button", { name: "Fillers (1)" }));
+    fireEvent.wheel(screen.getByRole("list", { name: "Transcript sentences" }));
+    rerender(<SyncedTranscript {...props} currentTime={1} revealRequest={{ seconds: 4.5 }} />);
+    expect(screen.getByText("Next")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Resume following/ })).toBeNull();
+    expect(scrollTo).toHaveBeenCalledWith({ top: 100, behavior: "smooth" });
+    vi.unstubAllGlobals();
+  });
+
   it("ignores the scroll events its own scrolling causes", () => {
     const { rerender } = render(<SyncedTranscript {...props} currentTime={1} />);
     rerender(<SyncedTranscript {...props} currentTime={4.2} />);
