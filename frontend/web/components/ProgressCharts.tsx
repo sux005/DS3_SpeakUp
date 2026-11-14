@@ -1,7 +1,7 @@
 import { formatTake } from "@/lib/recordings";
 import type { SummaryMetrics, Take } from "@/lib/types";
 
-// Target bands come from the Figma design's score-4 ranges.
+// Target ranges come from the Figma design's score-4 ranges.
 const charts: {
   title: string;
   unit: string;

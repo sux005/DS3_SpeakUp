@@ -80,7 +80,7 @@ export function TranscriptPlayer({
 
       <div className="flex w-full flex-col gap-10 md:flex-row md:items-start">
         <section className="flex min-w-0 flex-1 flex-col gap-4">
-          <h2 className="font-display text-2xl font-bold text-ink">The transcript</h2>
+          <h2 className="font-display text-2xl font-bold text-ink">Transcript</h2>
           <div className="flex flex-wrap items-center gap-2 font-mono text-[11px]">
             {(
               [

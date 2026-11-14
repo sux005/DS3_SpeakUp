@@ -25,6 +25,15 @@ export type SummaryMetrics = {
   words_per_minute: number;
   fillers_per_100_words: number;
   pauses_per_speaking_minute: number;
+  // Optional: older payloads and the short example may leave these out.
+  filler_count?: number;
+  // Scored filler counts by word, e.g. { um: 11, uh: 21 }.
+  filler_words?: Record<string, number>;
+  // Watch-list words (e.g. "like") are counted but not scored, and the
+  // analysis gives no times for them.
+  watch_words?: Record<string, number>;
+  pauses_inside_sentences?: number;
+  pauses_between_sentences?: number;
   rubric_scores: {
     speaking_rate: number | null;
     filler_words: number | null;
@@ -48,10 +57,14 @@ export type Take = Recording & { take: number };
 
 export type TimeSpan = { start_seconds: number; end_seconds: number };
 
+// inside_sentence is set by the backend scorer: true for a pause in the middle
+// of a sentence (scored), false for a natural pause between sentences.
+export type Pause = TimeSpan & { duration_seconds?: number; inside_sentence?: boolean };
+
 export type AnalysisMetrics = SummaryMetrics & {
   filler_occurrences: (TimeSpan & { filler: string })[];
-  pauses: TimeSpan[];
-  long_pauses: TimeSpan[];
+  pauses: Pause[];
+  long_pauses: Pause[];
 };
 
 export type TranscriptItem = {

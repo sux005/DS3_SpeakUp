@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Project, Recording, RecordingReview } from "@/lib/types";
@@ -157,7 +157,7 @@ describe("results route", () => {
     render(<ResultsPage />);
     expect(screen.getByRole("heading", { name: "Your demo recording" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Analysis is not connected" })).toBeTruthy();
-    expect(screen.queryByText("The transcript")).toBeNull();
+    expect(screen.queryByText("Transcript")).toBeNull();
     expect(screen.getByRole("link", { name: "Practice again →" }).getAttribute("href")).toBe("/projects/project-1/new");
   });
 
@@ -175,11 +175,18 @@ describe("results route", () => {
     };
     render(<ResultsPage />);
     expect(screen.getByRole("heading", { name: "Your results" })).toBeTruthy();
-    expect(screen.getAllByText("140 WPM")).toHaveLength(2);
+    const scores = screen.getByRole("region", { name: "Your scores" });
+    expect(within(scores).getAllByRole("article")).toHaveLength(3);
+    expect(within(scores).getByText("140")).toBeTruthy();
+    expect(within(scores).getByText("Good pace")).toBeTruthy();
+    expect(within(scores).getByText(/Pause once/)).toBeTruthy();
     expect(screen.getByText("Hello.")).toBeTruthy();
-    expect(screen.getByText("General speech")).toBeTruthy();
+    const summary = screen.getByRole("region", { name: "Overall summary" });
+    expect(within(summary).getByText("Keep the opening clear.")).toBeTruthy();
+    expect(within(summary).getByText("Strong point")).toBeTruthy();
+    expect(within(summary).getByText("Keep going")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Strength" }));
-    expect(screen.getByText("Clear")).toBeTruthy();
+    expect(screen.getAllByText("Clear")).toHaveLength(2);
     expect(screen.getByText(/Repeat/)).toBeTruthy();
   });
 
