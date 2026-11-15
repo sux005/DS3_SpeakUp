@@ -1,6 +1,7 @@
 import Form from "next/form";
 import { PageShell } from "@/components/PageHeading";
 import { buttonClass } from "@/components/Button";
+import { Mascot } from "@/components/Mascot";
 
 export const metadata = { title: "Sign in · SpeakUp" };
 
@@ -11,7 +12,9 @@ export const metadata = { title: "Sign in · SpeakUp" };
 export default function LoginPage() {
   return (
     <PageShell>
-      <div className="mx-auto flex w-full max-w-md flex-col gap-6 bg-night p-8 md:p-10">
+      <div data-surface="dark" className="relative mx-auto mt-24 flex w-full max-w-md flex-col gap-6 rounded-3xl border-2 border-outline bg-night p-8 md:p-10">
+        {/* The mascot stands on the top edge of the card. */}
+        <Mascot pose="wave" flip className="pointer-events-none absolute -top-[106px] right-6 w-32" />
         <div className="flex flex-col gap-2">
           <p className="font-mono text-[11px] text-mint">WELCOME BACK</p>
           <h1 className="font-display text-4xl font-bold text-cream">Sign in</h1>
@@ -24,7 +27,7 @@ export default function LoginPage() {
               type="email"
               name="email"
               autoComplete="email"
-              className="rounded-md border border-night-line bg-cream px-3 py-2.5 font-sans text-base text-ink"
+              className="rounded-xl border-2 border-outline bg-cream px-3 py-2.5 font-sans text-base text-night"
             />
           </label>
           <label className="flex flex-col gap-1.5 font-mono text-[11px] text-mint">
@@ -33,7 +36,7 @@ export default function LoginPage() {
               type="password"
               name="password"
               autoComplete="current-password"
-              className="rounded-md border border-night-line bg-cream px-3 py-2.5 font-sans text-base text-ink"
+              className="rounded-xl border-2 border-outline bg-cream px-3 py-2.5 font-sans text-base text-night"
             />
           </label>
           <button type="submit" className={`${buttonClass("accent")} mt-2`}>

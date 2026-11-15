@@ -10,6 +10,7 @@
 // events, and the rubric's tip for the lowest score. Every part is labelled
 // with where it came from, and no coaching text is made up.
 
+import { Mascot } from "@/components/Mascot";
 import { formatClock } from "@/lib/recordings";
 import { rubric } from "@/lib/rubric";
 import type { AnalysisMetrics, RecordingReview } from "@/lib/types";
@@ -74,14 +75,17 @@ export function SummaryFeedback({ review, metrics, canSeek, onSeek }: {
   const lowest = metrics ? lowestScored(metrics) : undefined;
 
   return (
-    <section aria-labelledby="summary-heading" className="flex w-full flex-col gap-5 rounded-md bg-pale p-5 sm:p-6">
-      <div className="flex flex-col gap-1">
-        <p className="font-mono text-[11px] uppercase text-teal">For your next take</p>
-        <h2 id="summary-heading" className="font-display text-2xl font-bold text-ink">Overall summary</h2>
+    <section aria-labelledby="summary-heading" className="flex w-full flex-col gap-5 rounded-3xl bg-pale p-5 sm:p-8">
+      <div className="flex items-end justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <p className="font-mono text-[11px] uppercase text-teal">For your next take</p>
+          <h2 id="summary-heading" className="font-display text-2xl font-bold text-ink">Overall summary</h2>
+        </div>
+        <Mascot pose="cheer" flip className="-mb-2 w-20 shrink-0 sm:w-24" />
       </div>
 
       {!feedback && (
-        <p role="status" className="rounded-sm border border-line bg-background p-3 text-sm text-ink">
+        <p role="status" className="rounded-xl border-2 border-line bg-background p-3 text-sm text-ink">
           <span className="font-semibold">Coaching isn&apos;t available for this recording.</span>{" "}
           It may still be generating, or coaching may be turned off. The summary below uses only your measurements and the rubric.
         </p>
@@ -116,7 +120,7 @@ export function SummaryFeedback({ review, metrics, canSeek, onSeek }: {
                     disabled={!canSeek}
                     onClick={() => onSeek(item.at)}
                     aria-label={`Play from ${formatClock(item.at)}: ${item.label}`}
-                    className="press min-h-8 cursor-pointer rounded-sm border border-teal px-2 font-mono text-xs text-teal hover:bg-teal hover:text-cream disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:text-teal"
+                    className="press min-h-8 cursor-pointer rounded-lg border-2 border-teal px-2 font-mono text-xs text-teal hover:bg-teal hover:text-cream dark:hover:text-night disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:text-teal"
                   >
                     ▶ {formatClock(item.at)}
                   </button>

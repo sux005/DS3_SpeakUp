@@ -185,7 +185,7 @@ export function AudioReviewPlayer({
       <div className="flex flex-wrap items-center gap-4">
         <button
           type="button"
-          className="press inline-flex min-h-11 min-w-24 cursor-pointer items-center justify-center rounded-md border border-peach bg-peach px-5 text-sm font-semibold text-night hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+          className="btn inline-flex min-h-11 min-w-24 cursor-pointer items-center justify-center rounded-xl border-2 border-outline bg-peach px-5 text-sm font-semibold text-night"
           onClick={togglePlayback}
           disabled={unavailable}
           aria-label={playing ? "Pause recording" : "Play recording"}
@@ -262,7 +262,7 @@ export function AudioReviewPlayer({
                 aria-label={label}
                 disabled={unavailable || !target}
                 onClick={() => target && selectMoment(target)}
-                className="press min-h-9 cursor-pointer rounded-sm border border-night-line px-3 font-mono text-[11px] text-mint hover:border-mint disabled:cursor-not-allowed disabled:opacity-40"
+                className="press min-h-9 cursor-pointer rounded-lg border-2 border-night-line px-3 font-mono text-[11px] text-mint hover:border-mint disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {text}
               </button>

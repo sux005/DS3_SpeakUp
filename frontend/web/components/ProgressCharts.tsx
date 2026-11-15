@@ -74,11 +74,11 @@ export function ProgressCharts({ takes }: { takes: Take[] }) {
         <h2 className="font-display text-[29px] font-bold text-ink">Your practice, over time.</h2>
         <p className="font-mono text-[11px] text-teal">COMPARE WITH: PREVIOUS TAKE</p>
       </div>
-      <div className="grid w-full gap-7 md:grid-cols-3">
+      <div className="grid w-full gap-4 md:grid-cols-3">
         {charts.map((chart) => {
           const values = scored.map((t) => chart.value(t.summary_metrics!));
           return (
-            <div key={chart.title} className="flex flex-col gap-2.5">
+            <div key={chart.title} className="flex flex-col gap-2.5 rounded-2xl border-2 border-line bg-card p-5">
               <h3 className="text-[19px] font-bold text-ink">{chart.title}</h3>
               <p className="font-mono text-[11px] text-muted">{chart.unit}</p>
               <Plot values={values} band={chart.band} />

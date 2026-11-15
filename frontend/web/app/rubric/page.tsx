@@ -14,7 +14,7 @@ export default function RubricPage() {
 
       <div className="grid w-full gap-6 lg:grid-cols-3">
         {rubric.map((metric) => (
-          <section key={metric.key} className="flex flex-col gap-4 border border-line bg-cream p-6">
+          <section key={metric.key} className="flex flex-col gap-4 rounded-2xl border-2 border-line bg-card p-6">
             <div className="flex flex-col gap-1">
               <h2 className="font-display text-[27px] font-bold text-ink">{metric.title}</h2>
               <p className="font-mono text-[11px] text-muted">{metric.unit.toUpperCase()}</p>

@@ -55,13 +55,13 @@ function ResultsContent() {
       <ButtonLink href={`/projects/${take.project_id}/new`}>Practice again →</ButtonLink>
 
       {!metrics && (
-        <div className="w-full rounded-md border border-line bg-pale p-6">
+        <div className="w-full rounded-2xl border-2 border-line bg-pale p-6">
           <h2 className="font-display text-2xl font-bold text-ink">Analysis is not connected</h2>
           <p className="mt-2 text-muted">This recording belongs to this presentation and is available for playback during this browser session. The local demo does not generate transcript, scores, or coaching.</p>
         </div>
       )}
 
-      <section aria-labelledby="listen-heading" data-surface="dark" className="flex w-full flex-col gap-6 rounded-md border border-night-line bg-night p-4 sm:p-6">
+      <section aria-labelledby="listen-heading" data-surface="dark" className="flex w-full flex-col gap-6 rounded-3xl border-2 border-outline bg-night p-4 sm:p-8">
         <h2 id="listen-heading" className="font-display text-2xl font-bold text-cream">Listen back</h2>
         <AudioReviewPlayer audioUrl={audioUrls[recordingId]} durationSeconds={metrics?.duration_seconds} seekRequest={seekRequest}
           moments={moments} onTimeChange={setCurrentTime} onLoadError={handleAudioError} onMomentSelect={(moment) => {
@@ -77,7 +77,7 @@ function ResultsContent() {
             });
           }} />
         {selectedMoment && (
-          <div key={selectedMoment.id} className="appear border border-night-line bg-night-soft p-4 text-mint" aria-live="polite">
+          <div key={selectedMoment.id} className="appear rounded-xl border-2 border-night-line bg-night-soft p-4 text-mint" aria-live="polite">
             <p className="font-mono text-[11px] uppercase text-peach">{selectedMoment.kind === "strength" ? "Strength" : "Try this"} · {selectedMoment.text}</p>
             <p className="mt-2 text-sm">{selectedMoment.observation}</p>
             <p className="mt-1 text-sm text-cream"><span className="font-semibold">Next step:</span> {selectedMoment.next_step}</p>
@@ -105,7 +105,7 @@ function ResultsContent() {
         <section aria-labelledby="scores-heading" className="flex w-full flex-col gap-4">
           <div className="flex flex-wrap items-baseline justify-between gap-3">
             <h2 id="scores-heading" className="font-display text-2xl font-bold text-ink">Your scores</h2>
-            <Link href="/rubric" className="font-mono text-xs uppercase text-teal hover:underline">How scoring works →</Link>
+            <Link href="/rubric" className="nav-link font-mono text-xs uppercase text-teal">How scoring works →</Link>
           </div>
           <ScoreCards metrics={metrics} categories={categories} />
         </section>

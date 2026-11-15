@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { ButtonLink } from "@/components/Button";
 import { PageHeading, PageShell } from "@/components/PageHeading";
 import { ProgressCharts } from "@/components/ProgressCharts";
+import { StrataDivider } from "@/components/Scenery";
 import { useDemoStore } from "@/lib/demo-store";
 import {
   formatClock,
@@ -68,11 +69,11 @@ function ProjectContent() {
 
       <ProgressCharts takes={takes} />
 
-      <hr className="w-full border-line" />
+      <StrataDivider />
       <h2 className="font-display text-[27px] font-bold text-ink">Your attempts</h2>
 
-      <div className="w-full">
-        <div className={`hidden gap-6 p-4 font-mono text-[11px] text-muted md:grid ${columns}`}>
+      <div className="w-full overflow-hidden rounded-2xl border-2 border-line bg-card">
+        <div className={`hidden gap-6 px-5 py-3 font-mono text-[11px] text-muted md:grid ${columns}`}>
           <span>ATTEMPT</span>
           <span>DATE / DURATION</span>
           <span>PACE / FILLERS / PAUSES</span>
@@ -81,14 +82,14 @@ function ProjectContent() {
           {[...takes].reverse().map((take) => (
             <li
               key={take.recording_id}
-              className={`grid items-center gap-2 border-t border-line p-4 md:gap-6 ${columns}`}
+              className={`grid items-center gap-2 border-t-2 border-line p-5 first:border-t-0 md:gap-6 md:first:border-t-2 ${columns}`}
             >
               <span className="text-[19px] font-bold text-ink">{formatTake(take.take)}</span>
               <span className="text-sm text-muted">
                 {formatDate(take.created_at)}
                 {take.summary_metrics && ` · ${formatClock(take.summary_metrics.duration_seconds)}`}
               </span>
-              <span className="font-mono text-base text-teal">
+              <span className={`font-mono text-base ${take.status === "FAILED" ? "text-rust" : "text-teal"}`}>
                 <TakeResult take={take} />
               </span>
               <span>

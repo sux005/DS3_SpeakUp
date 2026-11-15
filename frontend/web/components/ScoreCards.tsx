@@ -58,7 +58,7 @@ function ScoreCard({ metric, metrics, coaching }: { metric: RubricMetric; metric
   const extra = details(metric.key, metrics);
 
   return (
-    <article className="flex flex-col gap-4 rounded-md border border-line bg-cream p-5 dark:bg-night-soft sm:p-6" aria-labelledby={`${panelId}-title`}>
+    <article className="flex flex-col gap-4 rounded-2xl border-2 border-line bg-card p-5 sm:p-6" aria-labelledby={`${panelId}-title`}>
       <header className="flex flex-col gap-1">
         <h3 id={`${panelId}-title`} className="font-display text-xl font-bold text-ink">{metric.title}</h3>
         <p className="text-sm text-muted">{metric.measures}</p>

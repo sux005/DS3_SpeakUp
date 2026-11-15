@@ -119,7 +119,7 @@ export function SyncedTranscript({ sentences, pauses, moments = [], currentTime,
               type="button"
               aria-pressed={filter === value}
               onClick={() => setFilter(value)}
-              className={`press min-h-8 cursor-pointer rounded-sm border px-2.5 uppercase ${
+              className={`press min-h-8 cursor-pointer rounded-lg border-2 px-2.5 uppercase ${
                 filter === value ? "border-mint bg-mint text-night" : "border-night-line text-mint hover:border-mint"
               }`}
             >
@@ -132,7 +132,7 @@ export function SyncedTranscript({ sentences, pauses, moments = [], currentTime,
       <div className="relative">
       <ol
         ref={listRef}
-        className="relative max-h-[480px] overflow-y-auto overscroll-contain rounded-md border border-night-line"
+        className="relative max-h-[480px] overflow-y-auto overscroll-contain rounded-2xl border-2 border-night-line"
         aria-label="Transcript sentences"
         onWheel={stopFollowing}
         onTouchMove={stopFollowing}
