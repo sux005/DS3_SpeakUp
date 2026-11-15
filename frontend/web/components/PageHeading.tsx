@@ -25,14 +25,14 @@ export function PageHeading({
   return (
     <div className="flex flex-col gap-2.5">
       {crumbHref ? (
-        <Link href={crumbHref} className="font-mono text-xs text-teal">
+        <Link href={crumbHref} className="nav-link w-fit font-mono text-xs text-teal">
           {showBackArrow && "← "}{crumb}
         </Link>
       ) : (
         <p className="font-mono text-xs text-teal">{crumb}</p>
       )}
-      <h1 className="font-display text-4xl font-bold text-ink md:text-5xl">{title}</h1>
-      <p className="text-base text-muted">{subtitle}</p>
+      <h1 className="font-display text-4xl font-bold tracking-tight text-ink md:text-5xl">{title}</h1>
+      <p className="max-w-3xl text-base text-muted">{subtitle}</p>
     </div>
   );
 }

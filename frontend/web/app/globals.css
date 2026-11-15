@@ -1,32 +1,39 @@
 @import "tailwindcss";
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/* Prehistoric valley palette: warm cream paper, forest ink, turquoise
+   and the mascot's orange. Every text pairing below is at least 4.5:1. */
 :root {
-  --background: #f5f1e8;
-  --foreground: #19333a;
-  --surface-paper: #f5f1e8;
-  --surface-ink: #19333a;
-  --surface-teal: #246c70;
-  --surface-muted: #637579;
-  --surface-line: #d9ddd5;
-  --surface-pale: #e4ede5;
-  --surface-rust: #b5532b;
+  --background: #f6f0e0;
+  --foreground: #1d3327;
+  --surface-paper: #f6f0e0;
+  --surface-ink: #1d3327;
+  --surface-teal: #12676a;
+  --surface-muted: #56685c;
+  --surface-line: #d9d6c1;
+  --surface-pale: #e2ecd4;
+  --surface-rust: #a84520;
+  /* Raised panels (cards) and the bold outline shared with the mascot. */
+  --surface-card: #fffaf0;
+  --surface-outline: #10231a;
 }
 
+/* Dark mode is the same valley at dusk. */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --background: #102b32;
-  --foreground: #fffcf6;
-  --surface-paper: #102b32;
-  --surface-ink: #fffcf6;
-  --surface-teal: #a8d9cb;
-  --surface-muted: #a8d9cb;
-  --surface-line: #345057;
-  --surface-pale: #345057;
-  --surface-rust: #eea777;
+  --background: #0f241b;
+  --foreground: #fffaf0;
+  --surface-paper: #0f241b;
+  --surface-ink: #fffaf0;
+  --surface-teal: #8fdccb;
+  --surface-muted: #a8cbbb;
+  --surface-line: #33604a;
+  --surface-pale: #21422f;
+  --surface-rust: #f2a476;
+  --surface-card: #1f4a38;
+  --surface-outline: #050f0a;
 }
 
-/* Colours and fonts from the SpeakUp Figma file. */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -35,18 +42,22 @@
   --color-teal: var(--surface-teal);
   --color-muted: var(--surface-muted);
   --color-line: var(--surface-line);
-  --color-night: #102b32;
-  --color-night-line: #345057;
-  --color-night-soft: #1b3a42;
-  --color-peach: #eea777;
-  /* Scored filler words on the dark listening panel (7.6:1 on night). */
+  --color-card: var(--surface-card);
+  --color-outline: var(--surface-outline);
+  /* "Night" is the deep forest green used for the dark panels. */
+  --color-night: #163a2b;
+  --color-night-line: #33604a;
+  --color-night-soft: #1f4a38;
+  /* The mascot's orange: accent buttons and labels on forest panels. */
+  --color-peach: #f5a24a;
+  /* Scored filler words on the dark listening panel (6.5:1 on night). */
   --color-rose: #ff9eb5;
-  --color-mint: #a8d9cb;
-  --color-cream: #fffcf6;
+  --color-mint: #a6e3d2;
+  --color-cream: #fffaf0;
   --color-pale: var(--surface-pale);
   --color-rust: var(--surface-rust);
   --font-sans: var(--font-dm-sans);
-  --font-display: var(--font-space-grotesk);
+  --font-display: var(--font-fredoka);
   --font-mono: var(--font-dm-mono);
 }
 
@@ -112,6 +123,24 @@ body {
   to { opacity: 1; transform: scale(1); }
 }
 
+/* Text links in the nav and breadcrumbs: underline on hover, large enough to tap. */
+.nav-link {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  text-underline-offset: 6px;
+  text-decoration-thickness: 2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .nav-link:hover {
+    text-decoration-line: underline;
+  }
+}
+
+h1, h2, h3 {
+  text-wrap: balance;
+}
+
 /* Keyboard focus: always visible, teal on light surfaces, mint on dark ones. */
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
   outline: 2px solid var(--color-teal);
@@ -131,6 +160,26 @@ body {
 }
 .press:active:not(:disabled) {
   transform: scale(0.97);
+}
+
+/* Buttons: a bold outline and a flat shadow that the press pushes into. */
+.btn {
+  box-shadow: 0 3px 0 var(--color-outline);
+  transition: transform var(--duration-press) var(--ease-out), box-shadow var(--duration-press) var(--ease-out),
+    filter var(--duration-press) ease;
+}
+.btn:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--color-outline);
+}
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+@media (hover: hover) and (pointer: fine) {
+  .btn:hover:not(:disabled) {
+    filter: brightness(1.06);
+  }
 }
 
 /* Current transcript sentence: a colour change, not movement. */
@@ -175,6 +224,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   /* Keep colour and opacity changes; drop movement and size changes. */
+  .btn:active:not(:disabled),
   .press:active:not(:disabled),
   .marker-bar[data-now="true"],
   .marker:hover .marker-bar {

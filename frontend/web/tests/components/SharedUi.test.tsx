@@ -19,7 +19,7 @@ describe("shared UI components", () => {
     render(<ButtonLink href="/projects/demo" variant="secondary">Open</ButtonLink>);
     const link = screen.getByRole("link", { name: "Open" });
     expect(link.getAttribute("href")).toBe("/projects/demo");
-    expect(link.className).toContain("bg-pale");
+    expect(link.className).toContain("bg-card");
   });
 
   it("renders PageShell and PageHeading with optional back arrow and React title content", () => {

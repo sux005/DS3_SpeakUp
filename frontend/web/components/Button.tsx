@@ -4,13 +4,13 @@ import type { ComponentProps } from "react";
 type Variant = "primary" | "secondary" | "accent";
 
 const variants: Record<Variant, string> = {
-  primary: "border-teal bg-teal text-cream dark:border-peach dark:bg-peach dark:text-night",
-  secondary: "border-ink bg-pale text-ink",
-  accent: "border-peach bg-peach text-night",
+  primary: "bg-teal text-cream dark:bg-peach dark:text-night",
+  secondary: "bg-card text-ink",
+  accent: "bg-peach text-night",
 };
 
 const base =
-  "inline-flex min-h-11 cursor-pointer items-center justify-center rounded-md border px-6 text-sm font-semibold transition-opacity hover:opacity-85";
+  "btn inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-outline px-6 text-sm font-semibold";
 
 export function buttonClass(variant: Variant = "primary") {
   return `${base} ${variants[variant]}`;
