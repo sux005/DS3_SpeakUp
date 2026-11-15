@@ -56,17 +56,20 @@ const fernShapes: Record<"tall" | "low", Frond[]> = {
   ],
 };
 
-/** A clump of fern fronds growing from the bottom centre of its box. */
+/**
+ * A clump of fern fronds growing from the bottom centre of its box. The whole
+ * clump sways as one element, so the browser moves it without redrawing it.
+ */
 export function FernCluster({ shape = "tall", className }: { shape?: "tall" | "low"; className?: string }) {
   return (
-    <svg viewBox="-150 -160 300 168" className={className} aria-hidden="true" focusable="false">
+    <svg viewBox="-150 -160 300 168" className={`fern-sway ${className ?? ""}`} style={{ animationDelay: shape === "low" ? "-2.4s" : undefined }} aria-hidden="true" focusable="false">
       {fernShapes[shape].map((frond, index) => {
         const { leaves, stem } = frondGeometry(frond);
         const ellipses = leaves.map((leaf, i) => (
           <ellipse key={i} cx={leaf.cx} cy={leaf.cy} rx={leaf.rx} ry={leaf.ry} transform={`rotate(${leaf.rotate} ${leaf.cx} ${leaf.cy})`} />
         ));
         return (
-          <g key={frond.angle} className="fern-sway" style={{ animationDelay: `${index * -1.3}s` }}>
+          <g key={frond.angle}>
             <g transform={`rotate(${frond.angle})`}>
               <g className="fill-(--scene-outline) stroke-(--scene-outline)" strokeWidth="5" strokeLinejoin="round">
                 {ellipses}
@@ -175,13 +178,27 @@ function Footprint({ x, y, rotate = 0 }: { x: number; y: number; rotate?: number
   );
 }
 
+const sceneBox = {
+  viewBox: "0 0 1440 560",
+  preserveAspectRatio: "xMidYMax slice",
+  focusable: "false",
+} as const;
+
+// Firefly positions as [left %, bottom %] of the scene.
+const fireflies = [[22, 30], [38, 44], [51, 24], [63, 38], [74, 27], [86, 41]];
+
 /**
  * The landing scene: misty ridges, forested hills, a turquoise lake and a rocky
  * clearing. The sky is left transparent so the section's own gradient shows.
+ *
+ * Three stacked drawings share one viewBox: the far ridge, the mist, and
+ * everything nearer. Keeping the mist on its own layer lets it drift as a
+ * whole element instead of redrawing the scene on every frame.
  */
 export function ValleyScene({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 1440 560" preserveAspectRatio="xMidYMax slice" className={className} aria-hidden="true" focusable="false">
+    <div className={className} aria-hidden="true">
+      <svg {...sceneBox} className="absolute inset-0 size-full">
       {/* Sun by day, moon at dusk */}
       <circle cx="1004" cy="196" r="92" className="fill-(--scene-sun-glow)" />
       <circle cx="1004" cy="196" r="58" className="fill-(--scene-sun)" />
@@ -195,21 +212,20 @@ export function ValleyScene({ className }: { className?: string }) {
       {/* Far ridge, lost in mist */}
       <path className="fill-(--scene-ridge-far)" strokeLinejoin="round"
         d="M0 352L80 322L150 344L250 300L330 336L420 310L520 340L640 286L720 322L810 262L900 320L990 236L1070 300L1168 204L1262 290L1350 246L1440 300V560H0Z" />
-      <g className="scene-mist fill-(--scene-mist)">
+      </svg>
+
+      <svg {...sceneBox} className="scene-mist absolute inset-0 size-full overflow-visible fill-(--scene-mist)">
         <rect x="60" y="330" width="380" height="22" rx="11" />
+        <rect x="300" y="352" width="240" height="16" rx="8" />
         <rect x="560" y="312" width="300" height="18" rx="9" />
         <rect x="1010" y="286" width="340" height="22" rx="11" />
-      </g>
+        <rect x="1180" y="318" width="220" height="16" rx="8" />
+      </svg>
 
+      <svg {...sceneBox} className="absolute inset-0 size-full">
       {/* Nearer ridge */}
       <path className="fill-(--scene-ridge-mid) stroke-(--scene-ridge-mid-line)" strokeWidth="3" strokeLinejoin="round"
         d="M-10 392L110 356L210 384L330 342L450 380L580 350L700 388L850 330L960 376L1100 300L1210 364L1330 318L1450 366V560H-10Z" />
-      <g className="scene-mist scene-mist-slow fill-(--scene-mist)">
-        <rect x="240" y="368" width="330" height="18" rx="9" />
-        <rect x="760" y="352" width="260" height="16" rx="8" />
-        <rect x="1160" y="344" width="230" height="16" rx="8" />
-      </g>
-
       {/* Forested hills with tree ferns */}
       <TreeFern x={1238} y={398} scale={0.9} />
       <TreeFern x={1326} y={410} scale={0.68} />
@@ -253,16 +269,15 @@ export function ValleyScene({ className }: { className?: string }) {
       <g transform="translate(596 446) rotate(-10)"><g transform="scale(0.74)"><EggShapes /></g></g>
       <g transform="translate(644 452) rotate(8)"><g transform="scale(0.82)"><EggShapes /></g></g>
 
+      </svg>
+
       {/* Fireflies, only at dusk */}
-      <g className="scene-fireflies fill-(--scene-firefly)">
-        <circle cx="430" cy="430" r="4" />
-        <circle cx="700" cy="392" r="3.5" />
-        <circle cx="930" cy="446" r="4" />
-        <circle cx="1090" cy="404" r="3" />
-        <circle cx="560" cy="462" r="3" />
-        <circle cx="1220" cy="452" r="4" />
-      </g>
-    </svg>
+      <div className="scene-fireflies absolute inset-0">
+        {fireflies.map(([left, bottom]) => (
+          <span key={left} style={{ left: `${left}%`, bottom: `${bottom}%` }} />
+        ))}
+      </div>
+    </div>
   );
 }
 

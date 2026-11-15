@@ -123,6 +123,12 @@
   --duration-ui: 200ms;
 }
 
+/* Taps act at once and leave no grey flash on phones. */
+a, button, label, summary, [role="switch"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
@@ -135,6 +141,17 @@ body {
 .mascot-pulse {
   transform-box: fill-box;
   transform-origin: center;
+}
+.fern-sway {
+  transform-origin: 50% 100%;
+}
+.scene-fireflies span {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--scene-firefly);
+  opacity: 0.7;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -150,10 +167,9 @@ body {
   .mascot-float { animation: mascot-float 3s ease-in-out infinite; }
   .fern-sway { animation: fern-sway 6s ease-in-out infinite alternate; }
   .scene-mist { animation: mist-drift 34s ease-in-out infinite alternate; }
-  .scene-mist-slow { animation-duration: 52s; animation-direction: alternate-reverse; }
-  .scene-fireflies circle { animation: firefly 3.6s ease-in-out infinite; }
-  .scene-fireflies circle:nth-child(2n) { animation-delay: -1.2s; }
-  .scene-fireflies circle:nth-child(3n) { animation-delay: -2.3s; }
+  .scene-fireflies span { animation: firefly 3.6s ease-in-out infinite; }
+  .scene-fireflies span:nth-child(2n) { animation-delay: -1.2s; }
+  .scene-fireflies span:nth-child(3n) { animation-delay: -2.3s; }
   .analysis-stage-active { animation: stage-highlight 0.75s ease-out; }
   .analysis-stage-check { display: inline-block; animation: stage-check-in 0.3s ease-out; }
 }
