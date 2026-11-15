@@ -1,13 +1,22 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { ButtonLink } from "@/components/Button";
 import { PageHeading, PageShell } from "@/components/PageHeading";
-import { RecorderUploader } from "@/components/RecorderUploader";
+import { MascotCoach } from "@/components/MascotCoach";
+import type { MascotPose } from "@/components/Mascot";
+import { RecorderUploader, type RecorderStatus } from "@/components/RecorderUploader";
 import { useDemoStore } from "@/lib/demo-store";
 import { getProject } from "@/lib/recordings";
+
+// What the mascot says as the recording moves along.
+const coaching: Record<RecorderStatus, { pose: MascotPose; text: string }> = {
+  idle: { pose: "cheer", text: "Take a breath, then talk like you\u2019re explaining it to a friend." },
+  recording: { pose: "listen", text: "I\u2019m listening. Keep going!" },
+  ready: { pose: "celebrate", text: "Nice take! Give it a listen, then start the review." },
+};
 
 export default function NewAttemptPage() {
   return <Suspense fallback={<PageShell><p>Loading presentation…</p></PageShell>}><NewAttemptContent /></Suspense>;
@@ -17,6 +26,7 @@ function NewAttemptContent() {
   const { projectId } = useParams<{ projectId: string }>();
   const router = useRouter();
   const { projects, limits, ready, createRecording } = useDemoStore();
+  const [status, setStatus] = useState<RecorderStatus>("idle");
   if (!ready) return <PageShell><p>Loading presentation…</p></PageShell>;
   const project = getProject(projects, projectId);
   if (!project) return <PageShell><p>Presentation not found.</p><ButtonLink href="/">All presentations</ButtonLink></PageShell>;
@@ -38,7 +48,7 @@ function NewAttemptContent() {
         subtitle="Try the local recording flow. Speech scoring requires the AWS pipeline, which is not connected here."
       />
 
-      <section className="flex w-full flex-col gap-10 bg-night p-6 md:flex-row md:gap-16 md:p-12">
+      <section data-surface="dark" className="flex w-full flex-col gap-8 rounded-3xl border-2 border-outline bg-night p-6 md:flex-row md:items-end md:gap-12 md:p-12">
         <div className="flex min-w-0 flex-1 flex-col gap-6">
           <p className="font-mono text-xs text-mint">LOCAL AUDIO · DEMO MODE</p>
           <Image src="/figma/waveform-record.svg" alt="" width={960} height={110} className="h-auto w-full max-w-[960px]" />
@@ -46,9 +56,10 @@ function NewAttemptContent() {
             maxAudioBytes={limits.max_audio_upload_bytes}
             maxAudioDurationSeconds={limits.max_audio_duration_seconds}
             onSubmit={submit}
+            onStatusChange={setStatus}
           />
         </div>
-        <Image src="/figma/pip-record.svg" alt="" width={188} height={188} className="shrink-0" />
+        <MascotCoach pose={coaching[status].pose}>{coaching[status].text}</MascotCoach>
       </section>
 
       <div className="grid w-full gap-12 md:grid-cols-2">

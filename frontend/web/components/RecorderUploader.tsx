@@ -3,11 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import { buttonClass } from "@/components/Button";
 
+export type RecorderStatus = "idle" | "recording" | "ready";
+
 type RecorderUploaderProps = {
   maxAudioBytes: number;
   maxAudioDurationSeconds: number;
   onSubmit: (blob: Blob, filename: string) => void;
   submitLabel?: string;
+  /** Lets the page react (for example the mascot) as recording starts and audio is ready. */
+  onStatusChange?: (status: RecorderStatus) => void;
 };
 
 function formatDuration(seconds: number) {
@@ -27,6 +31,7 @@ export function RecorderUploader({
   maxAudioDurationSeconds,
   onSubmit,
   submitLabel = "Analyze demo recording",
+  onStatusChange,
 }: RecorderUploaderProps) {
   const [selected, setSelected] = useState<File | Blob | null>(null);
   const [filename, setFilename] = useState("");
@@ -49,6 +54,11 @@ export function RecorderUploader({
     }, 250);
     return () => window.clearInterval(timer);
   }, [maxAudioDurationSeconds, recording]);
+
+  const status: RecorderStatus = recording ? "recording" : selected ? "ready" : "idle";
+  useEffect(() => {
+    onStatusChange?.(status);
+  }, [onStatusChange, status]);
 
   useEffect(() => () => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -160,10 +170,10 @@ export function RecorderUploader({
           />
         </label>
       </div>
-      <p className="font-mono text-sm text-teal" aria-live="polite">
+      <p className="font-mono text-sm text-teal on-dark:text-mint" aria-live="polite">
         {recording ? `RECORDING ${formatDuration(elapsed)} / ${formatDuration(maxAudioDurationSeconds)}` : selected ? `READY · ${filename}` : "DEMO ONLY · Nothing is sent to AWS"}
       </p>
-      {error && <p className="text-sm text-rust" role="alert">{error}</p>}
+      {error && <p className="text-sm font-semibold text-rust on-dark:text-peach" role="alert">{error}</p>}
       {previewUrl && <audio controls src={previewUrl} className="w-full" aria-label="Preview selected audio" />}
       {selected && (
         <div className="flex flex-wrap gap-4">

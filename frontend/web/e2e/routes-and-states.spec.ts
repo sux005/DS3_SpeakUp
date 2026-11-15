@@ -144,9 +144,9 @@ test.describe("responsive route smoke", () => {
     await page.goto(`/recordings/${processingId}/analyzing`);
     await expect(page.locator(".analyzing-dots")).toBeVisible();
     const dotsAnimation = await page.locator(".analyzing-dots span").first().evaluate((element) => getComputedStyle(element).animationName);
-    const pipAnimation = await page.locator(".pip-motion").evaluate((element) => getComputedStyle(element).animationName);
+    const mascotAnimation = await page.locator(".mascot-float").evaluate((element) => getComputedStyle(element).animationName);
     expect(dotsAnimation).toBe("none");
-    expect(pipAnimation).toBe("none");
+    expect(mascotAnimation).toBe("none");
 
     await page.goto("/");
     await page.keyboard.press("Tab");

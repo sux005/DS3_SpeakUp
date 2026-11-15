@@ -1,5 +1,7 @@
 @import "tailwindcss";
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+/* Inside a forest panel (data-surface="dark"), whatever the theme. */
+@custom-variant on-dark (&:where([data-surface="dark"], [data-surface="dark"] *));
 
 /* Prehistoric valley palette: warm cream paper, forest ink, turquoise
    and the mascot's orange. Every text pairing below is at least 4.5:1. */
@@ -218,6 +220,41 @@ body {
   font-size: 1.25rem;
   font-weight: 600;
   line-height: 1;
+}
+
+/* What the mascot says. The tail points at the mascot: sideways on phones,
+   down on wider screens where the bubble sits above it. */
+.speech-bubble {
+  position: relative;
+  border: 2px solid var(--scene-outline);
+  border-radius: 1rem;
+  background: var(--scene-egg);
+  color: #1d3327;
+  padding: 0.75rem 1rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.speech-bubble::after {
+  content: "";
+  position: absolute;
+  top: calc(50% - 7px);
+  right: -9px;
+  width: 14px;
+  height: 14px;
+  border-right: 2px solid var(--scene-outline);
+  border-bottom: 2px solid var(--scene-outline);
+  background: inherit;
+  transform: rotate(-45deg);
+}
+@media (min-width: 48rem) {
+  .speech-bubble::after {
+    top: auto;
+    right: auto;
+    bottom: -9px;
+    left: calc(50% - 7px);
+    transform: rotate(45deg);
+  }
 }
 
 /* Text links in the nav and breadcrumbs: underline on hover, large enough to tap. */
