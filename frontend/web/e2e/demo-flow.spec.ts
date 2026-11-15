@@ -31,7 +31,8 @@ test.describe("fixture-backed presentation navigation", () => {
     await page.getByRole("link", { name: "+ New attempt" }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/new$`));
     await expect(page.getByRole("heading", { name: "Record or upload" })).toBeVisible();
-    await expect(page.getByText(/Upload WAV, MP3, M4A, or WebM audio/)).toBeVisible();
+    await expect(page.getByText("WAV, MP3, M4A or WebM, up to 100 MB.")).toBeVisible();
+    await expect(page.getByText("Uses your microphone. Recording stops after 10 minutes.")).toBeVisible();
   });
 
   test("uploads a local audio file and enters analyzing without an API", async ({ page }) => {

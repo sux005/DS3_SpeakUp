@@ -72,7 +72,9 @@ test.describe("home and project route states", () => {
     ]));
     await page.goto(`/projects/${projectId}`);
     await expect(page.getByRole("heading", { name: "Coverage project" })).toBeVisible();
-    await expect(page.getByText("Your practice, over time.")).toBeVisible();
+    // One scored attempt: its values are summarised, and no one-point trend is drawn.
+    await expect(page.getByRole("heading", { name: "Latest scored attempt" })).toBeVisible();
+    await expect(page.getByText("Trends appear here after a second scored attempt.")).toBeVisible();
     await expect(page.getByText("Fixture processing error")).toBeVisible();
     await expect(page.getByRole("link", { name: "Review →" })).toHaveCount(2);
     await expect(page.getByRole("link", { name: "Status →" })).toHaveCount(1);
