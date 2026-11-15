@@ -7,13 +7,14 @@ export function SiteNav() {
       <Link href="/" className="font-display text-[29px] font-bold leading-none tracking-tight text-ink">
         SpeakUp
       </Link>
-      <div className="flex flex-wrap items-center gap-4 sm:gap-8">
-        <nav className="flex flex-wrap items-center gap-4 font-mono text-xs sm:gap-8">
+      {/* On phones the toggle sits beside the logo and the links take their own row. */}
+      <div className="contents sm:flex sm:flex-wrap sm:items-center sm:gap-8">
+        <nav className="order-3 flex basis-full flex-wrap items-center gap-x-5 font-mono text-xs sm:order-none sm:basis-auto sm:gap-8">
           <Link href="/" className="nav-link text-teal">MY PRESENTATIONS</Link>
           <Link href="/rubric" className="nav-link text-teal">RUBRIC</Link>
           <Link href="/login" className="nav-link text-muted">SIGN IN (DEMO)</Link>
         </nav>
-        <ThemeToggle />
+        <span className="order-2 flex sm:order-none"><ThemeToggle /></span>
       </div>
     </header>
   );
