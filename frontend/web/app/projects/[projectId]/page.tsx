@@ -74,7 +74,7 @@ function ProjectContent() {
       <h2 className="font-display text-[27px] font-bold text-ink">Your attempts</h2>
 
       <div className="w-full overflow-hidden rounded-2xl border-2 border-line bg-card">
-        <div className={`hidden gap-6 px-5 py-3 font-mono text-[11px] text-muted md:grid ${columns}`}>
+        <div className={`hidden gap-6 px-5 py-3 font-mono text-xs text-muted md:grid ${columns}`}>
           <span>ATTEMPT</span>
           <span>DATE / DURATION</span>
           <span>PACE / FILLERS / PAUSES</span>

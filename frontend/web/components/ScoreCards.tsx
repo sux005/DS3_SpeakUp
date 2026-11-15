@@ -70,14 +70,14 @@ function ScoreCard({ metric, metrics, coaching }: { metric: RubricMetric; metric
 
       <dl className="grid grid-cols-2 gap-3 border-y border-line py-3 text-sm">
         <div>
-          <dt className="font-mono text-[11px] uppercase text-muted">You measured</dt>
+          <dt className="font-mono text-xs uppercase text-muted">You measured</dt>
           <dd className="flex flex-col">
             <span className="font-display text-2xl font-bold text-ink">{value}</span>
             <span className="text-sm text-muted">{unit}</span>
           </dd>
         </div>
         <div>
-          <dt className="font-mono text-[11px] uppercase text-muted">Target range</dt>
+          <dt className="font-mono text-xs uppercase text-muted">Target range</dt>
           <dd className="pt-1.5 text-ink">{metric.bands[0].range}</dd>
         </div>
       </dl>
@@ -91,7 +91,7 @@ function ScoreCard({ metric, metrics, coaching }: { metric: RubricMetric; metric
       <div className="flex flex-col gap-1 text-[15px] text-ink">
         {coaching ? (
           <>
-            <p className="font-mono text-[11px] uppercase text-teal">Coaching</p>
+            <p className="font-mono text-xs uppercase text-teal">Coaching</p>
             <p>{coaching.observation}</p>
             <p><span className="font-semibold">Next step:</span> {coaching.next_step}</p>
           </>
@@ -99,7 +99,7 @@ function ScoreCard({ metric, metrics, coaching }: { metric: RubricMetric; metric
           <p>Record at least {minimumSpeakingSeconds} seconds of speech to get a score.</p>
         ) : (
           <>
-            <p className="font-mono text-[11px] uppercase text-teal">Rubric tip</p>
+            <p className="font-mono text-xs uppercase text-teal">Rubric tip</p>
             <p>{metric.tips[score]}</p>
           </>
         )}
@@ -121,7 +121,7 @@ function ScoreCard({ metric, metrics, coaching }: { metric: RubricMetric; metric
             <table className="mt-2 w-full border-collapse text-left text-sm">
               <caption className="sr-only">{metric.title} rubric, {metric.unit}</caption>
               <thead>
-                <tr className="font-mono text-[11px] text-muted">
+                <tr className="font-mono text-xs text-muted">
                   <th scope="col" className="border-b border-line py-1.5 pr-3 font-normal">SCORE</th>
                   <th scope="col" className="border-b border-line py-1.5 font-normal">RANGE</th>
                 </tr>

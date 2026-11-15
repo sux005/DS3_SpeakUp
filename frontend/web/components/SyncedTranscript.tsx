@@ -112,7 +112,7 @@ export function SyncedTranscript({ sentences, pauses, moments = [], currentTime,
     <div className="flex min-w-0 flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="font-display text-xl font-bold text-cream">Transcript</h3>
-        <div className="flex gap-1 font-mono text-[11px]" role="group" aria-label="Show sentences">
+        <div className="flex gap-1 font-mono text-xs" role="group" aria-label="Show sentences">
           {filters.map(([value, label]) => (
             <button
               key={value}
@@ -156,7 +156,7 @@ export function SyncedTranscript({ sentences, pauses, moments = [], currentTime,
                     isActive ? "bg-night-soft text-cream" : "text-mint hover:bg-night-soft/60"
                   }`}
                 >
-                  <span className="w-24 shrink-0 pt-1 font-mono text-[11px] text-peach">
+                  <span className="w-24 shrink-0 pt-1 font-mono text-xs text-peach">
                     {formatClock(sentence.start)}
                     {sentence.tag && ` · ${sentence.tag}`}
                   </span>
@@ -177,7 +177,7 @@ export function SyncedTranscript({ sentences, pauses, moments = [], currentTime,
                           {inside.map((pause) => (
                             <span
                               key={pause.start_seconds}
-                              className={`mx-0.5 font-mono text-[13px] ${pause.inside_sentence === false ? "text-mint/80" : "font-bold text-peach"}`}
+                              className={`mx-0.5 font-mono text-sm ${pause.inside_sentence === false ? "text-mint/80" : "font-bold text-peach"}`}
                               title={`${pause.inside_sentence === false ? "Natural pause" : "Pause inside sentence"}, ${pauseLabel(pause)}`}
                             >
                               <span aria-hidden="true">‖</span>
@@ -193,7 +193,7 @@ export function SyncedTranscript({ sentences, pauses, moments = [], currentTime,
                 </button>
               </li>
               {filter === "all" && between.length > 0 && (
-                <li className="px-4 py-1 font-mono text-[11px] text-mint/80 sm:pl-32">
+                <li className="px-4 py-1 font-mono text-xs text-mint/80 sm:pl-32">
                   {between.map((pause) => (
                     <span key={pause.start_seconds} className="mr-3">
                       {pause.inside_sentence === false
@@ -212,7 +212,7 @@ export function SyncedTranscript({ sentences, pauses, moments = [], currentTime,
         <button
           type="button"
           onClick={() => setFollowing(true)}
-          className="appear press absolute inset-x-0 bottom-3 mx-auto min-h-10 w-fit cursor-pointer rounded-full bg-mint px-4 font-mono text-[11px] font-semibold uppercase text-night shadow-lg"
+          className="appear press absolute inset-x-0 bottom-3 mx-auto min-h-10 w-fit cursor-pointer rounded-full bg-mint px-4 font-mono text-xs font-semibold uppercase text-night shadow-lg"
         >
           ↓ Resume following
         </button>

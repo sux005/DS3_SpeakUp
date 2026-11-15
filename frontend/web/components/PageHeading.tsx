@@ -1,9 +1,12 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+// Every page shares this column, and the nav and footer align to it.
+export const pageColumn = "mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8";
+
 export function PageShell({ children }: { children: ReactNode }) {
   return (
-    <main className="mx-auto flex w-full max-w-[1440px] flex-col items-start gap-8 px-4 py-10 md:p-16">
+    <main className={`${pageColumn} flex flex-col items-start gap-8 py-8 md:py-12`}>
       {children}
     </main>
   );
@@ -23,7 +26,7 @@ export function PageHeading({
   showBackArrow?: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex min-w-0 flex-col gap-1.5">
       {crumbHref ? (
         <Link href={crumbHref} className="nav-link w-fit font-mono text-xs text-teal">
           {showBackArrow && "← "}{crumb}
@@ -31,8 +34,8 @@ export function PageHeading({
       ) : (
         <p className="font-mono text-xs text-teal">{crumb}</p>
       )}
-      <h1 className="font-display text-4xl font-bold tracking-tight text-ink md:text-5xl">{title}</h1>
-      <p className="max-w-3xl text-base text-muted">{subtitle}</p>
+      <h1 className="font-display text-4xl font-bold tracking-tight break-words text-ink md:text-[44px] md:leading-[1.1]">{title}</h1>
+      <p className="max-w-3xl text-[17px] text-muted">{subtitle}</p>
     </div>
   );
 }

@@ -216,7 +216,7 @@ export function AudioReviewPlayer({
                 title={clusterLabel(cluster)}
               >
                 {count > 1 && (
-                  <span aria-hidden="true" className="absolute top-0 font-mono text-[10px] leading-none text-cream">{count}</span>
+                  <span aria-hidden="true" className="absolute top-0 font-mono text-xs leading-none text-cream">{count}</span>
                 )}
                 <span
                   aria-hidden="true"
@@ -244,7 +244,7 @@ export function AudioReviewPlayer({
       {error && <p className="text-sm text-peach" role="alert">{error}</p>}
       {moments.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <ul className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-mint" aria-label="Marker legend">
+          <ul className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-xs text-mint" aria-label="Marker legend">
             {(["filler", "pause", "improve"] as const)
               .filter((kind) => kinds.has(kind) || (kind === "improve" && kinds.has("strength")))
               .map((kind) => (
@@ -262,7 +262,7 @@ export function AudioReviewPlayer({
                 aria-label={label}
                 disabled={unavailable || !target}
                 onClick={() => target && selectMoment(target)}
-                className="press min-h-9 cursor-pointer rounded-lg border-2 border-night-line px-3 font-mono text-[11px] text-mint hover:border-mint disabled:cursor-not-allowed disabled:opacity-40"
+                className="press min-h-9 cursor-pointer rounded-lg border-2 border-night-line px-3 font-mono text-xs text-mint hover:border-mint disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {text}
               </button>

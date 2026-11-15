@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { DM_Mono, DM_Sans, Fredoka } from "next/font/google";
-import { SceneFooter } from "@/components/Scenery";
+import { SiteFooter } from "@/components/Scenery";
 import { SiteNav } from "@/components/SiteNav";
 import { DemoProvider } from "@/lib/demo-store";
 import "./globals.css";
@@ -41,7 +41,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <DemoProvider>
           <SiteNav />
           {children}
-          <SceneFooter />
+          <SiteFooter />
         </DemoProvider>
       </body>
     </html>

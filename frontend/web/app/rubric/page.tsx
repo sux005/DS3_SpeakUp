@@ -17,12 +17,12 @@ export default function RubricPage() {
           <section key={metric.key} className="flex flex-col gap-4 rounded-2xl border-2 border-line bg-card p-6">
             <div className="flex flex-col gap-1">
               <h2 className="font-display text-[27px] font-bold text-ink">{metric.title}</h2>
-              <p className="font-mono text-[11px] text-muted">{metric.unit.toUpperCase()}</p>
+              <p className="font-mono text-xs text-muted">{metric.unit.toUpperCase()}</p>
             </div>
             <p className="text-[15px] text-ink">{metric.measures}</p>
             <table className="w-full border-collapse text-left">
               <thead>
-                <tr className="font-mono text-[11px] text-muted">
+                <tr className="font-mono text-xs text-muted">
                   <th className="border-b border-line py-2 pr-4 font-normal">SCORE</th>
                   <th className="border-b border-line py-2 font-normal">RANGE</th>
                 </tr>

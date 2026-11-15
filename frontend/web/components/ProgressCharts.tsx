@@ -72,7 +72,7 @@ export function ProgressCharts({ takes }: { takes: Take[] }) {
     <section className="flex w-full flex-col gap-5">
       <div className="flex flex-wrap items-baseline justify-between gap-4">
         <h2 className="font-display text-[29px] font-bold text-ink">Your practice, over time.</h2>
-        <p className="font-mono text-[11px] text-teal">COMPARE WITH: PREVIOUS TAKE</p>
+        <p className="font-mono text-xs text-teal">COMPARE WITH: PREVIOUS TAKE</p>
       </div>
       <div className="grid w-full gap-7 md:grid-cols-3">
         {charts.map((chart) => {
@@ -80,9 +80,9 @@ export function ProgressCharts({ takes }: { takes: Take[] }) {
           return (
             <div key={chart.title} className="flex flex-col gap-2.5">
               <h3 className="text-[19px] font-bold text-ink">{chart.title}</h3>
-              <p className="font-mono text-[11px] text-muted">{chart.unit}</p>
+              <p className="font-mono text-xs text-muted">{chart.unit}</p>
               <Plot values={values} band={chart.band} />
-              <p className="flex flex-wrap gap-x-6 font-mono text-[11px] text-muted">
+              <p className="flex flex-wrap gap-x-6 font-mono text-xs text-muted">
                 {scored.map((t, i) => (
                   <span key={t.recording_id}>
                     {formatTake(t.take).toUpperCase()} · {values[i]}

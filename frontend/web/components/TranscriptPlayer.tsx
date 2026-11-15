@@ -47,7 +47,7 @@ export function TranscriptPlayer({
   return (
     <>
       <section className="flex w-full flex-col gap-3.5 bg-night p-6">
-        <p className="font-mono text-[11px] text-mint">LISTEN BACK · CLICK ANY WORD TO JUMP TO IT</p>
+        <p className="font-mono text-xs text-mint">LISTEN BACK · CLICK ANY WORD TO JUMP TO IT</p>
         <audio
           ref={audioRef}
           src={audioSrc}
@@ -68,7 +68,7 @@ export function TranscriptPlayer({
               key={`${moment.label}-${index}`}
               type="button"
               onClick={() => jumpTo(moment.at)}
-              className={`cursor-pointer rounded-sm px-2 py-1 font-mono text-[11px] hover:opacity-80 ${
+              className={`cursor-pointer rounded-sm px-2 py-1 font-mono text-xs hover:opacity-80 ${
                 moment.label === "filler" ? "bg-red-700 text-cream" : "bg-peach text-night"
               }`}
             >
@@ -81,7 +81,7 @@ export function TranscriptPlayer({
       <div className="flex w-full flex-col gap-10 md:flex-row md:items-start">
         <section className="flex min-w-0 flex-1 flex-col gap-4">
           <h2 className="font-display text-2xl font-bold text-ink">Transcript</h2>
-          <div className="flex flex-wrap items-center gap-2 font-mono text-[11px]">
+          <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
             {(
               [
                 ["all", "ALL"],
@@ -120,7 +120,7 @@ export function TranscriptPlayer({
                   <button
                     type="button"
                     onClick={() => jumpTo(sentence.start)}
-                    className="w-28 shrink-0 cursor-pointer text-left font-mono text-[11px] text-rust hover:underline"
+                    className="w-28 shrink-0 cursor-pointer text-left font-mono text-xs text-rust hover:underline"
                   >
                     {formatClock(sentence.start)}
                     {sentence.tag && ` · ${sentence.tag}`}

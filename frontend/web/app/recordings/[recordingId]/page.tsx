@@ -79,7 +79,7 @@ function ResultsContent() {
           }} />
         {selectedMoment && (
           <div key={selectedMoment.id} className="appear rounded-xl border-2 border-night-line bg-night-soft p-4 text-mint" aria-live="polite">
-            <p className="font-mono text-[11px] uppercase text-peach">{selectedMoment.kind === "strength" ? "Strength" : "Try this"} · {selectedMoment.text}</p>
+            <p className="font-mono text-xs uppercase text-peach">{selectedMoment.kind === "strength" ? "Strength" : "Try this"} · {selectedMoment.text}</p>
             <p className="mt-2 text-sm">{selectedMoment.observation}</p>
             <p className="mt-1 text-sm text-cream"><span className="font-semibold">Next step:</span> {selectedMoment.next_step}</p>
           </div>

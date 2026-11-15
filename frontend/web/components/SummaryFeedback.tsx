@@ -47,7 +47,7 @@ function Step({ number, title, source, children }: { number: number; title: stri
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <h3 className="font-display text-lg font-bold text-ink">
           {title}
-          {source && <span className="mt-0.5 block font-mono text-[11px] font-normal uppercase text-muted">{source}</span>}
+          {source && <span className="mt-0.5 block font-mono text-xs font-normal uppercase text-muted">{source}</span>}
         </h3>
         {children}
       </div>
@@ -78,7 +78,7 @@ export function SummaryFeedback({ review, metrics, canSeek, onSeek }: {
     <section aria-labelledby="summary-heading" className="flex w-full flex-col gap-5 rounded-3xl bg-pale p-5 sm:p-8">
       <div className="flex items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
-          <p className="font-mono text-[11px] uppercase text-teal">For your next take</p>
+          <p className="font-mono text-xs uppercase text-teal">For your next take</p>
           <h2 id="summary-heading" className="font-display text-2xl font-bold text-ink">Overall summary</h2>
         </div>
         <Mascot pose="cheer" flip className="-mb-2 w-20 shrink-0 sm:w-24" />

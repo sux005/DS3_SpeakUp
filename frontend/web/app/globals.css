@@ -3,21 +3,25 @@
 /* Inside a forest panel (data-surface="dark"), whatever the theme. */
 @custom-variant on-dark (&:where([data-surface="dark"], [data-surface="dark"] *));
 
-/* Prehistoric valley palette: warm cream paper, forest ink, turquoise
-   and the mascot's orange. Every text pairing below is at least 4.5:1. */
+/* Prehistoric valley palette: a cream page, lighter paper for content,
+   forest green task panels, the mascot's orange for primary actions and its
+   violet for selected states. Every text pairing below is at least 4.5:1. */
 :root {
-  --background: #f6f0e0;
+  --background: #f2e9d4;
   --foreground: #1d3327;
-  --surface-paper: #f6f0e0;
+  --surface-paper: #f2e9d4;
   --surface-ink: #1d3327;
-  --surface-teal: #12676a;
-  --surface-muted: #56685c;
-  --surface-line: #d9d6c1;
-  --surface-pale: #e2ecd4;
-  --surface-rust: #a84520;
-  /* Raised panels (cards) and the bold outline shared with the mascot. */
-  --surface-card: #fffaf0;
-  --surface-outline: #10231a;
+  --surface-teal: #0f6164;
+  --surface-muted: #526358;
+  --surface-line: #d8cfb4;
+  --surface-pale: #e3ebd2;
+  --surface-rust: #a33f1c;
+  /* Content surfaces (cards) sit lighter than the page. */
+  --surface-card: #fffbf2;
+  /* The mascot PNG has a black outline; buttons and scenery share it. */
+  --surface-outline: #14110d;
+  /* Selected states. Sampled from the mascot's circuits, darkened for text. */
+  --surface-violet: #6a2ee6;
 
   /* Scenery (components/Scenery.tsx): a turquoise morning over the valley. */
   --scene-sky-top: #bde8e2;
@@ -45,7 +49,7 @@
   --scene-fern-deep: #2f7d4a;
   --scene-fern-rib: #1f5a36;
   --scene-firefly: transparent;
-  --scene-outline: #1b2a22;
+  --scene-outline: #14110d;
 }
 
 /* Dark mode is the same valley at dusk. */
@@ -62,6 +66,7 @@
   --surface-rust: #f2a476;
   --surface-card: #1f4a38;
   --surface-outline: #050f0a;
+  --surface-violet: #c9b6ff;
 
   --scene-sky-top: #0b1d28;
   --scene-sky-mid: #123a3a;
@@ -99,12 +104,15 @@
   --color-line: var(--surface-line);
   --color-card: var(--surface-card);
   --color-outline: var(--surface-outline);
+  --color-violet: var(--surface-violet);
+  /* Violet on forest panels, whatever the theme (6.9:1 on night). */
+  --color-violet-soft: #c9b6ff;
   /* "Night" is the deep forest green used for the dark panels. */
   --color-night: #163a2b;
   --color-night-line: #33604a;
   --color-night-soft: #1f4a38;
-  /* The mascot's orange: accent buttons and labels on forest panels. */
-  --color-peach: #f5a24a;
+  /* The mascot's orange: primary buttons and labels on forest panels. */
+  --color-peach: #f9a11b;
   /* Scored filler words on the dark listening panel (6.5:1 on night). */
   --color-rose: #ff9eb5;
   --color-mint: #a6e3d2;
@@ -289,6 +297,17 @@ body {
 
 h1, h2, h3 {
   text-wrap: balance;
+}
+
+/* Dense labels (table headers, chart captions, field names) use the body face
+   at a readable size. Monospace is kept for short details such as times. */
+.label {
+  font-family: var(--font-dm-sans), sans-serif;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-muted);
 }
 
 /* Keyboard focus: always visible, teal on light surfaces, mint on dark ones. */

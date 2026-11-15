@@ -103,7 +103,7 @@ export default function Home() {
           .
         </p>
       )}
-      <p className="text-[13px] text-muted">Local demo data stays in this browser. AWS sign-in and sync are not connected.</p>
+      <p className="text-sm text-muted">Local demo data stays in this browser. AWS sign-in and sync are not connected.</p>
     </PageShell>
   );
 }

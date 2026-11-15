@@ -1,3 +1,5 @@
+import { pageColumn } from "@/components/PageHeading";
+
 // Original scenery for the prehistoric valley, drawn as inline SVG.
 // Colours come from the --scene-* tokens in globals.css, so dark mode turns
 // the same valley to dusk. Everything here is decoration: aria-hidden, no text.
@@ -281,22 +283,19 @@ export function ValleyScene({ className }: { className?: string }) {
   );
 }
 
-/** Low hills and ferns along the bottom of every page. */
-export function SceneFooter() {
+/**
+ * The footer on every page: a ground line with one plant growing on it.
+ * Working screens stay calm; the full scenery belongs to home and sign-in.
+ */
+export function SiteFooter() {
   return (
-    <footer className="relative mt-auto w-full overflow-hidden pt-12">
-      <svg viewBox="0 0 1440 132" preserveAspectRatio="xMidYMax slice" className="block h-[120px] w-full" aria-hidden="true" focusable="false">
-        <path className="fill-(--scene-ridge-far)" d="M0 70L120 38L230 62L370 22L500 60L640 34L760 66L900 26L1040 62L1180 30L1310 58L1440 36V132H0Z" />
-        <path className="fill-(--scene-hill) stroke-(--scene-hill-line)" strokeWidth="3.5" strokeLinejoin="round"
-          d="M-10 84Q130 44 290 76Q430 50 580 80Q760 46 930 78Q1090 48 1250 74Q1360 58 1450 72V140H-10Z" />
-        <path className="fill-(--scene-ground) stroke-(--scene-outline)" strokeWidth="4"
-          d="M-10 104Q360 88 720 100Q1080 110 1450 96V140H-10Z" />
-      </svg>
-      <FernCluster shape="low" className="pointer-events-none absolute -bottom-1 -left-2 w-24 md:left-10 md:w-36" />
-      <FernCluster className="pointer-events-none absolute -bottom-1 -right-2 w-20 md:right-14 md:w-32" />
-      <p className="absolute inset-x-0 bottom-2.5 px-24 text-center font-mono text-[11px] text-ink md:px-48">
-        SPEAKUP · DS3 AT UC SAN DIEGO
-      </p>
+    <footer className="mt-auto w-full pt-14">
+      <div className="border-t-2 border-line">
+        <div className={`${pageColumn} relative py-5`}>
+          <FernCluster shape="low" className="pointer-events-none absolute -top-[46px] right-4 w-20 sm:right-6 lg:right-8" />
+          <p className="pr-24 text-sm text-muted">SpeakUp · DS3 at UC San Diego</p>
+        </div>
+      </div>
     </footer>
   );
 }
