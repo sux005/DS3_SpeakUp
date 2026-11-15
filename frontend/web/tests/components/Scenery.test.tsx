@@ -1,12 +1,12 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { Ammonite, Egg, FernCluster, SiteFooter, StrataDivider, ValleyScene } from "@/components/Scenery";
+import { Ammonite, Egg, FernCluster, Perch, SiteFooter, StrataDivider, ValleyBackdrop } from "@/components/Scenery";
 
 describe("Scenery", () => {
   it("keeps every drawing out of the accessibility tree", () => {
     const { container } = render(
       <>
-        <ValleyScene className="scene" />
+        <ValleyBackdrop className="scene" />
         <FernCluster />
         <FernCluster shape="low" className="low" />
         <Egg />
@@ -21,11 +21,16 @@ describe("Scenery", () => {
     }
   });
 
-  it("draws the valley as three layers so the mist can drift on its own", () => {
-    const { container } = render(<ValleyScene />);
-    expect(container.querySelectorAll("svg")).toHaveLength(3);
-    expect(container.querySelectorAll("svg.scene-mist rect").length).toBeGreaterThan(0);
+  it("builds the valley from separate layers, with mist and fireflies as plain elements", () => {
+    const { container } = render(<ValleyBackdrop />);
+    expect(container.querySelectorAll("svg")).toHaveLength(2);
+    expect(container.querySelectorAll("div.scene-mist")).toHaveLength(2);
     expect(container.querySelectorAll(".scene-fireflies span")).toHaveLength(6);
+  });
+
+  it("seats whatever it is given on the rock ledge", () => {
+    render(<Perch className="w-40"><span>sitter</span></Perch>);
+    expect(screen.getByText("sitter")).toBeTruthy();
   });
 
   it("sways each fern clump as a whole and offsets the low one", () => {

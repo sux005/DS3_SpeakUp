@@ -25,6 +25,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("next/image", () => ({ default: (props: Record<string, unknown>) => createElement("img", { ...props, alt: String(props.alt ?? "") }) }));
 vi.mock("next/link", () => ({ default: ({ href, children, ...props }: { href: string; children: React.ReactNode }) => <a href={href} {...props}>{children}</a> }));
 vi.mock("@/components/PageHeading", () => ({
+  pageColumn: "",
   PageShell: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
   PageHeading: ({ crumb, title, subtitle }: { crumb: string; title: React.ReactNode; subtitle: string }) => <header><span>{crumb}</span><h1>{title}</h1><p>{subtitle}</p></header>,
 }));
@@ -61,6 +62,32 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("home and project routes", () => {
+  it("features the most recently worked-on presentation and lists the others", () => {
+    harness.store.projects = [project("project-1"), { ...project("project-2"), project_title: "Second talk" }];
+    harness.store.recordings = [recording("recording-1"), { ...recording("recording-2", "PROCESSING", "project-2"), created_at: "2025-02-01T00:00:00.000Z" }];
+    render(<Home />);
+    const featured = screen.getByRole("article");
+    expect(within(featured).getByText("Pick up where you left off")).toBeTruthy();
+    expect(within(featured).getByRole("heading", { name: "Second talk" })).toBeTruthy();
+    expect(within(featured).getByText("Take 01 is processing")).toBeTruthy();
+    expect(within(featured).getByRole("link", { name: "View status" }).getAttribute("href")).toBe("/recordings/recording-2/analyzing");
+    expect(within(featured).getByRole("link", { name: "+ New attempt" }).getAttribute("href")).toBe("/projects/project-2/new");
+    expect(screen.getByRole("heading", { name: "Other presentations" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Demo project" })).toBeTruthy();
+  });
+
+  it.each([
+    ["COMPLETE", "Take 01 is recorded", "Review take 01"],
+    ["FAILED", "Take 01 failed", null],
+    ["DELETED", "Take 01 was removed", null],
+  ] as const)("describes a %s latest attempt honestly", (status, note, action) => {
+    harness.store.recordings = [recording("recording-1", status)];
+    render(<Home />);
+    expect(screen.getByText(note)).toBeTruthy();
+    if (action) expect(screen.getByRole("link", { name: action }).getAttribute("href")).toBe("/recordings/recording-1");
+    else expect(screen.queryByRole("link", { name: /Review|View status/ })).toBeNull();
+  });
+
   it("counts one attempt in the singular and links to a scored review only when one exists", () => {
     render(<Home />);
     expect(screen.getByText("1 attempt")).toBeTruthy();

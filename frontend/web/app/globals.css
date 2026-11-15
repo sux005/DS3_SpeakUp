@@ -155,8 +155,8 @@ body {
 }
 .scene-fireflies span {
   position: absolute;
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--scene-firefly);
   opacity: 0.7;

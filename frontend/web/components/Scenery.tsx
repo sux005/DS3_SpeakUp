@@ -159,125 +159,107 @@ export function StrataDivider() {
 function TreeFern({ x, y, scale = 1 }: { x: number; y: number; scale?: number }) {
   return (
     <g transform={`translate(${x} ${y}) scale(${scale})`}>
-      <path d="M0 0C-3-28 4-52 0-78" fill="none" className="stroke-(--scene-hill-line)" strokeWidth="9" strokeLinecap="round" />
-      <g className="fill-(--scene-hill-top) stroke-(--scene-hill-line)" strokeWidth="3" strokeLinejoin="round">
-        {[30, -8, -48, -90, -132, -170, -208].map((angle) => (
-          <path key={angle} d="M0-78Q24-112 62-96Q28-88 0-78Z" transform={`rotate(${angle} 0 -78)`} />
+      <path d="M0 0C-3-28 4-52 0-78" fill="none" className="stroke-(--scene-outline)" strokeWidth="11" strokeLinecap="round" />
+      <path d="M0 0C-3-28 4-52 0-78" fill="none" className="stroke-(--scene-hill-line)" strokeWidth="6" strokeLinecap="round" />
+      <g className="fill-(--scene-fern) stroke-(--scene-outline)" strokeWidth="2.4" strokeLinejoin="round">
+        {[30, -8, -48, -90, -132, -170, -208].map((angle, index) => (
+          <path key={angle} d="M0-78Q24-112 62-96Q28-88 0-78Z" transform={`rotate(${angle} 0 -78)`} className={index % 2 ? "fill-(--scene-fern-deep)" : undefined} />
         ))}
       </g>
     </g>
   );
 }
 
-function Footprint({ x, y, rotate = 0 }: { x: number; y: number; rotate?: number }) {
-  return (
-    <g transform={`translate(${x} ${y}) rotate(${rotate})`} className="fill-(--scene-ground-mark)">
-      <ellipse cx="0" cy="6" rx="6" ry="7" />
-      <ellipse cx="-9" cy="-7" rx="3.5" ry="7" transform="rotate(-24 -9 -7)" />
-      <ellipse cx="0" cy="-11" rx="3.5" ry="8" />
-      <ellipse cx="9" cy="-7" rx="3.5" ry="7" transform="rotate(24 9 -7)" />
-    </g>
-  );
-}
-
-const sceneBox = {
-  viewBox: "0 0 1440 560",
-  preserveAspectRatio: "xMidYMax slice",
-  focusable: "false",
-} as const;
-
-// Firefly positions as [left %, bottom %] of the scene.
-const fireflies = [[22, 30], [38, 44], [51, 24], [63, 38], [74, 27], [86, 41]];
+// Firefly positions as [left %, bottom px] of the backdrop.
+const fireflies = [[12, 150], [27, 196], [44, 138], [58, 210], [71, 160], [90, 188]];
 
 /**
- * The landing scene: misty ridges, forested hills, a turquoise lake and a rocky
- * clearing. The sky is left transparent so the section's own gradient shows.
+ * The valley behind the home heading and the sign-in illustration. It fills
+ * its parent and has no frame: the sky starts as the page colour, and the
+ * ground ends in an uneven cut edge, like a slice lifted out of a dig.
  *
- * Three stacked drawings share one viewBox: the far ridge, the mist, and
- * everything nearer. Keeping the mist on its own layer lets it drift as a
- * whole element instead of redrawing the scene on every frame.
+ * Built from separate layers anchored to the bottom so the composition holds
+ * at any width: far mesas, drifting mist, a lake, and the ground slice.
  */
-export function ValleyScene({ className }: { className?: string }) {
+export function ValleyBackdrop({ className }: { className?: string }) {
   return (
-    <div className={className} aria-hidden="true">
-      <svg {...sceneBox} className="absolute inset-0 size-full">
-      {/* Sun by day, moon at dusk */}
-      <circle cx="1004" cy="196" r="92" className="fill-(--scene-sun-glow)" />
-      <circle cx="1004" cy="196" r="58" className="fill-(--scene-sun)" />
+    <div className={`pointer-events-none absolute inset-0 overflow-hidden ${className ?? ""}`} aria-hidden="true">
+      <div className="absolute inset-0 bg-linear-to-b from-background via-(--scene-sky-mid) to-(--scene-sky-low)" />
+      {/* Sun by day, moon at dusk, half hidden by a mesa */}
+      <div className="absolute bottom-[150px] left-[56%] size-[150px] rounded-full bg-(--scene-sun-glow)" />
+      <div className="absolute bottom-[176px] left-[calc(56%+26px)] size-[98px] rounded-full bg-(--scene-sun)" />
 
-      {/* Flyers far off */}
-      <g fill="none" className="stroke-(--scene-ridge-mid-line)" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M1150 122q9-10 18-1q9-9 18 1" />
-        <path d="M1206 96q7-8 14-1q7-7 14 1" />
-      </g>
-
-      {/* Far ridge, lost in mist */}
-      <path className="fill-(--scene-ridge-far)" strokeLinejoin="round"
-        d="M0 352L80 322L150 344L250 300L330 336L420 310L520 340L640 286L720 322L810 262L900 320L990 236L1070 300L1168 204L1262 290L1350 246L1440 300V560H0Z" />
+      {/* Far mesas: flat tops of uneven width, low on the left where the heading
+          sits and tallest right of centre, with a nearer row of low hills */}
+      <svg viewBox="0 0 1600 150" preserveAspectRatio="xMidYMax slice" focusable="false" className="absolute inset-x-0 bottom-[120px] h-[150px] w-full">
+        <path className="fill-(--scene-ridge-far) stroke-(--scene-ridge-far)" strokeWidth="8" strokeLinejoin="round"
+          d="M-10 150V118L90 118L108 100L250 100L270 120Q360 106 450 118L560 118L580 102L700 102L718 120Q800 110 860 116L900 116L930 44L1060 44L1090 104L1160 104L1184 70L1330 70L1354 112L1440 112L1462 86L1560 86L1580 112L1610 112V150Z" />
+        <path className="fill-(--scene-ridge-mid) stroke-(--scene-ridge-mid-line)" strokeWidth="2.5" strokeLinejoin="round"
+          d="M-10 150V126Q110 100 226 124Q300 108 384 126L470 126L490 100L604 100L622 128Q760 108 900 130Q1014 112 1120 128L1184 128L1202 106L1334 106L1354 130Q1482 114 1610 128V150Z" />
       </svg>
-
-      <svg {...sceneBox} className="scene-mist absolute inset-0 size-full overflow-visible fill-(--scene-mist)">
-        <rect x="60" y="330" width="380" height="22" rx="11" />
-        <rect x="300" y="352" width="240" height="16" rx="8" />
-        <rect x="560" y="312" width="300" height="18" rx="9" />
-        <rect x="1010" y="286" width="340" height="22" rx="11" />
-        <rect x="1180" y="318" width="220" height="16" rx="8" />
-      </svg>
-
-      <svg {...sceneBox} className="absolute inset-0 size-full">
-      {/* Nearer ridge */}
-      <path className="fill-(--scene-ridge-mid) stroke-(--scene-ridge-mid-line)" strokeWidth="3" strokeLinejoin="round"
-        d="M-10 392L110 356L210 384L330 342L450 380L580 350L700 388L850 330L960 376L1100 300L1210 364L1330 318L1450 366V560H-10Z" />
-      {/* Forested hills with tree ferns */}
-      <TreeFern x={1238} y={398} scale={0.9} />
-      <TreeFern x={1326} y={410} scale={0.68} />
-      <TreeFern x={214} y={412} scale={0.7} />
-      <TreeFern x={596} y={420} scale={0.56} />
-      <path className="fill-(--scene-hill) stroke-(--scene-hill-line)" strokeWidth="3.5" strokeLinejoin="round"
-        d="M-10 430Q110 384 240 414Q340 386 450 418Q600 390 740 426Q880 392 1010 420Q1150 372 1290 404Q1380 388 1450 406V560H-10Z" />
-      <g className="fill-(--scene-hill-top)">
-        <ellipse cx="120" cy="424" rx="34" ry="9" />
-        <ellipse cx="650" cy="424" rx="40" ry="8" />
-        <ellipse cx="1150" cy="408" rx="46" ry="9" />
-      </g>
+      <div className="scene-mist absolute bottom-[142px] left-[36%] h-3.5 w-[16%] rounded-full bg-(--scene-mist)" />
+      <div className="scene-mist absolute bottom-[190px] left-[4%] h-4 w-[14%] rounded-full bg-(--scene-mist)" />
 
       {/* Lake */}
-      <path className="fill-(--scene-lake) stroke-(--scene-lake-line)" strokeWidth="3.5"
-        d="M-10 446Q360 424 720 440Q1080 454 1450 432V560H-10Z" />
-      <g fill="none" className="stroke-(--scene-lake-light)" strokeWidth="4" strokeLinecap="round">
-        <path d="M150 458h70M260 470h40M520 456h90M650 470h36M900 462h80M1010 474h40M1240 456h70" />
-      </g>
+      <div className="absolute inset-x-0 bottom-[66px] h-[62px] border-t-[3px] border-(--scene-lake-line) bg-(--scene-lake)">
+        {[[6, 14, 70], [19, 30, 36], [41, 12, 84], [57, 28, 44], [78, 16, 64]].map(([left, top, width]) => (
+          <span key={left} className="absolute h-1 rounded-full bg-(--scene-lake-light)" style={{ left: `${left}%`, top, width }} />
+        ))}
+      </div>
 
-      {/* Rocky clearing */}
-      <path className="fill-(--scene-ground) stroke-(--scene-outline)" strokeWidth="4" strokeLinejoin="round"
-        d="M-10 496Q200 470 430 488Q700 508 960 482Q1200 462 1450 486V570H-10Z" />
-      <Footprint x={470} y={528} rotate={78} />
-      <Footprint x={540} y={512} rotate={70} />
-      <Footprint x={612} y={530} rotate={80} />
-      <Footprint x={684} y={514} rotate={72} />
+      {/* Below the cut edge the page shows through, so the scene has no frame. */}
+      <div className="absolute inset-x-0 bottom-0 h-[44px] bg-background" />
 
-      {/* Rocks, one with a fossil in it */}
-      <g className="fill-(--scene-rock) stroke-(--scene-outline)" strokeWidth="4" strokeLinejoin="round">
-        <path d="M300 506Q296 472 334 464Q372 458 388 486Q396 504 384 508Z" />
-        <path d="M374 508Q372 490 392 486Q414 484 420 500Q422 508 416 510Z" />
-        <path d="M770 512Q762 462 818 452Q880 446 898 490Q904 510 888 514Z" />
-        <path d="M1118 492Q1116 474 1140 470Q1164 468 1170 484Q1172 492 1166 494Z" />
-      </g>
-      <g transform="translate(800 458) scale(0.78)" className="text-(--scene-rock-mark)">
-        <AmmoniteShapes />
-      </g>
-
-      {/* A clutch of eggs */}
-      <g transform="translate(596 446) rotate(-10)"><g transform="scale(0.74)"><EggShapes /></g></g>
-      <g transform="translate(644 452) rotate(8)"><g transform="scale(0.82)"><EggShapes /></g></g>
-
+      {/* Ground slice: an uneven surface above and a cut edge with strata below */}
+      <svg viewBox="0 0 1600 112" preserveAspectRatio="xMidYMax slice" focusable="false" className="absolute inset-x-0 bottom-0 h-[112px] w-full">
+        <path className="fill-(--scene-ground) stroke-(--scene-outline)" strokeWidth="3.5" strokeLinejoin="round"
+          d="M-10 36Q80 18 190 30Q300 44 400 26Q540 6 690 28Q800 42 930 34Q1070 16 1200 28Q1340 46 1460 24Q1540 12 1610 26V86Q1500 104 1380 92Q1250 78 1120 96Q980 110 840 94Q700 80 560 98Q420 110 290 92Q160 80 60 96L-10 90Z" />
+        <g fill="none" className="stroke-(--scene-ground-mark)" strokeWidth="3" strokeLinecap="round">
+          <path d="M-10 62Q200 50 420 64Q700 78 960 60Q1240 46 1610 62" />
+          <path d="M120 78h54M470 84h90M905 78h48M1290 76h70" strokeDasharray="1 9" />
+        </g>
+        <g transform="translate(248 56) scale(0.34)" className="text-(--scene-ground-mark)"><AmmoniteShapes /></g>
+        <g className="fill-(--scene-ground-mark)">
+          <ellipse cx="640" cy="50" rx="9" ry="5" />
+          <ellipse cx="664" cy="56" rx="5" ry="3" />
+          <ellipse cx="1088" cy="46" rx="8" ry="4.5" />
+        </g>
       </svg>
 
-      {/* Fireflies, only at dusk */}
-      <div className="scene-fireflies absolute inset-0">
+      <div className="scene-fireflies">
         {fireflies.map(([left, bottom]) => (
-          <span key={left} style={{ left: `${left}%`, bottom: `${bottom}%` }} />
+          <span key={left} style={{ left: `${left}%`, bottom }} />
         ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A rock ledge with a tree fern behind it and plants at its foot, for the
+ * mascot to sit on. Pass the mascot as children; it is placed on the ledge.
+ * Size it with a width class: everything inside scales together.
+ */
+export function Perch({ children, className }: { children?: React.ReactNode; className?: string }) {
+  return (
+    <div className={`pointer-events-none ${className ?? ""}`}>
+      <div className="relative aspect-[44/30] w-full">
+      <svg viewBox="0 0 440 300" className="absolute inset-0 size-full overflow-visible" aria-hidden="true" focusable="false">
+        <TreeFern x={352} y={214} scale={1.7} />
+        <TreeFern x={410} y={236} scale={0.95} />
+        <path className="fill-(--scene-rock) stroke-(--scene-outline)" strokeWidth="4" strokeLinejoin="round"
+          d="M34 300C22 262 40 236 78 226L104 200C122 184 150 184 176 186L318 182C356 182 384 196 398 222C424 240 432 270 424 300Z" />
+        <g fill="none" className="stroke-(--scene-rock-mark)" strokeWidth="3" strokeLinecap="round">
+          <path d="M98 216Q230 204 384 220" />
+          <path d="M62 256Q210 240 408 258" />
+          <path d="M150 282h46M280 278h70" />
+        </g>
+        <g transform="translate(222 232) scale(0.5)" className="text-(--scene-rock-mark)"><AmmoniteShapes /></g>
+      </svg>
+      <div className="absolute bottom-[37%] left-[26%] w-[40%]">{children}</div>
+      <FernCluster className="absolute bottom-0 -left-[7%] w-[38%]" />
+      <Egg className="absolute right-[2%] bottom-[1%] w-[9%]" />
+      <Egg cracked className="absolute right-[12%] bottom-0 w-[8%]" />
       </div>
     </div>
   );
