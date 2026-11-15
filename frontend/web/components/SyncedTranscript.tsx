@@ -132,7 +132,7 @@ export function SyncedTranscript({ sentences, pauses, moments = [], currentTime,
       <div className="relative">
       <ol
         ref={listRef}
-        className="relative max-h-[480px] overflow-y-auto overscroll-contain rounded-2xl border-2 border-night-line"
+        className="relative max-h-[480px] overflow-y-auto overscroll-contain rounded-2xl border-2 border-night-line lg:max-h-[580px]"
         aria-label="Transcript sentences"
         onWheel={stopFollowing}
         onTouchMove={stopFollowing}

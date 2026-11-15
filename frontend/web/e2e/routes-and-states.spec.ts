@@ -125,7 +125,8 @@ test.describe("analyzing and results route states", () => {
     await expect(page.getByRole("heading", { name: "Your results" })).toBeVisible();
     await page.getByRole("button", { name: /^00:00 · Strength/ }).click();
     const listen = page.getByRole("region", { name: "Listen back" });
-    await expect(listen.getByText("Clear start")).toBeVisible();
+    // Once in Moments to replay, and once in the detail opened from the timeline.
+    await expect(listen.getByText("Clear start")).toHaveCount(2);
     await expect(listen.getByText("Keep this energy.")).toBeVisible();
   });
 });

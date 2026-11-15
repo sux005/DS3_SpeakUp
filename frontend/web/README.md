@@ -38,14 +38,20 @@ Presentation and recording state is held in `lib/demo-store.tsx`, seeded from `d
 
 ## Results page
 
-`/recordings/{recordingId}` has three sections, top to bottom:
+`/recordings/{recordingId}` is ordered for understanding first and detail second:
 
-1. **Listen back.** Playback controls, timestamped markers above the progress bar, and the transcript in one dark panel. The `<audio>` element's `currentTime` is the only playback clock; the time display, progress bar, markers and transcript highlight all read it.
-   - Markers: scored fillers (rose), pauses inside sentences (peach) and coaching moments (mint). Markers closer than 24 px merge into one with a count; **← Previous / Next →** step through them. Clicking a marker seeks there, plays, and scrolls its sentence into view.
+1. **Header.** Presentation and take, date and length, and **Practice again**.
+2. **Your takeaway.** One strength and one priority. With coaching they are the coach's first strength and first improvement moment, under the coach's summary. Without coaching they are the highest and lowest rubric scores, each labelled "From your measurements", and a note says coaching isn't available. "Strength" is only used for a score of 3 or 4 (otherwise "Closest to target"), and no strength is singled out when every score is level. There is no overall score.
+3. **Your scores.** One concise card each for speaking rate, filler words and pauses inside sentences: measured value and unit, score out of 4, target, and one line of interpretation (the coaching for that metric, or the plain difference from target labelled "Measured"). **About this score** opens the definition, the rubric tip and the full rubric.
+4. **Listen back.** One dark panel, two columns on wide screens: playback, timeline markers and **Moments to replay** on the left, the synced transcript on the right. The `<audio>` element's `currentTime` is the only playback clock; the time display, progress bar, markers and transcript highlight all read it.
+   - Markers: scored fillers (rose), pauses inside sentences (orange) and coaching moments (mint). Markers closer than 24 px merge into one with a count; **← Previous / Next →** step through them. Clicking a marker seeks there, plays, and scrolls its sentence into view.
+   - Moments to replay: the coach's moments, or else the first fillers and longest pauses inside sentences. Each plays from its time and reveals its sentence.
    - Transcript: one button per sentence (click seeks to its start; a click on a word seeks to the word with a 0.5 s lead-in). The current sentence gets a slightly lighter background. Fillers are highlighted inline; pauses inside sentences show as ‖ and natural pauses between sentences as a quiet line between them.
    - Follow mode keeps the current sentence in view during playback. Scrolling the transcript yourself turns it off; **Resume following** or clicking a sentence turns it back on.
-2. **Your scores.** One card each for speaking rate, filler words and pauses inside sentences: measured value and unit, score out of 4, target range, what the metric measures, coaching for that metric (or the rubric tip, labelled), and an expandable full rubric.
-3. **Overall summary.** What happened → supporting evidence (timestamps that play from that point) → what to try next. Without coaching it says so and uses only measurements and the rubric, labelled as such.
+5. **Your next practice step.** One sentence: the coach's general next step, or else the rubric tip for the lowest score, labelled as a rubric tip.
+6. **History.** Trend charts once two attempts are scored. With one, a line says another scored attempt is needed to compare.
+
+The wording for the takeaway, evidence and next step is built in `lib/takeaway.ts`, and target comparisons in `lib/targets.ts`. Comparisons are plain subtraction; whether a value is on target is taken from the backend's score, never decided here.
 
 Data each part uses, from the analysis and feedback payloads (no scores are recalculated here):
 
@@ -99,8 +105,9 @@ The mascot is the approved artwork in `public/mascot/`: three transparent PNGs, 
 | `components/ProgressCharts.tsx` | Single-attempt summary with target comparison, or trend charts once two attempts are scored |
 | `components/AudioReviewPlayer.tsx` | Playback controls and timeline markers |
 | `components/SyncedTranscript.tsx` | Transcript synced to playback, with follow mode |
-| `components/ScoreCards.tsx` | Combined score, rubric and feedback cards |
-| `components/SummaryFeedback.tsx` | Overall summary: what happened, evidence, next step |
+| `components/ScoreCards.tsx` | Concise metric cards with an expandable rubric |
+| `components/ResultsSummary.tsx` | Takeaway, moments to replay, and the next practice step |
+| `lib/takeaway.ts`, `lib/targets.ts` | Wording for the takeaway and next step; target comparisons |
 | `lib/markers.ts` | Building and clustering timeline markers |
 | `lib/transcript.ts` | Sentences, the playing sentence, and pause placement |
 | `data/` | Seed API payloads for this frontend preview; `data/demo/` holds the seeded review |

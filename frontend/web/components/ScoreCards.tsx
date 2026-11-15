@@ -1,15 +1,16 @@
 "use client";
 
-// One card per scored metric, combining what used to be split between the score
-// tiles, the rubric page and the coaching column: the measured value and unit,
-// the score out of 4, the target range, what the metric measures, and feedback.
-// Feedback is the coaching category when the backend sent one; otherwise the
-// rubric's tip for that score, labelled as such. Scores and units come straight
-// from the analysis; nothing is recalculated here.
+// One concise card per scored metric: the measured value and unit, the score
+// out of 4, the target, and one line of interpretation. That line is the
+// coaching category when the backend sent one; otherwise the plain difference
+// from the target, labelled as measured. The definition, the rubric tip and
+// the full rubric table open on request. Scores come straight from the
+// analysis; nothing is recalculated here.
 
 import { useId, useState } from "react";
 import { RubricScore } from "@/components/RubricScore";
 import { minimumSpeakingSeconds, rubric, type MetricKey, type RubricMetric } from "@/lib/rubric";
+import { compareToTarget, metricDisplay, targetText } from "@/lib/targets";
 import type { AnalysisMetrics, FeedbackCategory } from "@/lib/types";
 
 type CoachingCategories = Partial<Record<"general" | "pace" | "fillers" | "pauses", FeedbackCategory>>;
@@ -19,17 +20,6 @@ const categoryFor: Record<MetricKey, "pace" | "fillers" | "pauses"> = {
   filler_words: "fillers",
   pauses_inside_sentences: "pauses",
 };
-
-function measured(metric: MetricKey, metrics: AnalysisMetrics) {
-  switch (metric) {
-    case "speaking_rate":
-      return { value: `${metrics.words_per_minute}`, unit: "WPM" };
-    case "filler_words":
-      return { value: `${metrics.fillers_per_100_words}`, unit: "per 100 words" };
-    case "pauses_inside_sentences":
-      return { value: `${metrics.pauses_per_speaking_minute}`, unit: "per speaking-min" };
-  }
-}
 
 // Counts the analysis reports alongside each score, when it includes them.
 function details(metric: MetricKey, metrics: AnalysisMetrics): string[] {
@@ -54,44 +44,30 @@ function ScoreCard({ metric, metrics, coaching }: { metric: RubricMetric; metric
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const score = metrics.rubric_scores[metric.key];
-  const { value, unit } = measured(metric.key, metrics);
-  const extra = details(metric.key, metrics);
+  const display = metricDisplay(metric.key);
+  const value = display.value(metrics);
+  const [count, ...moreCounts] = details(metric.key, metrics);
 
   return (
-    <article className="flex flex-col gap-4 rounded-2xl border-2 border-line bg-card p-5 sm:p-6" aria-labelledby={`${panelId}-title`}>
-      <header className="flex flex-col gap-1">
-        <h3 id={`${panelId}-title`} className="font-display text-xl font-bold text-ink">{metric.title}</h3>
-        <p className="text-sm text-muted">{metric.measures}</p>
-      </header>
+    <article className="flex flex-col gap-3 rounded-2xl border-2 border-line bg-card p-5 sm:p-6" aria-labelledby={`${panelId}-title`}>
+      <h3 id={`${panelId}-title`} className="font-display text-xl font-bold text-ink">{metric.title}</h3>
+
+      <p className="flex flex-wrap items-baseline gap-x-2">
+        <span className="font-display text-4xl font-bold text-ink">{value}</span>
+        <span className="text-[15px] text-muted">{display.unit}</span>
+      </p>
 
       <div aria-label={score === null ? "Not scored" : `Score ${score} out of 4`} role="img">
         <RubricScore score={score} />
       </div>
 
-      <dl className="grid grid-cols-2 gap-3 border-y border-line py-3 text-sm">
-        <div>
-          <dt className="font-mono text-xs uppercase text-muted">You measured</dt>
-          <dd className="flex flex-col">
-            <span className="font-display text-2xl font-bold text-ink">{value}</span>
-            <span className="text-sm text-muted">{unit}</span>
-          </dd>
-        </div>
-        <div>
-          <dt className="font-mono text-xs uppercase text-muted">Target range</dt>
-          <dd className="pt-1.5 text-ink">{metric.bands[0].range}</dd>
-        </div>
-      </dl>
+      <p className="text-[15px] text-ink"><span className="font-semibold">Target:</span> {targetText(metric.key)}</p>
 
-      {extra.length > 0 && (
-        <ul className="flex flex-col gap-1 text-sm text-muted">
-          {extra.map((line) => <li key={line}>{line}</li>)}
-        </ul>
-      )}
-
-      <div className="flex flex-col gap-1 text-[15px] text-ink">
+      {/* One line of interpretation: the coach's, or else plain arithmetic against the target. */}
+      <div className="flex flex-col gap-1 border-t-2 border-line pt-3 text-[15px] text-ink">
         {coaching ? (
           <>
-            <p className="font-mono text-xs uppercase text-teal">Coaching</p>
+            <p className="label text-teal">Coaching</p>
             <p>{coaching.observation}</p>
             <p><span className="font-semibold">Next step:</span> {coaching.next_step}</p>
           </>
@@ -99,10 +75,11 @@ function ScoreCard({ metric, metrics, coaching }: { metric: RubricMetric; metric
           <p>Record at least {minimumSpeakingSeconds} seconds of speech to get a score.</p>
         ) : (
           <>
-            <p className="font-mono text-xs uppercase text-teal">Rubric tip</p>
-            <p>{metric.tips[score]}</p>
+            <p className="label">Measured</p>
+            <p>{compareToTarget(value, display.band, score)}.</p>
           </>
         )}
+        {count && <p className="text-sm text-muted">{count}</p>}
       </div>
 
       <div className="mt-auto">
@@ -111,19 +88,27 @@ function ScoreCard({ metric, metrics, coaching }: { metric: RubricMetric; metric
           aria-expanded={open}
           aria-controls={panelId}
           onClick={() => setOpen((value) => !value)}
-          className="flex min-h-10 w-full cursor-pointer items-center justify-between rounded-sm font-mono text-xs uppercase text-teal hover:underline"
+          className="flex min-h-11 w-full cursor-pointer items-center justify-between rounded-sm text-sm font-semibold text-teal hover:underline"
         >
-          Full rubric
+          About this score
           <span aria-hidden="true" className={`rubric-chevron ${open ? "rotate-180" : ""}`}>▾</span>
         </button>
         <div id={panelId} className={`rubric-panel grid ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`} inert={!open}>
-          <div className="overflow-hidden">
-            <table className="mt-2 w-full border-collapse text-left text-sm">
+          <div className="flex flex-col gap-3 overflow-hidden text-[15px] text-ink">
+            <p className="pt-1">{metric.measures}</p>
+            {moreCounts.map((line) => <p key={line} className="text-sm text-muted">{line}</p>)}
+            {!coaching && score !== null && (
+              <div>
+                <p className="label">Rubric tip for a score of {score}</p>
+                <p>{metric.tips[score]}</p>
+              </div>
+            )}
+            <table className="w-full border-collapse text-left">
               <caption className="sr-only">{metric.title} rubric, {metric.unit}</caption>
               <thead>
-                <tr className="font-mono text-xs text-muted">
-                  <th scope="col" className="border-b border-line py-1.5 pr-3 font-normal">SCORE</th>
-                  <th scope="col" className="border-b border-line py-1.5 font-normal">RANGE</th>
+                <tr className="label">
+                  <th scope="col" className="border-b-2 border-line py-1.5 pr-3 font-semibold">Score</th>
+                  <th scope="col" className="border-b-2 border-line py-1.5 font-semibold">Range</th>
                 </tr>
               </thead>
               <tbody>

@@ -9,17 +9,20 @@ const demo = demoAnalysis.data.metrics as AnalysisMetrics;
 const card = (title: string) => screen.getByRole("article", { name: title });
 
 describe("ScoreCards", () => {
-  it("shows the measured value, unit, score, target range and rubric tip for each metric", () => {
+  it("shows the measured value, unit, score, target and distance from target for each metric", () => {
     render(<ScoreCards metrics={demo} />);
     expect(screen.getAllByRole("article")).toHaveLength(3);
     const rate = card("Speaking rate");
     expect(within(rate).getByText("134.08")).toBeTruthy();
     expect(within(rate).getByText("WPM")).toBeTruthy();
     expect(within(rate).getByRole("img", { name: "Score 3 out of 4" })).toBeTruthy();
-    expect(within(rate.querySelector("dl")!).getByText("135–155 WPM")).toBeTruthy();
-    expect(within(rate).getByText("Rubric tip")).toBeTruthy();
-    expect(within(rate).getByText(rubric[0].tips[3])).toBeTruthy();
-    expect(within(card("Filler words")).getByRole("img", { name: "Score 0 out of 4" })).toBeTruthy();
+    expect(within(rate).getByText("Target:").parentElement!.textContent).toBe("Target: 135–155 WPM");
+    expect(within(rate).getByText("Measured")).toBeTruthy();
+    expect(within(rate).getByText("0.92 below the target range.")).toBeTruthy();
+    const fillers = card("Filler words");
+    expect(within(fillers).getByRole("img", { name: "Score 0 out of 4" })).toBeTruthy();
+    expect(within(fillers).getByText("Target:").parentElement!.textContent).toBe("Target: fewer than 2");
+    expect(within(fillers).getByText("9.64 above the target.")).toBeTruthy();
   });
 
   it("keeps scored fillers apart from watch-list words, and inside pauses apart from natural ones", () => {
@@ -37,7 +40,9 @@ describe("ScoreCards", () => {
     expect(within(fillers).getByText("Coaching")).toBeTruthy();
     expect(within(fillers).getByText("Fillers cluster at sentence starts.")).toBeTruthy();
     expect(within(fillers).getByText(/Breathe before starting/)).toBeTruthy();
-    expect(within(card("Speaking rate")).getByText("Rubric tip")).toBeTruthy();
+    expect(within(fillers).queryByText("Measured")).toBeNull();
+    expect(within(fillers).queryByText(/Rubric tip/)).toBeNull();
+    expect(within(card("Speaking rate")).getByText("Measured")).toBeTruthy();
   });
 
   it("explains an unscored metric instead of showing a tip", () => {
@@ -55,16 +60,19 @@ describe("ScoreCards", () => {
     expect(screen.queryByText(/natural pauses/)).toBeNull();
   });
 
-  it("expands the full rubric and marks the band for this score", () => {
+  it("opens the definition, the rubric tip and the full rubric on request", () => {
     render(<ScoreCards metrics={demo} />);
     const rate = card("Speaking rate");
-    const toggle = within(rate).getByRole("button", { name: /Full rubric/ });
+    const toggle = within(rate).getByRole("button", { name: /About this score/ });
     const panel = document.getElementById(toggle.getAttribute("aria-controls")!)!;
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(panel.hasAttribute("inert")).toBe(true);
     fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(panel.hasAttribute("inert")).toBe(false);
+    expect(within(panel).getByText(rubric[0].measures)).toBeTruthy();
+    expect(within(panel).getByText("Rubric tip for a score of 3")).toBeTruthy();
+    expect(within(panel).getByText(rubric[0].tips[3])).toBeTruthy();
     const current = within(panel).getAllByRole("row").filter((row) => row.getAttribute("aria-current") === "true");
     expect(current).toHaveLength(1);
     expect(current[0].textContent).toContain("120–135 or 155–170 WPM");

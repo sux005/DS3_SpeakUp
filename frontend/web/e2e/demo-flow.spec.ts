@@ -100,8 +100,11 @@ test.describe("analysis and review states", () => {
     await expect(page.getByRole("heading", { name: "Your results" })).toBeVisible();
     await expect(page.getByRole("region", { name: "Your scores" }).getByText("134.08", { exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Transcript" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Overall summary" })).toBeVisible();
-    await expect(page.getByText("FOR YOUR NEXT TAKE")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your takeaway" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Moments to replay" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your next practice step" })).toBeVisible();
+    // The seeded clip has no coaching, and the page says so rather than inventing any.
+    await expect(page.getByRole("region", { name: "Your takeaway" }).getByRole("status")).toContainText("Coaching isn't available for this recording.");
   });
 
   test("guards a review that is still processing", async ({ page }) => {

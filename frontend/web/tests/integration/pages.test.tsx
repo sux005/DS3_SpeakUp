@@ -219,12 +219,21 @@ describe("results route", () => {
     expect(within(scores).getByText("Good pace")).toBeTruthy();
     expect(within(scores).getByText(/Pause once/)).toBeTruthy();
     expect(screen.getByText("Hello.")).toBeTruthy();
-    const summary = screen.getByRole("region", { name: "Overall summary" });
-    expect(within(summary).getByText("Keep the opening clear.")).toBeTruthy();
-    expect(within(summary).getByText("Strong point")).toBeTruthy();
-    expect(within(summary).getByText("Keep going")).toBeTruthy();
+    // The takeaway comes first and uses the coach's own words.
+    const takeaway = screen.getByRole("region", { name: "Your takeaway" });
+    expect(within(takeaway).getByText("Keep the opening clear.")).toBeTruthy();
+    expect(within(takeaway).getByText("Strong point")).toBeTruthy();
+    expect(within(takeaway).getByText("“Opening”")).toBeTruthy();
+    expect(within(screen.getByRole("region", { name: "Your next practice step" })).getByText("Keep going")).toBeTruthy();
+    // Evidence sits in the review panel beside the player and transcript.
+    const review = screen.getByRole("region", { name: "Listen back" });
+    expect(within(review).getByRole("heading", { name: "Moments to replay" })).toBeTruthy();
+    expect(within(review).getByText("Hello.")).toBeTruthy();
+    // One "Practice again" in the header; the next step has its own wording.
+    expect(screen.getAllByRole("link", { name: "Practice again →" })).toHaveLength(1);
+    expect(screen.getByRole("link", { name: "Record another attempt →" }).getAttribute("href")).toBe("/projects/project-1/new");
     fireEvent.click(screen.getByRole("button", { name: "Strength" }));
-    expect(screen.getAllByText("Clear")).toHaveLength(2);
+    expect(screen.getAllByText("Clear")).toHaveLength(3);
     expect(screen.getByText(/Repeat/)).toBeTruthy();
   });
 
