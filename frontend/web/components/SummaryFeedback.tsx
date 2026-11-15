@@ -122,7 +122,8 @@ export function SummaryFeedback({ review, metrics, canSeek, onSeek }: {
                     aria-label={`Play from ${formatClock(item.at)}: ${item.label}`}
                     className="press min-h-8 cursor-pointer rounded-lg border-2 border-teal px-2 font-mono text-xs text-teal hover:bg-teal hover:text-cream dark:hover:text-night disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:text-teal"
                   >
-                    ▶ {formatClock(item.at)}
+                    <svg aria-hidden="true" viewBox="0 0 10 12" className="mr-1.5 inline-block h-2.5 w-2 fill-current align-baseline"><path d="M0 0l10 6-10 6z" /></svg>
+                    {formatClock(item.at)}
                   </button>
                   <span className="text-ink">{item.label}</span>
                   {item.detail && <span className="w-full pl-0 text-sm text-muted sm:w-auto">{item.detail}</span>}

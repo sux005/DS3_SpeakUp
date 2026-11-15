@@ -205,8 +205,8 @@ export function ValleyScene({ className }: { className?: string }) {
 
       {/* Flyers far off */}
       <g fill="none" className="stroke-(--scene-ridge-mid-line)" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M770 150q9-10 18-1q9-9 18 1" />
-        <path d="M826 122q7-8 14-1q7-7 14 1" />
+        <path d="M1150 122q9-10 18-1q9-9 18 1" />
+        <path d="M1206 96q7-8 14-1q7-7 14 1" />
       </g>
 
       {/* Far ridge, lost in mist */}
