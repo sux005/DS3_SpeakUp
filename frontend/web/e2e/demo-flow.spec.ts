@@ -31,7 +31,8 @@ test.describe("fixture-backed presentation navigation", () => {
     await page.getByRole("link", { name: "+ New attempt" }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/new$`));
     await expect(page.getByRole("heading", { name: "Record or upload" })).toBeVisible();
-    await expect(page.getByText(/Upload WAV, MP3, M4A, or WebM audio/)).toBeVisible();
+    await expect(page.getByText("WAV, MP3, M4A or WebM, up to 100 MB.")).toBeVisible();
+    await expect(page.getByText("Uses your microphone. Recording stops after 10 minutes.")).toBeVisible();
   });
 
   test("uploads a local audio file and enters analyzing without an API", async ({ page }) => {
@@ -97,10 +98,13 @@ test.describe("analysis and review states", () => {
     await startWithCleanDemo(page);
     await page.goto(`/recordings/${completeRecordingId}`);
     await expect(page.getByRole("heading", { name: "Your results" })).toBeVisible();
-    await expect(page.getByText("120 WPM")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "The transcript" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Coaching" })).toBeVisible();
-    await expect(page.getByText("FOR YOUR NEXT TAKE")).toBeVisible();
+    await expect(page.getByRole("region", { name: "Your scores" }).getByText("134.08", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Transcript" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your takeaway" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Moments to replay" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your next practice step" })).toBeVisible();
+    // The seeded clip has no coaching, and the page says so rather than inventing any.
+    await expect(page.getByRole("region", { name: "Your takeaway" }).getByRole("status")).toContainText("Coaching isn't available for this recording.");
   });
 
   test("guards a review that is still processing", async ({ page }) => {

@@ -3,11 +3,10 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import projectsJson from "@/data/projects.json";
 import recordingsJson from "@/data/project-recordings.json";
-import transcriptJson from "@/data/transcript.json";
-import analysisJson from "@/data/analysis.json";
-import feedbackJson from "@/data/feedback.json";
+import demoTranscriptJson from "@/data/demo/transcript.json";
+import demoAnalysisJson from "@/data/demo/analysis.json";
 import limitsJson from "@/data/account-limits.json";
-import type { Project, Recording, RecordingReview, RecordingStatus } from "@/lib/types";
+import type { AnalysisMetrics, Project, Recording, RecordingReview, RecordingStatus, SummaryMetrics } from "@/lib/types";
 
 type DemoState = {
   projects: Project[];
@@ -24,23 +23,48 @@ type DemoContextValue = DemoState & {
 };
 
 const STORAGE_KEY = "speakup-frontend-demo-v1";
-const seedRecordingId = transcriptJson.recording_id;
-if (analysisJson.recording_id !== seedRecordingId || feedbackJson.recording_id !== seedRecordingId) {
+// The seeded review is the real demo clip in data/demo/: a 2-minute talk scored
+// by the backend's own scorer from public/demo/sample-take.mp3 (not committed;
+// see frontend/web/README.md). Its timestamps match that audio. data/*.json stay as
+// short API payload examples. No coaching is attached, because
+// data/feedback.json was written for the short example, not this clip.
+const seedRecordingId = demoTranscriptJson.recording_id;
+const seedAudioUrl = "/demo/sample-take.mp3";
+if (demoAnalysisJson.recording_id !== seedRecordingId) {
   throw new Error("Demo review artifacts must belong to one recording");
 }
+const seedAnalysis = demoAnalysisJson.data.metrics as AnalysisMetrics;
+const seedReview: RecordingReview = {
+  recording_id: seedRecordingId,
+  transcript: demoTranscriptJson.data,
+  analysis: seedAnalysis,
+  feedback: null,
+};
 
-const initialState: DemoState = {
+// The recording list's summary metrics are the analysis without its event lists.
+function summaryOf(analysis: AnalysisMetrics): SummaryMetrics {
+  const summary: Record<string, unknown> = { ...analysis };
+  for (const key of ["filler_occurrences", "pauses", "long_pauses"]) delete summary[key];
+  return summary as SummaryMetrics;
+}
+
+// Keeps the seeded recording's review and summary in step with data/demo/, even
+// when an older copy was saved in this browser.
+function withSeed(state: DemoState): DemoState {
+  return {
+    ...state,
+    recordings: state.recordings.map((recording) =>
+      recording.recording_id === seedRecordingId ? { ...recording, summary_metrics: summaryOf(seedAnalysis) } : recording
+    ),
+    reviews: { ...state.reviews, [seedRecordingId]: seedReview },
+  };
+}
+
+const initialState: DemoState = withSeed({
   projects: projectsJson.items as Project[],
   recordings: recordingsJson.items as Recording[],
-  reviews: {
-    [seedRecordingId]: {
-      recording_id: seedRecordingId,
-      transcript: transcriptJson.data,
-      analysis: analysisJson.data.metrics,
-      feedback: feedbackJson.data,
-    } as RecordingReview,
-  },
-};
+  reviews: {},
+});
 
 const DemoContext = createContext<DemoContextValue | null>(null);
 
@@ -120,7 +144,7 @@ function currentStatus(recording: Recording, now: number): RecordingStatus {
 export function DemoProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<DemoState>(initialState);
   const [ready, setReady] = useState(false);
-  const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
+  const [audioUrls, setAudioUrls] = useState<Record<string, string>>({ [seedRecordingId]: seedAudioUrl });
   const createdUrls = useRef<string[]>([]);
 
   useEffect(() => {
@@ -129,7 +153,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
       const saved = window.localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed: unknown = JSON.parse(saved);
-        if (isDemoState(parsed)) restored = parsed;
+        if (isDemoState(parsed)) restored = withSeed(parsed);
       }
     } catch {
       // A blocked or old browser store should not prevent the demo from opening.

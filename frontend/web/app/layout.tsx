@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
-import { DM_Mono, DM_Sans, Space_Grotesk } from "next/font/google";
+import { DM_Mono, DM_Sans, Fredoka } from "next/font/google";
+import { SiteFooter } from "@/components/Scenery";
 import { SiteNav } from "@/components/SiteNav";
 import { DemoProvider } from "@/lib/demo-store";
 import "./globals.css";
 
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-space-grotesk",
+// Rounded display face for headings; DM Sans and DM Mono stay for reading and labels.
+// Only 600 is loaded, so bold headings stay rounded without turning blobby at 700.
+const fredoka = Fredoka({
+  variable: "--font-fredoka",
   subsets: ["latin"],
+  weight: "600",
 });
 
 const dmSans = DM_Sans({
@@ -30,13 +34,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${spaceGrotesk.variable} ${dmSans.variable} ${dmMono.variable} h-full antialiased`}
+      className={`${fredoka.variable} ${dmSans.variable} ${dmMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <script dangerouslySetInnerHTML={{ __html: "try{document.documentElement.dataset.theme=localStorage.getItem('speakup-theme')==='dark'?'dark':'light'}catch{document.documentElement.dataset.theme='light'}" }} />
         <DemoProvider>
           <SiteNav />
           {children}
+          <SiteFooter />
         </DemoProvider>
       </body>
     </html>

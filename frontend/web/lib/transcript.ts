@@ -1,4 +1,4 @@
-import type { AnalysisMetrics, TranscriptItem } from "@/lib/types";
+import type { AnalysisMetrics, Pause, TranscriptItem } from "@/lib/types";
 
 export type Word = {
   start: number;
@@ -24,7 +24,7 @@ const SAME_MOMENT = 0.02;
 
 // Joins Transcribe's word-by-word items into sentences, marks each filler
 // word found by the analysis, and tags each sentence with the first filler
-// or pause inside it.
+// or pause inside it. Pauses the analysis marks as between sentences don't count.
 export function toSentences(items: TranscriptItem[], metrics: AnalysisMetrics) {
   const isFiller = (start: number) =>
     metrics.filler_occurrences.some((f) => Math.abs(f.start_seconds - start) < SAME_MOMENT);
@@ -63,9 +63,57 @@ export function toSentences(items: TranscriptItem[], metrics: AnalysisMetrics) {
   for (const sentence of sentences) {
     if (metrics.filler_occurrences.some((f) => within(sentence, f.start_seconds))) {
       sentence.tag = "FILLER";
-    } else if (metrics.pauses.some((p) => within(sentence, p.start_seconds))) {
+    } else if (metrics.pauses.some((p) => p.inside_sentence !== false && within(sentence, p.start_seconds))) {
       sentence.tag = "PAUSE";
     }
   }
   return sentences;
+}
+
+// The sentence playing at a given time. A sentence stays current until the next
+// one starts, so the highlight doesn't flicker off during gaps between them.
+// Returns -1 before the first word.
+export function activeSentenceIndex(sentences: Sentence[], seconds: number) {
+  let low = 0;
+  let high = sentences.length - 1;
+  let found = -1;
+  while (low <= high) {
+    const middle = (low + high) >> 1;
+    if (sentences[middle].start <= seconds) {
+      found = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return found;
+}
+
+// Where each pause sits in the transcript: after a word inside a sentence
+// (keyed "sentenceId:wordIndex"), or after a sentence (keyed by sentence id).
+// Position comes from timing; whether a pause counts as inside or between a
+// sentence comes from the backend's inside_sentence flag, which drives scoring.
+export type PausePlacement = {
+  afterWord: Map<string, Pause[]>;
+  afterSentence: Map<number, Pause[]>;
+};
+
+// Pause starts and word ends can differ slightly after rounding.
+const PAUSE_TOLERANCE = 0.05;
+
+export function placePauses(sentences: Sentence[], pauses: Pause[]): PausePlacement {
+  const placement: PausePlacement = { afterWord: new Map(), afterSentence: new Map() };
+  const add = <K,>(map: Map<K, Pause[]>, key: K, pause: Pause) => map.set(key, [...(map.get(key) ?? []), pause]);
+
+  for (const pause of pauses) {
+    const at = pause.start_seconds + PAUSE_TOLERANCE;
+    const index = activeSentenceIndex(sentences, at);
+    if (index === -1) continue;
+    const sentence = sentences[index];
+    const wordIndex = sentence.words.findLastIndex((word) => word.end <= at);
+    if (wordIndex === -1) continue;
+    if (wordIndex === sentence.words.length - 1) add(placement.afterSentence, sentence.id, pause);
+    else add(placement.afterWord, `${sentence.id}:${wordIndex}`, pause);
+  }
+  return placement;
 }
