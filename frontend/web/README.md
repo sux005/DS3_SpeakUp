@@ -21,7 +21,7 @@ npm run test:coverage # instrument frontend source for unit/integration coverage
 npm run test:all   # coverage, production build, and browser tests
 ```
 
-The browser suite runs against a local production server on port 3102. It uses the local demo fixtures and browser storage; it does not need the backend or AWS. On macOS it uses installed Google Chrome when available. On other systems install Playwright Chromium with `npx playwright install chromium` or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to a Chromium-compatible browser.
+The browser suite runs against a local production server on port 3102. It uses the local demo fixtures and browser storage; it does not need the backend or AWS. On macOS it uses installed Google Chrome when available. Microsoft Edge also works: set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to its binary. On other systems install Playwright Chromium with `npx playwright install chromium` or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to a Chromium-compatible browser.
 If Turbopack fails because the environment restricts local worker ports,
 `npx next build --webpack` is an alternative production build.
 Run `npm run build` first when invoking `npm run test:e2e` by itself; `npm run test:all` includes the build.
@@ -65,6 +65,25 @@ Motion uses the tokens in `app/globals.css` (CSS transitions, 200 ms or less). W
 
 The seeded review's transcript and analysis in `data/demo/` were produced by the backend scorer from `public/demo/sample-take.mp3`, an excerpt of a public ACL 2022 conference talk. The mp3 is not committed (`.gitignore`). Ask a teammate for the file and place it at `public/demo/sample-take.mp3` to hear playback. Without it, the page shows "This recording could not be loaded." and turns off playback and transcript seeking; the transcript, markers, scores and summary still display.
 
+## Theme
+
+The app is set in a prehistoric valley, after the DS3 dinosaur mascot. The product name stays SpeakUp.
+
+- **Colours and type.** Tokens live at the top of `app/globals.css`: warm cream paper, forest green ink and panels, turquoise links, and the mascot's orange for accent buttons. Dark mode is the same valley at dusk. Headings use Fredoka; DM Sans and DM Mono stay for reading and labels. Each text pairing is at least 4.5:1.
+- **Mascot.** `components/Mascot.tsx` draws the dinosaur as inline SVG with seven poses (`wave`, `cheer`, `listen`, `think`, `celebrate`, `oops`, `sleep`) and an `egg` variant. `MascotCoach` adds a speech bubble on the record page, and `MascotState` is the shared loading, empty and error panel.
+- **Scenery.** `components/Scenery.tsx` holds the landing valley, fern clumps, eggs, the fossil divider and the footer hills. It reads the `--scene-*` tokens, so it follows the theme.
+- **Motion.** Mist drifts, ferns sway and the mascot blinks. These move whole elements, and all of it stops when the system asks for reduced motion.
+- **Restraint.** Scenery belongs on the landing hero, the footer and state panels. Transcripts, scores and charts stay on plain surfaces.
+
+### Artwork status
+
+| Artwork | Status |
+| --- | --- |
+| Valley scene, ferns, eggs, fossil, footer hills | Original, finished |
+| Dinosaur mascot (all poses) and the site icon | Stand-in, redrawn from screenshots of the DS3 mascot |
+
+To use the official mascot files, replace the shapes inside `Mascot.tsx` (or render the official SVGs from it) and keep the `pose`, `variant` and `flip` props, so no screen needs to change. Then regenerate `app/icon.png` and `app/apple-icon.png` from the new head.
+
 ## Code map
 
 | Path | Purpose |
@@ -73,6 +92,8 @@ The seeded review's transcript and analysis in `data/demo/` were produced by the
 | `lib/demo-store.tsx` | Single client-side source for presentations, recordings, reviews, and status progression |
 | `lib/recordings.ts` | Pure selectors and display formatting |
 | `components/RecorderUploader.tsx` | Microphone capture, file selection, and local preview |
+| `components/Mascot.tsx`, `MascotCoach.tsx`, `MascotState.tsx` | The mascot, its speech bubble, and loading, empty and error panels |
+| `components/Scenery.tsx` | Valley scene, ferns, eggs, fossil divider and footer hills |
 | `components/AudioReviewPlayer.tsx` | Playback controls and timeline markers |
 | `components/SyncedTranscript.tsx` | Transcript synced to playback, with follow mode |
 | `components/ScoreCards.tsx` | Combined score, rubric and feedback cards |
