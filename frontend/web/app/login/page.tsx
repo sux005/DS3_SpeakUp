@@ -21,7 +21,7 @@ export default function LoginPage() {
         <div className="relative isolate min-h-[250px] md:min-h-[520px]">
           <ValleyBackdrop className="-z-10" />
           <Perch className="absolute bottom-[40px] left-1/2 w-[270px] -translate-x-1/2 md:w-[440px]">
-            <Mascot pose="wave" className="w-full" />
+            <Mascot className="w-full" sizes="(min-width: 768px) 300px, 200px" />
           </Perch>
         </div>
 

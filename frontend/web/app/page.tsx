@@ -71,7 +71,10 @@ export default function Home() {
             </Button>
           </div>
           <Perch className={`absolute right-2 bottom-[44px] sm:right-6 lg:right-8 ${firstVisit ? "w-[270px] md:w-[400px] lg:w-[480px]" : "w-[250px] md:w-[340px] lg:w-[420px]"}`}>
-            <Mascot pose="wave" flip className="w-full" />
+            {firstVisit && (
+              <p className="speech-bubble speech-bubble-down absolute bottom-full left-1/2 mb-4 w-max max-w-[14rem] -translate-x-1/2">Ready when you are.</p>
+            )}
+            <Mascot flip className="w-full" sizes="(min-width: 1024px) 300px, 200px" />
           </Perch>
         </div>
       </div>
@@ -99,8 +102,8 @@ export default function Home() {
         )}
 
         <section aria-labelledby="presentations-heading" className={`flex w-full flex-col gap-6 ${creating ? "" : "-mt-8"}`}>
-          <h2 id="presentations-heading" className={recent ? "sr-only" : "pt-12 font-display text-[28px] font-bold text-ink"}>Your presentations</h2>
-          {!ready ? <MascotState busy pose="think" message="Loading local presentations…" /> : !recent ? (
+          <h2 id="presentations-heading" className={recent ? "sr-only" : "pt-10 font-display text-[28px] font-bold text-ink"}>Your presentations</h2>
+          {!ready ? <MascotState busy message="Loading local presentations…" /> : !recent ? (
             <div className="flex flex-col gap-1">
               <p className="text-lg font-semibold text-ink">No presentations yet.</p>
               <p className="text-muted">Create one to start practicing.</p>

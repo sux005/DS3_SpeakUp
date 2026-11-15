@@ -45,15 +45,15 @@ function TakeAction({ take }: { take: Take }) {
 }
 
 export default function ProjectPage() {
-  return <Suspense fallback={<PageShell><MascotState busy pose="think" message="Loading presentation…" /></PageShell>}><ProjectContent /></Suspense>;
+  return <Suspense fallback={<PageShell><MascotState busy message="Loading presentation…" /></PageShell>}><ProjectContent /></Suspense>;
 }
 
 function ProjectContent() {
   const { projectId } = useParams<{ projectId: string }>();
   const { projects, recordings, ready } = useDemoStore();
-  if (!ready) return <PageShell><MascotState busy pose="think" message="Loading presentation…" /></PageShell>;
+  if (!ready) return <PageShell><MascotState busy message="Loading presentation…" /></PageShell>;
   const project = getProject(projects, projectId);
-  if (!project) return <PageShell><MascotState pose="oops" message="Presentation not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
+  if (!project) return <PageShell><MascotState message="Presentation not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
 
   const takes = getTakes(recordings, projectId);
   const hasScores = takes.some((take) => take.summary_metrics);

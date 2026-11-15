@@ -120,7 +120,7 @@ export function SyncedTranscript({ sentences, pauses, moments = [], currentTime,
               aria-pressed={filter === value}
               onClick={() => setFilter(value)}
               className={`press min-h-8 cursor-pointer rounded-lg border-2 px-2.5 uppercase ${
-                filter === value ? "border-mint bg-mint text-night" : "border-night-line text-mint hover:border-mint"
+                filter === value ? "border-violet-soft bg-violet-soft text-night" : "border-night-line text-mint hover:border-mint"
               }`}
             >
               {label}

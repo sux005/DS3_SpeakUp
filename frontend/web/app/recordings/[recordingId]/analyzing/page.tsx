@@ -36,18 +36,18 @@ const listeningGoals = [
 ];
 
 export default function AnalyzingPage() {
-  return <Suspense fallback={<PageShell><MascotState busy pose="think" message="Loading recording…" /></PageShell>}><AnalyzingContent /></Suspense>;
+  return <Suspense fallback={<PageShell><MascotState busy message="Loading recording…" /></PageShell>}><AnalyzingContent /></Suspense>;
 }
 
 function AnalyzingContent() {
   const { recordingId } = useParams<{ recordingId: string }>();
   const { projects, recordings, reviews, ready } = useDemoStore();
   const [listeningGoal, setListeningGoal] = useState<number | null>(null);
-  if (!ready) return <PageShell><MascotState busy pose="think" message="Loading recording…" /></PageShell>;
+  if (!ready) return <PageShell><MascotState busy message="Loading recording…" /></PageShell>;
   const take = getTake(recordings, recordingId);
-  if (!take) return <PageShell><MascotState pose="oops" message="Recording not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
+  if (!take) return <PageShell><MascotState message="Recording not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
   const project = getProject(projects, take.project_id);
-  if (!project) return <PageShell><MascotState pose="oops" message="Presentation not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
+  if (!project) return <PageShell><MascotState message="Presentation not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
 
   const failed = take.status === "FAILED";
   const removed = take.status === "DELETED" || take.status === "PURGE_PENDING";
@@ -80,14 +80,14 @@ function AnalyzingContent() {
             ))}
           </ol>
           <div className={`${finished < 4 ? "mascot-float " : ""}shrink-0 self-center`} aria-hidden="true">
-            <Mascot pose={finished === 4 ? "celebrate" : "think"} flip className="w-36 md:w-52" />
+            <Mascot state={finished === 4 && hasAnalysis ? "results" : "neutral"} flip className="w-28 md:w-40" />
           </div>
         </section>
       )}
 
       {(failed || removed) && (
         <MascotState
-          pose={failed ? "oops" : "sleep"}
+          tone={failed ? "error" : "plain"}
           message={failed ? "This take didn’t make it through." : "This recording is no longer here."}
           detail={failed ? "Nothing was scored. Record or upload another attempt to try again." : "It was removed, so there is nothing to play or review."}
         >
@@ -115,7 +115,7 @@ function AnalyzingContent() {
                 type="button"
                 aria-pressed={listeningGoal === index}
                 onClick={() => setListeningGoal(index)}
-                className={`min-h-11 cursor-pointer rounded-full border-2 px-5 py-2 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal ${listeningGoal === index ? "border-teal bg-teal text-cream dark:border-peach dark:bg-peach dark:text-night" : "border-line bg-card text-ink hover:border-teal"}`}
+                className={`min-h-11 cursor-pointer rounded-full border-2 px-5 py-2 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet ${listeningGoal === index ? "border-violet bg-violet text-cream dark:text-night" : "border-line bg-card text-ink hover:border-teal"}`}
               >
                 {goal.label}
               </button>

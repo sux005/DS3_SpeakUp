@@ -8,7 +8,7 @@ export default function NotFound() {
   return (
     <PageShell>
       <h1 className="sr-only">Page not found</h1>
-      <MascotState pose="oops" message="This trail ends here." detail="We couldn’t find that page.">
+      <MascotState message="Page not found." detail="This link doesn’t lead anywhere in SpeakUp.">
         <ButtonLink href="/">All presentations</ButtonLink>
       </MascotState>
     </PageShell>

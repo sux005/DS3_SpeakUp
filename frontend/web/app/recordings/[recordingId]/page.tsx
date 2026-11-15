@@ -18,7 +18,7 @@ import { toSentences } from "@/lib/transcript";
 import type { FeedbackMoment } from "@/lib/types";
 
 export default function ResultsPage() {
-  return <Suspense fallback={<PageShell><MascotState busy pose="think" message="Loading recording…" /></PageShell>}><ResultsContent /></Suspense>;
+  return <Suspense fallback={<PageShell><MascotState busy message="Loading recording…" /></PageShell>}><ResultsContent /></Suspense>;
 }
 
 function ResultsContent() {
@@ -30,12 +30,12 @@ function ResultsContent() {
   const [revealRequest, setRevealRequest] = useState<{ seconds: number }>();
   const [audioFailed, setAudioFailed] = useState(false);
   const handleAudioError = useCallback(() => setAudioFailed(true), []);
-  if (!ready) return <PageShell><MascotState busy pose="think" message="Loading recording…" /></PageShell>;
+  if (!ready) return <PageShell><MascotState busy message="Loading recording…" /></PageShell>;
   const take = getTake(recordings, recordingId);
-  if (!take) return <PageShell><MascotState pose="oops" message="Recording not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
-  if (take.status !== "COMPLETE") return <PageShell><MascotState pose="think" message="This recording is not ready yet." detail="It is still being processed."><ButtonLink href={`/recordings/${recordingId}/analyzing`}>View status</ButtonLink></MascotState></PageShell>;
+  if (!take) return <PageShell><MascotState message="Recording not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
+  if (take.status !== "COMPLETE") return <PageShell><MascotState tone="loading" message="This recording is not ready yet." detail="It is still being processed."><ButtonLink href={`/recordings/${recordingId}/analyzing`}>View status</ButtonLink></MascotState></PageShell>;
   const project = getProject(projects, take.project_id);
-  if (!project) return <PageShell><MascotState pose="oops" message="Presentation not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
+  if (!project) return <PageShell><MascotState message="Presentation not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
 
   const review = reviews[recordingId];
   const metrics = review?.analysis;

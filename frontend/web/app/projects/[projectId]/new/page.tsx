@@ -6,20 +6,20 @@ import { ButtonLink } from "@/components/Button";
 import { MascotState } from "@/components/MascotState";
 import { PageHeading, PageShell } from "@/components/PageHeading";
 import { MascotCoach } from "@/components/MascotCoach";
-import type { MascotPose } from "@/components/Mascot";
 import { RecorderUploader, type RecorderStatus } from "@/components/RecorderUploader";
 import { useDemoStore } from "@/lib/demo-store";
 import { getProject } from "@/lib/recordings";
 
-// What the mascot says as the recording moves along.
-const coaching: Record<RecorderStatus, { pose: MascotPose; text: string }> = {
-  idle: { pose: "cheer", text: "Take a breath, then talk like you\u2019re explaining it to a friend." },
-  recording: { pose: "listen", text: "I\u2019m listening. Keep going!" },
-  ready: { pose: "celebrate", text: "Nice take! Give it a listen, then start the review." },
+// What the mascot's bubble says. While recording it says nothing: the red
+// indicator and timer beside the controls already carry that state.
+const bubble: Record<RecorderStatus, string | null> = {
+  idle: "Ready to record.",
+  recording: null,
+  ready: "Have a listen before you start the review.",
 };
 
 export default function NewAttemptPage() {
-  return <Suspense fallback={<PageShell><MascotState busy pose="think" message="Loading presentation…" /></PageShell>}><NewAttemptContent /></Suspense>;
+  return <Suspense fallback={<PageShell><MascotState busy message="Loading presentation…" /></PageShell>}><NewAttemptContent /></Suspense>;
 }
 
 function NewAttemptContent() {
@@ -27,9 +27,9 @@ function NewAttemptContent() {
   const router = useRouter();
   const { projects, limits, ready, createRecording } = useDemoStore();
   const [status, setStatus] = useState<RecorderStatus>("idle");
-  if (!ready) return <PageShell><MascotState busy pose="think" message="Loading presentation…" /></PageShell>;
+  if (!ready) return <PageShell><MascotState busy message="Loading presentation…" /></PageShell>;
   const project = getProject(projects, projectId);
-  if (!project) return <PageShell><MascotState pose="oops" message="Presentation not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
+  if (!project) return <PageShell><MascotState message="Presentation not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
 
   function submit(audio: Blob, filename: string) {
     const id = createRecording(projectId, audio, filename);
@@ -58,7 +58,7 @@ function NewAttemptContent() {
             onStatusChange={setStatus}
           />
         </div>
-        <MascotCoach pose={coaching[status].pose}>{coaching[status].text}</MascotCoach>
+        <MascotCoach state="recording">{bubble[status]}</MascotCoach>
       </section>
 
       <p className="text-sm text-muted">Audio stays in this browser session and is not uploaded to AWS.</p>

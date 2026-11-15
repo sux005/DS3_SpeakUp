@@ -81,7 +81,7 @@ export function SummaryFeedback({ review, metrics, canSeek, onSeek }: {
           <p className="font-mono text-xs uppercase text-teal">For your next take</p>
           <h2 id="summary-heading" className="font-display text-2xl font-bold text-ink">Overall summary</h2>
         </div>
-        <Mascot pose="cheer" flip className="-mb-2 w-20 shrink-0 sm:w-24" />
+        <Mascot state="results" flip className="w-16 shrink-0 sm:w-20" sizes="128px" />
       </div>
 
       {!feedback && (

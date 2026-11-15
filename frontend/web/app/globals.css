@@ -143,13 +143,9 @@ body {
   font-family: var(--font-dm-sans), sans-serif;
 }
 
-/* ---- Mascot and scenery motion ----
-   Slow, small and decorative. All of it is off under reduced motion. */
-.mascot-eyes,
-.mascot-pulse {
-  transform-box: fill-box;
-  transform-origin: center;
-}
+/* ---- Scenery motion ----
+   Slow, small and decorative. All of it is off under reduced motion.
+   The mascot is a still image and never animates on its own. */
 .fern-sway {
   transform-origin: 50% 100%;
 }
@@ -171,8 +167,6 @@ body {
   .analyzing-dots span:nth-child(3) { animation-delay: 0.4s; }
 
   .recording-dot { animation: mascot-pulse 1.4s ease-in-out infinite; }
-  .mascot-eyes { animation: mascot-blink 5.2s infinite; }
-  .mascot-pulse { animation: mascot-pulse 2.4s ease-in-out infinite; }
   .mascot-float { animation: mascot-float 3s ease-in-out infinite; }
   .fern-sway { animation: fern-sway 6s ease-in-out infinite alternate; }
   .scene-mist { animation: mist-drift 34s ease-in-out infinite alternate; }
@@ -181,11 +175,6 @@ body {
   .scene-fireflies span:nth-child(3n) { animation-delay: -2.3s; }
   .analysis-stage-active { animation: stage-highlight 0.75s ease-out; }
   .analysis-stage-check { display: inline-block; animation: stage-check-in 0.3s ease-out; }
-}
-
-@keyframes mascot-blink {
-  0%, 93%, 100% { transform: scaleY(1); }
-  96% { transform: scaleY(0.1); }
 }
 
 @keyframes mascot-pulse {
@@ -282,6 +271,15 @@ body {
   }
 }
 
+/* The bubble sits above the mascot at every width. */
+.speech-bubble-down::after {
+  top: auto;
+  right: auto;
+  bottom: -9px;
+  left: calc(50% - 7px);
+  transform: rotate(45deg);
+}
+
 /* Text links in the nav and breadcrumbs: underline on hover, large enough to tap. */
 .nav-link {
   display: inline-flex;
@@ -320,6 +318,14 @@ h1, h2, h3 {
   outline-offset: 2px;
 }
 [data-surface="dark"] :focus-visible {
+  outline-color: var(--color-mint);
+}
+/* A label styled as a button around a hidden file input: ring the label. */
+label:has(input.sr-only:focus-visible) {
+  outline: 2px solid var(--color-teal);
+  outline-offset: 2px;
+}
+[data-surface="dark"] label:has(input.sr-only:focus-visible) {
   outline-color: var(--color-mint);
 }
 
