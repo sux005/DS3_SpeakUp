@@ -75,6 +75,8 @@ export function RecorderUploader({
     if (!recording || !analyser) return;
     const samples = new Uint8Array(analyser.fftSize);
     const timer = window.setInterval(() => {
+      // Stopping clears the meter straight away; a reading that lands just after must not redraw a bar.
+      if (analyserRef.current !== analyser) return;
       analyser.getByteTimeDomainData(samples);
       let sum = 0;
       for (const sample of samples) sum += ((sample - 128) / 128) ** 2;

@@ -75,7 +75,13 @@ describe("RecorderUploader edge cases", () => {
     expect(bars().at(-2)!.style.height).toBe("100%");
     expect(bars()[0].style.height).toBe("0%");
 
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "■ Stop recording" })); });
+    // A reading can land between the recorder stopping and the meter's timer being
+    // cleared. Stop the recorder without letting React re-render, then tick once.
+    const recorder = FakeRecorder.instances[0];
+    await act(async () => {
+      recorder.stop();
+      vi.advanceTimersByTime(90);
+    });
     expect(close).toHaveBeenCalledOnce();
     expect(bars().every((bar) => bar.style.height === "0%")).toBe(true);
     expect(screen.getByText("The level meter moves while you record.")).toBeTruthy();
