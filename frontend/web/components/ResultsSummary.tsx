@@ -28,6 +28,11 @@ function Line({ line, canSeek, onSeek }: { line: TakeawayLine; canSeek: boolean;
         <span className="text-lg font-bold text-ink">{line.title}</span>
       </p>
       <p className="text-ink">{line.text}</p>
+      {line.points && (
+        <ul className="flex flex-col gap-1 text-[15px] text-ink">
+          {line.points.map((point) => <li key={point}>{point}</li>)}
+        </ul>
+      )}
       <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
         <span>{sourceLabel[line.source]}</span>
         {line.at !== undefined && (

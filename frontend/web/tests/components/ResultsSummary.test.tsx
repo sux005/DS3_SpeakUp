@@ -25,7 +25,10 @@ describe("Takeaway", () => {
     render(<Takeaway review={uncoached} metrics={metrics} canSeek onSeek={vi.fn()} />);
     const region = screen.getByRole("region", { name: "Your takeaway" });
     expect(within(region).getByText("Strength")).toBeTruthy();
-    expect(within(region).getByText("Speaking rate")).toBeTruthy();
+    // Speaking rate and pauses tie at 3 of 4 in the demo clip, so both are named.
+    expect(within(region).getByText("Speaking rate and pauses inside sentences")).toBeTruthy();
+    expect(within(region).getByText("Both scored 3 of 4.")).toBeTruthy();
+    expect(within(region).getByText(/^Pauses inside sentences: 10\.71 per speaking-minute, 1\.71 above the target/)).toBeTruthy();
     expect(within(region).getByText("Work on")).toBeTruthy();
     expect(within(region).getByText("Filler words")).toBeTruthy();
     expect(within(region).getAllByText("From your measurements")).toHaveLength(2);

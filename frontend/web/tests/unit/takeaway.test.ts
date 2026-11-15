@@ -28,7 +28,8 @@ describe("target helpers", () => {
 
 describe("takeaway without coaching", () => {
   it("names the best and worst scored measures, each labelled as measured", () => {
-    const takeaway = buildTakeaway(uncoached(demo), demo);
+    const metrics = scores(3, 0, 2);
+    const takeaway = buildTakeaway(uncoached(metrics), metrics);
     expect(takeaway.coached).toBe(false);
     expect(takeaway.overview).toEqual([]);
     expect(takeaway.strength).toEqual({
@@ -39,6 +40,29 @@ describe("takeaway without coaching", () => {
     });
     expect(takeaway.priority).toMatchObject({ label: "Work on", title: "Filler words", source: "measurements" });
     expect(takeaway.priority!.text).toBe("11.64 per 100 words, score 0 of 4. 9.64 above the target (target: fewer than 2).");
+  });
+
+  it("names every measure that shares the top score instead of picking one", () => {
+    // The demo clip: speaking rate and pauses both score 3, fillers 0.
+    const takeaway = buildTakeaway(uncoached(demo), demo);
+    expect(takeaway.strength).toEqual({
+      label: "Strength",
+      title: "Speaking rate and pauses inside sentences",
+      text: "Both scored 3 of 4.",
+      points: [
+        "Speaking rate: 134.08 WPM, 0.92 below the target range (target: 135–155 WPM).",
+        "Pauses inside sentences: 10.71 per speaking-minute, 1.71 above the target (target: fewer than 9).",
+      ],
+      source: "measurements",
+    });
+    expect(takeaway.priority).toMatchObject({ title: "Filler words" });
+
+    const onTarget = buildTakeaway(uncoached(), scores(4, 4, 1));
+    expect(onTarget.strength).toMatchObject({ label: "Strength", title: "Speaking rate and filler words" });
+    expect(onTarget.strength!.points![0]).toBe("Speaking rate: 134.08 WPM, in the target range.");
+
+    const low = buildTakeaway(uncoached(), scores(2, 0, 2));
+    expect(low.strength).toMatchObject({ label: "Closest to target", title: "Speaking rate and pauses inside sentences", text: "Both scored 2 of 4." });
   });
 
   it("only calls a score of 3 or 4 a strength", () => {
@@ -87,7 +111,7 @@ describe("takeaway with coaching", () => {
 
   it("fills a missing line from measurements and labels it as such", () => {
     const takeaway = buildTakeaway(coached({ feedback: "Older summary only.", moments: [moments[0]] }), demo);
-    expect(takeaway.strength).toMatchObject({ title: "Speaking rate", source: "measurements" });
+    expect(takeaway.strength).toMatchObject({ title: "Speaking rate and pauses inside sentences", source: "measurements" });
     expect(takeaway.priority).toMatchObject({ source: "coaching" });
   });
 

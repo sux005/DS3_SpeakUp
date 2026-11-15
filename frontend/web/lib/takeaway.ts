@@ -16,6 +16,8 @@ export type TakeawayLine = {
   label: "Strength" | "Closest to target" | "Work on";
   title: string;
   text: string;
+  /** One line per measure, when the line covers more than one. */
+  points?: string[];
   source: Source;
   /** Where in the recording this was heard, when coaching points at a moment. */
   at?: number;
@@ -58,6 +60,26 @@ function measuredLine({ metric, score }: Scored, label: TakeawayLine["label"], m
   };
 }
 
+const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
+
+// Measures that share the top score are named together. Picking one of them
+// would be arbitrary and would hide something equally true about the others.
+function tiedLine(tied: Scored[], label: TakeawayLine["label"], metrics: AnalysisMetrics): TakeawayLine {
+  const { score } = tied[0];
+  return {
+    label,
+    title: tied.map(({ metric }, index) => (index === 0 ? metric.title : lowerFirst(metric.title))).join(" and "),
+    text: `${tied.length === 2 ? "Both" : "All"} scored ${score} of 4.`,
+    points: tied.map(({ metric }) => {
+      const display = metricDisplay(metric.key);
+      const value = display.value(metrics);
+      const comparison = lowerFirst(compareToTarget(value, display.band, score));
+      return `${metric.title}: ${value} ${display.unit}, ${comparison}${score === 4 ? "" : ` (target: ${targetText(metric.key)})`}.`;
+    }),
+    source: "measurements",
+  };
+}
+
 function measuredTakeaway(metrics: AnalysisMetrics): Pick<Takeaway, "strength" | "priority" | "note"> {
   const scored = scoredMetrics(metrics);
   if (scored.length === 0) return { note: `Record at least ${minimumSpeakingSeconds} seconds of speech to get scores.` };
@@ -71,9 +93,11 @@ function measuredTakeaway(metrics: AnalysisMetrics): Pick<Takeaway, "strength" |
       note: scored.length > 1 ? `Your scored measures are level at ${worst.score} of 4, so none stands out as a strength yet.` : undefined,
     };
   }
+  // "Strength" is only claimed for a score of 3 or 4.
+  const label = best.score >= 3 ? "Strength" : "Closest to target";
+  const top = scored.filter((entry) => entry.score === best.score);
   return {
-    // "Strength" is only claimed for a score of 3 or 4.
-    strength: measuredLine(best, best.score >= 3 ? "Strength" : "Closest to target", metrics),
+    strength: top.length > 1 ? tiedLine(top, label, metrics) : measuredLine(best, label, metrics),
     priority: measuredLine(worst, "Work on", metrics),
   };
 }
