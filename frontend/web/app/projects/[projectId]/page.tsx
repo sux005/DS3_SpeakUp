@@ -64,7 +64,7 @@ function ProjectContent() {
         crumb="ALL PRESENTATIONS"
         crumbHref="/"
         title={project.project_title}
-        subtitle={`${takes.length} attempts · Created ${formatDate(project.created_at, true)}`}
+        subtitle={`${takes.length} ${takes.length === 1 ? "attempt" : "attempts"} · Created ${formatDate(project.created_at, true)}`}
       />
       <ButtonLink href={`/projects/${projectId}/new`}>+ New attempt</ButtonLink>
 

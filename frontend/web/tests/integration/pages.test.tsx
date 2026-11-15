@@ -61,6 +61,17 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("home and project routes", () => {
+  it("counts one attempt in the singular and links to a scored review only when one exists", () => {
+    render(<Home />);
+    expect(screen.getByText("1 attempt")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "See what a finished review looks like" })).toBeNull();
+    cleanup();
+
+    harness.store.reviews = { "recording-1": { analysis: {} } as unknown as RecordingReview };
+    render(<Home />);
+    expect(screen.getByRole("link", { name: "See what a finished review looks like" }).getAttribute("href")).toBe("/recordings/recording-1");
+  });
+
   it("shows loading and empty presentation states", () => {
     harness.store.ready = false;
     render(<Home />);
