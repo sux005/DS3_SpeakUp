@@ -3,6 +3,7 @@
 import { Suspense } from "react";
 import { useParams } from "next/navigation";
 import { ButtonLink } from "@/components/Button";
+import { MascotState } from "@/components/MascotState";
 import { PageHeading, PageShell } from "@/components/PageHeading";
 import { ProgressCharts } from "@/components/ProgressCharts";
 import { StrataDivider } from "@/components/Scenery";
@@ -45,15 +46,15 @@ function TakeAction({ take }: { take: Take }) {
 }
 
 export default function ProjectPage() {
-  return <Suspense fallback={<PageShell><p>Loading presentation…</p></PageShell>}><ProjectContent /></Suspense>;
+  return <Suspense fallback={<PageShell><MascotState busy pose="think" message="Loading presentation…" /></PageShell>}><ProjectContent /></Suspense>;
 }
 
 function ProjectContent() {
   const { projectId } = useParams<{ projectId: string }>();
   const { projects, recordings, ready } = useDemoStore();
-  if (!ready) return <PageShell><p>Loading presentation…</p></PageShell>;
+  if (!ready) return <PageShell><MascotState busy pose="think" message="Loading presentation…" /></PageShell>;
   const project = getProject(projects, projectId);
-  if (!project) return <PageShell><p>Presentation not found.</p><ButtonLink href="/">All presentations</ButtonLink></PageShell>;
+  if (!project) return <PageShell><MascotState pose="oops" message="Presentation not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
 
   const takes = getTakes(recordings, projectId);
 

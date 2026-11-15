@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { PageShell } from "@/components/PageHeading";
 import { Button, ButtonLink } from "@/components/Button";
 import { Mascot } from "@/components/Mascot";
+import { MascotState } from "@/components/MascotState";
 import { Egg, FernCluster, ValleyScene } from "@/components/Scenery";
 import { RecorderUploader } from "@/components/RecorderUploader";
 import { useDemoStore } from "@/lib/demo-store";
@@ -64,7 +65,7 @@ export default function Home() {
           <label className="flex flex-col gap-2 text-sm font-semibold text-ink">
             Presentation title (optional)
             <input autoFocus maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)}
-              className="rounded-xl border-2 border-line bg-card p-3 font-normal" placeholder="We’ll use today’s date if you skip this" />
+              className="rounded-xl border-2 border-line bg-card p-3 text-base font-normal" placeholder="We’ll use today’s date if you skip this" />
           </label>
           <RecorderUploader maxAudioBytes={limits.max_audio_upload_bytes}
             maxAudioDurationSeconds={limits.max_audio_duration_seconds}
@@ -74,8 +75,8 @@ export default function Home() {
       )}
 
       <h2 className="font-display text-[27px] font-bold text-ink">Your presentations</h2>
-      {!ready ? <p>Loading local presentations…</p> : projects.length === 0 ? (
-        <p className="text-muted">No presentations yet. Create one to start practicing.</p>
+      {!ready ? <MascotState busy pose="think" message="Loading local presentations…" /> : projects.length === 0 ? (
+        <MascotState pose="wave" variant="egg" message="No presentations yet." detail="Create one to start practicing." />
       ) : (
         <ul className="flex w-full flex-col gap-4">
           {projects.map((project) => (

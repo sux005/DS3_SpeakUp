@@ -34,6 +34,19 @@ describe("RecorderUploader", () => {
     expect(onSubmit).toHaveBeenCalledWith(file, "pitch.wav");
   });
 
+  it("reports idle, then ready, as audio is chosen and discarded", async () => {
+    const onStatusChange = vi.fn();
+    render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={90} onSubmit={vi.fn()} onStatusChange={onStatusChange} />);
+    expect(onStatusChange).toHaveBeenLastCalledWith("idle");
+
+    choose(new File([new Uint8Array([1])], "pitch.wav", { type: "audio/wav" }));
+    await screen.findByText("READY · pitch.wav");
+    expect(onStatusChange).toHaveBeenLastCalledWith("ready");
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(onStatusChange).toHaveBeenLastCalledWith("idle");
+  });
+
   it.each([
     ["notes.txt", "text/plain"],
     ["voice.aac", "audio/aac"],

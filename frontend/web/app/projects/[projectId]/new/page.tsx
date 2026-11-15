@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { ButtonLink } from "@/components/Button";
+import { MascotState } from "@/components/MascotState";
 import { PageHeading, PageShell } from "@/components/PageHeading";
 import { MascotCoach } from "@/components/MascotCoach";
 import type { MascotPose } from "@/components/Mascot";
@@ -19,7 +20,7 @@ const coaching: Record<RecorderStatus, { pose: MascotPose; text: string }> = {
 };
 
 export default function NewAttemptPage() {
-  return <Suspense fallback={<PageShell><p>Loading presentation…</p></PageShell>}><NewAttemptContent /></Suspense>;
+  return <Suspense fallback={<PageShell><MascotState busy pose="think" message="Loading presentation…" /></PageShell>}><NewAttemptContent /></Suspense>;
 }
 
 function NewAttemptContent() {
@@ -27,9 +28,9 @@ function NewAttemptContent() {
   const router = useRouter();
   const { projects, limits, ready, createRecording } = useDemoStore();
   const [status, setStatus] = useState<RecorderStatus>("idle");
-  if (!ready) return <PageShell><p>Loading presentation…</p></PageShell>;
+  if (!ready) return <PageShell><MascotState busy pose="think" message="Loading presentation…" /></PageShell>;
   const project = getProject(projects, projectId);
-  if (!project) return <PageShell><p>Presentation not found.</p><ButtonLink href="/">All presentations</ButtonLink></PageShell>;
+  if (!project) return <PageShell><MascotState pose="oops" message="Presentation not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
 
   const maxMinutes = limits.max_audio_duration_seconds / 60;
   const maxMegabytes = Math.round(limits.max_audio_upload_bytes / (1024 * 1024));

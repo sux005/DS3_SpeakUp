@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense, useCallback, useState } from "react";
 import { useParams } from "next/navigation";
 import { ButtonLink } from "@/components/Button";
+import { MascotState } from "@/components/MascotState";
 import { PageHeading, PageShell } from "@/components/PageHeading";
 import { ProgressCharts } from "@/components/ProgressCharts";
 import { AudioReviewPlayer } from "@/components/AudioReviewPlayer";
@@ -17,7 +18,7 @@ import { toSentences } from "@/lib/transcript";
 import type { FeedbackMoment } from "@/lib/types";
 
 export default function ResultsPage() {
-  return <Suspense fallback={<PageShell><p>Loading recording…</p></PageShell>}><ResultsContent /></Suspense>;
+  return <Suspense fallback={<PageShell><MascotState busy pose="think" message="Loading recording…" /></PageShell>}><ResultsContent /></Suspense>;
 }
 
 function ResultsContent() {
@@ -29,12 +30,12 @@ function ResultsContent() {
   const [revealRequest, setRevealRequest] = useState<{ seconds: number }>();
   const [audioFailed, setAudioFailed] = useState(false);
   const handleAudioError = useCallback(() => setAudioFailed(true), []);
-  if (!ready) return <PageShell><p>Loading recording…</p></PageShell>;
+  if (!ready) return <PageShell><MascotState busy pose="think" message="Loading recording…" /></PageShell>;
   const take = getTake(recordings, recordingId);
-  if (!take) return <PageShell><p>Recording not found.</p><ButtonLink href="/">All presentations</ButtonLink></PageShell>;
-  if (take.status !== "COMPLETE") return <PageShell><p>This recording is not ready yet.</p><ButtonLink href={`/recordings/${recordingId}/analyzing`}>View status</ButtonLink></PageShell>;
+  if (!take) return <PageShell><MascotState pose="oops" message="Recording not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
+  if (take.status !== "COMPLETE") return <PageShell><MascotState pose="think" message="This recording is not ready yet." detail="It is still being processed."><ButtonLink href={`/recordings/${recordingId}/analyzing`}>View status</ButtonLink></MascotState></PageShell>;
   const project = getProject(projects, take.project_id);
-  if (!project) return <PageShell><p>Presentation not found.</p><ButtonLink href="/">All presentations</ButtonLink></PageShell>;
+  if (!project) return <PageShell><MascotState pose="oops" message="Presentation not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
 
   const review = reviews[recordingId];
   const metrics = review?.analysis;
