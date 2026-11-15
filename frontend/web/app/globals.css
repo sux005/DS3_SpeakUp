@@ -16,6 +16,34 @@
   /* Raised panels (cards) and the bold outline shared with the mascot. */
   --surface-card: #fffaf0;
   --surface-outline: #10231a;
+
+  /* Scenery (components/Scenery.tsx): a turquoise morning over the valley. */
+  --scene-sky-top: #bde8e2;
+  --scene-sky-mid: #e3f3e2;
+  --scene-sky-low: #fdf0cf;
+  --scene-sun: #ffe2a0;
+  --scene-sun-glow: rgb(255 243 207 / 0.7);
+  --scene-mist: rgb(255 255 255 / 0.72);
+  --scene-ridge-far: #a9d6cf;
+  --scene-ridge-mid: #74b8a0;
+  --scene-ridge-mid-line: #4a9079;
+  --scene-hill: #4c9a62;
+  --scene-hill-top: #6bb57c;
+  --scene-hill-line: #2c6b43;
+  --scene-lake: #45c4b6;
+  --scene-lake-line: #1f8a85;
+  --scene-lake-light: #a8ecdf;
+  --scene-ground: #ecdba8;
+  --scene-ground-mark: #d8c184;
+  --scene-rock: #cbc4aa;
+  --scene-rock-mark: #8f8a72;
+  --scene-egg: #fff3d6;
+  --scene-egg-spot: #e9c98b;
+  --scene-fern: #46a05f;
+  --scene-fern-deep: #2f7d4a;
+  --scene-fern-rib: #1f5a36;
+  --scene-firefly: transparent;
+  --scene-outline: #1b2a22;
 }
 
 /* Dark mode is the same valley at dusk. */
@@ -32,6 +60,31 @@
   --surface-rust: #f2a476;
   --surface-card: #1f4a38;
   --surface-outline: #050f0a;
+
+  --scene-sky-top: #0b1d28;
+  --scene-sky-mid: #123a3a;
+  --scene-sky-low: #2a6a5c;
+  --scene-sun: #f6f1d4;
+  --scene-sun-glow: rgb(246 241 212 / 0.14);
+  --scene-mist: rgb(190 233 224 / 0.16);
+  --scene-ridge-far: #1c4b4b;
+  --scene-ridge-mid: #173f3a;
+  --scene-ridge-mid-line: #0f2f2c;
+  --scene-hill: #14382b;
+  --scene-hill-top: #1d4d39;
+  --scene-hill-line: #0a2419;
+  --scene-lake: #1f8f8a;
+  --scene-lake-line: #0e5c5c;
+  --scene-lake-light: #6fe0d0;
+  --scene-ground: #2c4a33;
+  --scene-ground-mark: #223b29;
+  --scene-rock: #40604f;
+  --scene-rock-mark: #25402f;
+  --scene-fern: #23764c;
+  --scene-fern-deep: #185a39;
+  --scene-fern-rib: #0d3a24;
+  --scene-firefly: #ffe58a;
+  --scene-outline: #07140e;
 }
 
 @theme inline {
@@ -74,14 +127,12 @@ body {
   font-family: var(--font-dm-sans), sans-serif;
 }
 
-.pip-signal {
-  top: 33px;
-  right: 5px;
-  width: 35px;
-  height: 35px;
-  border: 2px solid var(--color-mint);
-  border-radius: 50%;
-  opacity: 0;
+/* ---- Mascot and scenery motion ----
+   Slow, small and decorative. All of it is off under reduced motion. */
+.mascot-eyes,
+.mascot-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -92,10 +143,47 @@ body {
   .analyzing-dots span:nth-child(2) { animation-delay: 0.2s; }
   .analyzing-dots span:nth-child(3) { animation-delay: 0.4s; }
 
-  .pip-motion { animation: pip-float 3s ease-in-out infinite; }
-  .pip-motion .pip-signal { animation: pip-pulse 2.4s ease-out infinite; }
+  .mascot-eyes { animation: mascot-blink 5.2s infinite; }
+  .mascot-pulse { animation: mascot-pulse 2.4s ease-in-out infinite; }
+  .mascot-float { animation: mascot-float 3s ease-in-out infinite; }
+  .fern-sway { animation: fern-sway 6s ease-in-out infinite alternate; }
+  .scene-mist { animation: mist-drift 34s ease-in-out infinite alternate; }
+  .scene-mist-slow { animation-duration: 52s; animation-direction: alternate-reverse; }
+  .scene-fireflies circle { animation: firefly 3.6s ease-in-out infinite; }
+  .scene-fireflies circle:nth-child(2n) { animation-delay: -1.2s; }
+  .scene-fireflies circle:nth-child(3n) { animation-delay: -2.3s; }
   .analysis-stage-active { animation: stage-highlight 0.75s ease-out; }
   .analysis-stage-check { display: inline-block; animation: stage-check-in 0.3s ease-out; }
+}
+
+@keyframes mascot-blink {
+  0%, 93%, 100% { transform: scaleY(1); }
+  96% { transform: scaleY(0.1); }
+}
+
+@keyframes mascot-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+@keyframes mascot-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes fern-sway {
+  from { transform: rotate(-1.6deg); }
+  to { transform: rotate(1.6deg); }
+}
+
+@keyframes mist-drift {
+  from { transform: translateX(-26px); }
+  to { transform: translateX(34px); }
+}
+
+@keyframes firefly {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
 }
 
 @keyframes analyzing-dot {
@@ -103,24 +191,33 @@ body {
   20% { opacity: 1; }
 }
 
-@keyframes pip-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-7px); }
-}
-
-@keyframes pip-pulse {
-  0%, 45%, 100% { opacity: 0; transform: scale(0.5); }
-  18% { opacity: 0.55; transform: scale(1); }
-}
-
 @keyframes stage-highlight {
-  from { background-color: rgb(238 167 119 / 14%); transform: translateX(-6px); }
+  from { background-color: rgb(245 162 74 / 14%); transform: translateX(-6px); }
   to { background-color: transparent; transform: translateX(0); }
 }
 
 @keyframes stage-check-in {
   from { opacity: 0; transform: scale(0.75); }
   to { opacity: 1; transform: scale(1); }
+}
+
+/* A number sitting on a dinosaur egg: attempt counts and step numbers. */
+.egg-badge {
+  display: inline-flex;
+  width: 2.75rem;
+  height: 3.4rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding-top: 0.35rem;
+  border: 2px solid var(--scene-outline);
+  border-radius: 50% 50% 50% 50% / 62% 62% 38% 38%;
+  background: var(--scene-egg);
+  color: #1d3327;
+  font-family: var(--font-fredoka), sans-serif;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1;
 }
 
 /* Text links in the nav and breadcrumbs: underline on hover, large enough to tap. */
