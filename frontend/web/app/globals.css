@@ -271,6 +271,18 @@ body {
   }
 }
 
+/* The mascot PNG has a black outline, which disappears on dark backgrounds.
+   There it gets a thin cream edge, drawn around the image by the browser.
+   The artwork itself is not changed. */
+:root[data-theme="dark"] [data-mascot],
+[data-surface="dark"] [data-mascot] {
+  filter:
+    drop-shadow(1px 0 0 var(--color-cream))
+    drop-shadow(-1px 0 0 var(--color-cream))
+    drop-shadow(0 1px 0 var(--color-cream))
+    drop-shadow(0 -1px 0 var(--color-cream));
+}
+
 /* The bubble sits above the mascot at every width. */
 .speech-bubble-down::after {
   top: auto;
