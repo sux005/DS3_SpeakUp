@@ -1,63 +1,14 @@
 import { formatClock, formatDate, formatTake } from "@/lib/recordings";
-import { rubric, type MetricKey } from "@/lib/rubric";
-import type { SummaryMetrics, Take } from "@/lib/types";
+import { compareToTarget, metricDisplay, targetText, trim } from "@/lib/targets";
+import type { Take } from "@/lib/types";
 
-// How each metric is drawn. `band` is the score-4 target and `scale` the span
-// from the rubric's best to worst thresholds, as numbers for plotting only.
-// The scores themselves come from the backend, and target wording from lib/rubric.ts.
-const charts: {
-  key: MetricKey;
-  title: string;
-  unit: string;
-  note: string;
-  band: [number, number];
-  scale: [number, number];
-  value: (m: SummaryMetrics) => number;
-}[] = [
-  {
-    key: "speaking_rate",
-    title: "Speaking rate",
-    unit: "WPM",
-    note: "Target range: 135–155 WPM",
-    band: [135, 155],
-    scale: [90, 200],
-    value: (m) => m.words_per_minute,
-  },
-  {
-    key: "filler_words",
-    title: "Fillers",
-    unit: "per 100 words",
-    note: "Score 4: fewer than 2 per 100 words",
-    band: [0, 2],
-    scale: [0, 8],
-    value: (m) => m.fillers_per_100_words,
-  },
-  {
-    key: "pauses_inside_sentences",
-    title: "Pauses inside sentences",
-    unit: "per speaking-minute",
-    note: "Score 4: fewer than 9 per speaking-minute",
-    band: [0, 9],
-    scale: [0, 18],
-    value: (m) => m.pauses_per_speaking_minute,
-  },
+// Chart titles and the target note shown under each trend. Units, values and
+// target numbers are shared with the results page through lib/targets.ts.
+const charts = [
+  { ...metricDisplay("speaking_rate"), title: "Speaking rate", note: "Target range: 135–155 WPM" },
+  { ...metricDisplay("filler_words"), title: "Fillers", note: "Score 4: fewer than 2 per 100 words" },
+  { ...metricDisplay("pauses_inside_sentences"), title: "Pauses inside sentences", note: "Score 4: fewer than 9 per speaking-minute" },
 ];
-
-const trim = (value: number) => Number(value.toFixed(2));
-
-// Plain subtraction against the target, never a new score. A score of 4 is the
-// backend saying the value is on target, so that case is taken from the score.
-function comparison(value: number, [low, high]: [number, number], score: number | null) {
-  if (score === 4) return "In the target range";
-  if (value < low) return `${trim(low - value)} below the target range`;
-  if (value > high) return `${trim(value - high)} above the target`;
-  return "At the edge of the target range";
-}
-
-function target(key: MetricKey) {
-  const range = rubric.find((metric) => metric.key === key)!.bands[0].range;
-  return range.charAt(0).toLowerCase() + range.slice(1);
-}
 
 /** Where one value sits between the rubric's best and worst thresholds. */
 function RangeBar({ value, band, scale, label }: { value: number; band: [number, number]; scale: [number, number]; label: string }) {
@@ -152,10 +103,10 @@ export function ProgressCharts({ takes, single = "summary" }: { takes: Take[]; s
                 </p>
                 <p className="text-[15px] text-ink">
                   <span className="font-semibold">{score === null ? "Not scored" : `Score ${score} of 4`}</span>
-                  <span className="text-muted"> · Target: {target(chart.key)}</span>
+                  <span className="text-muted"> · Target: {targetText(chart.key)}</span>
                 </p>
-                <RangeBar value={value} band={chart.band} scale={chart.scale} label={`${value} ${chart.unit}. Target: ${target(chart.key)}.`} />
-                <p className="text-sm text-muted">{comparison(value, chart.band, score)}</p>
+                <RangeBar value={value} band={chart.band} scale={chart.scale} label={`${value} ${chart.unit}. Target: ${targetText(chart.key)}.`} />
+                <p className="text-sm text-muted">{compareToTarget(value, chart.band, score)}</p>
               </div>
             );
           })}
