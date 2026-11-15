@@ -47,7 +47,6 @@ function Plot({ values, labels, band }: { values: number[]; labels: string[]; ba
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full" aria-hidden="true">
       <rect x={0} width={width} y={y(band[1])} height={y(band[0]) - y(band[1])} rx={4} className="fill-teal/15" />
-      <text x={width - 6} y={y(band[1]) + 14} textAnchor="end" className="fill-muted text-[11px]">target</text>
       <line x1={0} x2={width} y1={height - padBottom} y2={height - padBottom} className="stroke-line" strokeWidth={2} />
       <polyline points={points} fill="none" strokeWidth={2.5} className="stroke-teal" />
       {values.map((v, i) => (
@@ -125,7 +124,7 @@ export function ProgressCharts({ takes, single = "summary" }: { takes: Take[]; s
           return (
             <div key={chart.key} className="flex flex-col gap-2">
               <h3 className="text-[17px] font-bold text-ink">{chart.title}</h3>
-              <p className="text-sm text-muted">{chart.unit}</p>
+              <p className="text-sm text-muted">{chart.unit} · shaded band is the target</p>
               <Plot values={values} labels={scored.map((t) => `T${t.take}`)} band={chart.band} />
               <p className="flex flex-wrap gap-x-5 text-sm text-ink">
                 {scored.map((t, i) => (
