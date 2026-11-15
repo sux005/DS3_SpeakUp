@@ -143,17 +143,6 @@ export function Ammonite({ className }: { className?: string }) {
   );
 }
 
-/** A section divider: a line of rock with one fossil in it. */
-export function StrataDivider() {
-  return (
-    <div role="separator" className="flex w-full items-center gap-3 text-line">
-      <span className="h-0.5 flex-1 rounded-full bg-line" />
-      <Ammonite className="size-5 text-muted" />
-      <span className="h-0.5 flex-1 rounded-full bg-line" />
-    </div>
-  );
-}
-
 /* ---------- The valley ---------- */
 
 function TreeFern({ x, y, scale = 1 }: { x: number; y: number; scale?: number }) {

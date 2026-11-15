@@ -124,7 +124,7 @@ function ResultsContent() {
         />
       )}
 
-      <ProgressCharts takes={getTakes(recordings, take.project_id)} />
+      <ProgressCharts takes={getTakes(recordings, take.project_id)} single="note" />
       <p className="text-xs text-muted">Demo sample scores are shown only for the seeded recording. New local recordings have no calculated scores.</p>
     </PageShell>
   );

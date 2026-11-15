@@ -19,6 +19,11 @@ function formatDuration(seconds: number) {
   return `${String(minutes).padStart(2, "0")}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
 }
 
+// How many recent level readings the meter shows, and how often it reads.
+const METER_BARS = 48;
+const METER_INTERVAL_MS = 80;
+const silence = () => Array<number>(METER_BARS).fill(0);
+
 function extensionFor(file: File | Blob) {
   if (file.type.includes("webm")) return "webm";
   if (file.type.includes("mp4")) return "m4a";
@@ -44,6 +49,11 @@ export function RecorderUploader({
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef(0);
+  // Live microphone level. Only ever filled from the real audio stream.
+  const [levels, setLevels] = useState<number[]>(silence);
+  const [metering, setMetering] = useState(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
 
   useEffect(() => {
     if (!recording) return;
@@ -60,7 +70,30 @@ export function RecorderUploader({
     onStatusChange?.(status);
   }, [onStatusChange, status]);
 
+  useEffect(() => {
+    const analyser = analyserRef.current;
+    if (!recording || !analyser) return;
+    const samples = new Uint8Array(analyser.fftSize);
+    const timer = window.setInterval(() => {
+      analyser.getByteTimeDomainData(samples);
+      let sum = 0;
+      for (const sample of samples) sum += ((sample - 128) / 128) ** 2;
+      const loudness = Math.min(1, Math.sqrt(sum / samples.length) * 4);
+      setLevels((previous) => [...previous.slice(1), loudness]);
+    }, METER_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [recording]);
+
+  function stopMeter() {
+    void audioContextRef.current?.close().catch(() => undefined);
+    audioContextRef.current = null;
+    analyserRef.current = null;
+    setMetering(false);
+    setLevels(silence());
+  }
+
   useEffect(() => () => {
+    void audioContextRef.current?.close().catch(() => undefined);
     streamRef.current?.getTracks().forEach((track) => track.stop());
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
   }, []);
@@ -121,11 +154,29 @@ export function RecorderUploader({
         stream.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
         recorderRef.current = null;
+        stopMeter();
         setRecording(false);
         if (validate(blob)) {
           selectAudio(blob, `speakup-recording-${new Date().toISOString().replace(/[:.]/g, "-")}.${extensionFor(blob)}`);
         }
       };
+      // The meter is optional: recording works the same in browsers without Web Audio.
+      const AudioContextClass = window.AudioContext
+        ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (AudioContextClass) {
+        try {
+          const context = new AudioContextClass();
+          const analyser = context.createAnalyser();
+          analyser.fftSize = 1024;
+          context.createMediaStreamSource(stream).connect(analyser);
+          audioContextRef.current = context;
+          analyserRef.current = analyser;
+          setMetering(true);
+        } catch {
+          audioContextRef.current = null;
+          analyserRef.current = null;
+        }
+      }
       startedAtRef.current = Date.now();
       setElapsed(0);
       setRecording(true);
@@ -150,28 +201,55 @@ export function RecorderUploader({
     setError(null);
   }
 
+  const maxMinutes = Math.round(maxAudioDurationSeconds / 60);
+  const maxMegabytes = Math.round(maxAudioBytes / 1024 / 1024);
+  const hint = "text-sm text-muted on-dark:text-cream/80";
+
   return (
     <section className="flex w-full flex-col gap-5" aria-label="Demo recording upload">
-      <div className="flex flex-wrap gap-4">
-        <button type="button" className={buttonClass("accent")} onClick={recording ? stopRecording : startRecording}>
-          {recording ? "■ Stop recording" : "● Record audio"}
-        </button>
-        <label className={buttonClass("secondary")}>
-          ↑ Upload audio
-          <input
-            type="file"
-            accept=".wav,.mp3,.m4a,.webm,audio/*"
-            className="sr-only"
-            disabled={recording}
-            onChange={(event) => {
-              chooseFile(event.target.files?.[0] ?? null);
-              event.target.value = "";
-            }}
-          />
-        </label>
+      {/* Each control sits with the limits that apply to it. */}
+      <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
+        <div className="flex flex-col items-start gap-2">
+          <button type="button" className={buttonClass("accent")} onClick={recording ? stopRecording : startRecording}>
+            {recording ? "■ Stop recording" : "● Record audio"}
+          </button>
+          <p className={hint}>Uses your microphone. Recording stops after {maxMinutes} {maxMinutes === 1 ? "minute" : "minutes"}.</p>
+        </div>
+        <div className="flex flex-col items-start gap-2">
+          <label className={buttonClass("secondary")}>
+            ↑ Upload audio
+            <input
+              type="file"
+              accept=".wav,.mp3,.m4a,.webm,audio/*"
+              className="sr-only"
+              disabled={recording}
+              onChange={(event) => {
+                chooseFile(event.target.files?.[0] ?? null);
+                event.target.value = "";
+              }}
+            />
+          </label>
+          <p className={hint}>WAV, MP3, M4A or WebM, up to {maxMegabytes} MB.</p>
+        </div>
       </div>
-      <p className="font-mono text-sm text-teal on-dark:text-mint" aria-live="polite">
-        {recording ? `RECORDING ${formatDuration(elapsed)} / ${formatDuration(maxAudioDurationSeconds)}` : selected ? `READY · ${filename}` : "DEMO ONLY · Nothing is sent to AWS"}
+
+      {/* The meter is flat until a real microphone stream feeds it. */}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex h-12 items-center gap-[3px]" aria-hidden="true">
+          {levels.map((level, index) => (
+            <span
+              key={index}
+              className={`min-h-1 flex-1 rounded-full ${metering ? "bg-teal on-dark:bg-mint" : "bg-line on-dark:bg-night-line"}`}
+              style={{ height: `${Math.round(level * 100)}%` }}
+            />
+          ))}
+        </div>
+        <p className={hint}>{metering ? "Live level from your microphone." : "The level meter moves while you record."}</p>
+      </div>
+
+      <p className="flex items-center gap-2 font-mono text-sm text-teal on-dark:text-mint" aria-live="polite">
+        {recording && <span aria-hidden="true" className="recording-dot size-2.5 shrink-0 rounded-full bg-[#ff6b5e]" />}
+        <span>{recording ? `RECORDING ${formatDuration(elapsed)} / ${formatDuration(maxAudioDurationSeconds)}` : selected ? `READY · ${filename}` : "DEMO ONLY · Nothing is sent to AWS"}</span>
       </p>
       {error && <p className="text-sm font-semibold text-rust on-dark:text-peach" role="alert">{error}</p>}
       {previewUrl && <audio controls src={previewUrl} className="w-full" aria-label="Preview selected audio" />}

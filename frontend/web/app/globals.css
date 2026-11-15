@@ -170,6 +170,7 @@ body {
   .analyzing-dots span:nth-child(2) { animation-delay: 0.2s; }
   .analyzing-dots span:nth-child(3) { animation-delay: 0.4s; }
 
+  .recording-dot { animation: mascot-pulse 1.4s ease-in-out infinite; }
   .mascot-eyes { animation: mascot-blink 5.2s infinite; }
   .mascot-pulse { animation: mascot-pulse 2.4s ease-in-out infinite; }
   .mascot-float { animation: mascot-float 3s ease-in-out infinite; }
@@ -300,14 +301,17 @@ h1, h2, h3 {
 }
 
 /* Dense labels (table headers, chart captions, field names) use the body face
-   at a readable size. Monospace is kept for short details such as times. */
-.label {
-  font-family: var(--font-dm-sans), sans-serif;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--color-muted);
+   at a readable size. Monospace is kept for short details such as times.
+   In the components layer so a colour utility can override it. */
+@layer components {
+  .label {
+    font-family: var(--font-dm-sans), sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
 }
 
 /* Keyboard focus: always visible, teal on light surfaces, mint on dark ones. */

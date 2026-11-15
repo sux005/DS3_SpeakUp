@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { Ammonite, Egg, FernCluster, Perch, SiteFooter, StrataDivider, ValleyBackdrop } from "@/components/Scenery";
+import { Ammonite, Egg, FernCluster, Perch, SiteFooter, ValleyBackdrop } from "@/components/Scenery";
 
 describe("Scenery", () => {
   it("keeps every drawing out of the accessibility tree", () => {
@@ -47,9 +47,8 @@ describe("Scenery", () => {
     expect(container.querySelectorAll("path").length).toBe(whole + 1);
   });
 
-  it("renders the divider as a separator and the footer with its credit", () => {
-    render(<><StrataDivider /><SiteFooter /></>);
-    expect(screen.getByRole("separator")).toBeTruthy();
+  it("renders the footer with its credit", () => {
+    render(<SiteFooter />);
     expect(screen.getByRole("contentinfo").textContent).toContain("DS3 at UC San Diego");
   });
 });

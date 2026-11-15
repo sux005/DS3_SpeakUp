@@ -1,7 +1,6 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { ButtonLink } from "@/components/Button";
 import { MascotState } from "@/components/MascotState";
@@ -32,9 +31,6 @@ function NewAttemptContent() {
   const project = getProject(projects, projectId);
   if (!project) return <PageShell><MascotState pose="oops" message="Presentation not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
 
-  const maxMinutes = limits.max_audio_duration_seconds / 60;
-  const maxMegabytes = Math.round(limits.max_audio_upload_bytes / (1024 * 1024));
-
   function submit(audio: Blob, filename: string) {
     const id = createRecording(projectId, audio, filename);
     router.push(`/recordings/${id}/analyzing`);
@@ -49,10 +45,12 @@ function NewAttemptContent() {
         subtitle="Try the local recording flow. Speech scoring requires the AWS pipeline, which is not connected here."
       />
 
-      <section data-surface="dark" className="flex w-full flex-col gap-8 rounded-3xl border-2 border-outline bg-night p-6 md:flex-row md:items-end md:gap-12 md:p-12">
+      <section data-surface="dark" className="flex w-full flex-col gap-8 rounded-3xl border-2 border-outline bg-night p-6 md:flex-row md:items-end md:gap-10 md:p-10">
         <div className="flex min-w-0 flex-1 flex-col gap-6">
-          <p className="font-mono text-xs text-mint">LOCAL AUDIO · DEMO MODE</p>
-          <Image src="/figma/waveform-record.svg" alt="" width={960} height={110} className="h-auto w-full max-w-[960px]" />
+          <div className="flex flex-col gap-1.5">
+            <h2 className="font-display text-2xl font-bold text-cream">Add your audio</h2>
+            <p className="max-w-xl text-cream/85">Find a quiet space and speak naturally. You can preview or discard your audio before starting the demo review.</p>
+          </div>
           <RecorderUploader
             maxAudioBytes={limits.max_audio_upload_bytes}
             maxAudioDurationSeconds={limits.max_audio_duration_seconds}
@@ -63,16 +61,7 @@ function NewAttemptContent() {
         <MascotCoach pose={coaching[status].pose}>{coaching[status].text}</MascotCoach>
       </section>
 
-      <div className="grid w-full gap-12 md:grid-cols-2">
-        <div className="flex flex-col gap-3.5">
-          <h2 className="font-display text-[25px] font-bold text-ink">A quick sound check</h2>
-          <p className="text-[17px] text-muted">Find a quiet space and speak naturally. You can preview or discard your recording before starting the demo flow.</p>
-        </div>
-        <div className="flex flex-col gap-3.5">
-          <h2 className="font-display text-[25px] font-bold text-ink">Bringing a recording?</h2>
-          <p className="text-[17px] text-muted">Upload WAV, MP3, M4A, or WebM audio up to {maxMegabytes} MB. Browser recording stops after {maxMinutes} minutes. Audio stays in this browser session and is not uploaded to AWS.</p>
-        </div>
-      </div>
+      <p className="text-sm text-muted">Audio stays in this browser session and is not uploaded to AWS.</p>
     </PageShell>
   );
 }
