@@ -59,6 +59,7 @@ FEEDBACK_VERSION = _build_version("3.0.0")
 MAX_TRANSCRIBE_POLLS = 80
 DEFAULT_BEDROCK_MAX_INPUT_CHARS = 80_000
 BEDROCK_MAX_OUTPUT_TOKENS = 1200
+MANTLE_MAX_OUTPUT_TOKENS = 2000
 FEEDBACK_CATEGORIES = ("general", "pace", "fillers", "pauses")
 RUBRIC_METRICS = ("speaking_rate", "filler_words", "pauses_inside_sentences")
 BEDROCK_SYSTEM_PROMPT = (
@@ -183,8 +184,15 @@ def _timed_segments(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _coaching_feedback(text: str, segments: list[dict[str, Any]]) -> dict[str, Any]:
     """Accept only feedback the client can display and anchor to real speech."""
 
+    candidate = text.strip()
+    if candidate.startswith("```"):
+        candidate = candidate[3:].lstrip()
+        if candidate[:4].lower() == "json":
+            candidate = candidate[4:].lstrip()
+        if candidate.endswith("```"):
+            candidate = candidate[:-3].rstrip()
     try:
-        answer = json.loads(text.strip())
+        answer = json.loads(candidate)
     except (TypeError, ValueError) as error:
         raise ValueError("Bedrock feedback is not valid JSON") from error
     if not isinstance(answer, dict):
@@ -326,7 +334,8 @@ def _mantle_chat_completion(model_id: str, prompt: str) -> dict[str, Any]:
                 {"role": "system", "content": BEDROCK_SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
-            "max_tokens": BEDROCK_MAX_OUTPUT_TOKENS,
+            "response_format": {"type": "json_object"},
+            "max_tokens": MANTLE_MAX_OUTPUT_TOKENS,
             "temperature": 0.2,
         },
         separators=(",", ":"),

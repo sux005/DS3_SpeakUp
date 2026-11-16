@@ -876,6 +876,17 @@ def test_feedback_rejects_unanchored_model_moment(monkeypatch):
     assert store.artifacts == []
 
 
+@pytest.mark.parametrize("closing_fence", ["", "\n```"])
+def test_coaching_feedback_accepts_markdown_fenced_json(monkeypatch, closing_fence):
+    module = load_processor(monkeypatch)
+    response = coaching_response()
+    text = response["output"]["message"]["content"][0]["text"]
+
+    feedback = module._coaching_feedback(f"```json\n{text}{closing_fence}", [])
+
+    assert feedback["overview"] == "Clear opening; slow down before the main point."
+
+
 def test_feedback_supports_bedrock_mantle_chat(monkeypatch, caplog):
     module = load_processor(monkeypatch)
     monkeypatch.setenv("BEDROCK_INFERENCE_MODE", "mantle-chat")
@@ -957,7 +968,8 @@ def test_mantle_chat_signs_request_and_normalizes_response(monkeypatch):
     assert request.headers["Authorization"].startswith("AWS4-HMAC-SHA256")
     body = json.loads(request.data)
     assert body["model"] == "openai.gpt-oss-20b"
-    assert body["max_tokens"] == module.BEDROCK_MAX_OUTPUT_TOKENS
+    assert body["response_format"] == {"type": "json_object"}
+    assert body["max_tokens"] == module.MANTLE_MAX_OUTPUT_TOKENS
     assert body["messages"][0]["content"] == module.BEDROCK_SYSTEM_PROMPT
     assert body["messages"][1]["content"] == "prompt-data"
     assert result == {

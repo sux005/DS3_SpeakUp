@@ -22,7 +22,12 @@ artifact.
 
 ## Token and privacy safeguards
 
-- The processor sets `maxTokens=800`; it does not use the model maximum.
+- Converse uses a 1,200-token output cap. Mantle Chat Completions uses a
+  2,000-token cap because GPT OSS reasoning tokens count toward the same limit;
+  both remain well below the model maximum.
+- Mantle requests use `response_format.type=json_object`. GPT OSS can still
+  prepend a Markdown code fence, so the processor removes only that optional
+  wrapper before applying the strict feedback schema validator.
 - `BEDROCK_MAX_INPUT_CHARS` defaults to 80,000 and rejects larger serialized
   inputs before invocation.
 - The prompt tells the model to treat the transcript as data, not instructions,
@@ -187,3 +192,46 @@ encrypted with SSE-S3. CloudWatch recorded `feedback.bedrock` `SUCCESS` for
 this recording with stop reason `stop`, 447 input tokens, 626 output tokens,
 and no transcript or feedback text. The privacy-safe runner log is
 `results/live-e2e/pipeline-20261112T215554Z.jsonl`.
+
+## Merged structured-feedback deployment (2026-11-15)
+
+The branch was merged with the latest `origin/main` before final validation so
+it preserves acoustic pause inputs and the version 2 structured coaching
+artifact. The final processor archive is:
+
+`deployments/speakup-dev/processor-mantle-fenced-json-5c615d20bdc7.zip`
+
+CloudFormation change set `mantle-fenced-json-20261115` completed without any
+resource replacement or deletion. A first merged-pipeline run exposed that GPT
+OSS sometimes prefixes otherwise valid JSON with a Markdown code fence. The
+final adapter uses JSON response mode, a bounded 2,000-token output cap, and a
+narrow fence normalizer before the existing schema validation. A synthetic live
+request confirmed the normalized response covered all four categories and used
+valid anchored moments.
+
+A final real 48 kHz `SPEAKUP 2.m4a` upload then passed through the public API and
+automatic S3 trigger:
+
+- Project: `757e3559-17f8-4ad9-8099-18df3ef4274c`
+- Recording: `6809daaa-cff0-5427-a02d-ab841e10ab3c`
+- Step Functions execution: `SUCCEEDED`
+- Upload-to-terminal processing: 68.418 seconds
+- Audio preprocessing: 41.861 seconds
+- Transcribe start: 1.323 seconds
+- Transcribe wait: 15.044 seconds
+- Transcript check: 0.149 seconds
+- Analytics: 0.424 seconds
+- Structured Bedrock feedback: 4.919 seconds
+- Transcript artifact: 92 timestamped items
+- Analysis: 67 words, 116.86 WPM, 4 fillers, 11 pauses,
+  `insufficient_speech`
+- Feedback artifact: schema version 2, four categories, four anchored moments,
+  and 17 copied metric fields
+- Original download: SHA-256 matched the uploaded bytes
+
+DynamoDB recorded `COMPLETE` and a versioned feedback reference. The 3,126-byte
+feedback artifact is private, versioned, and encrypted with SSE-S3. CloudWatch
+recorded `feedback.bedrock` `SUCCESS` in 4.634 seconds with 1,725 input tokens,
+1,720 output tokens, and stop reason `stop`; the inspected messages contained no
+transcript text, feedback text, credentials, or bearer tokens. The privacy-safe
+runner log is `results/live-e2e/pipeline-20261116T052749Z.jsonl` (UTC filename).
