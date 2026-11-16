@@ -1,7 +1,9 @@
 """The finalized 2026-10-31 speaking rubric applied to timed Transcribe words.
 
-Word gaps estimate pauses. They do not establish acoustic silence when ASR
-misses speech, so the output names this detection method explicitly.
+Pauses come from Transcribe word gaps by default. When the audio-prep step also
+measured the audio (``acoustic``, see src/audio/pause_detection.py), pauses come
+from energy silences plus Silero-and-word-gap agreement instead (src/scoring/pauses.py).
+The output names the detection method that ran.
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ import math
 import re
 from typing import Any, Mapping, Sequence
 
+from src.scoring.pauses import combine
 from src.scoring.rubric_definition import RubricDefinition, load_rubric
 
 MINIMUM_PAUSE_SECONDS = 0.3
@@ -103,11 +106,38 @@ def _fillers(
     return scored, watch, len(words) - len(excluded), occurrences
 
 
+def _pause_spans(
+    words: Sequence[_Word], acoustic: Mapping[str, Any] | None
+) -> tuple[list[tuple[float, float]], str]:
+    """Pause intervals inside the speech span, and the name of the method that found them."""
+
+    if not acoustic:
+        spans = [(left.end, right.start) for left, right in zip(words, words[1:])
+                 if right.start - left.end >= MINIMUM_PAUSE_SECONDS]
+        return spans, "transcribe_word_gaps"
+    silero = acoustic.get("silero_speech")
+    spans = combine(
+        [tuple(item) for item in acoustic.get("energy_silences") or []],
+        [(word.start, word.end) for word in words],
+        [tuple(item) for item in silero] if silero is not None else None,
+        acoustic.get("duration_seconds"),
+    )
+    first, last = (words[0].start, words[-1].end) if words else (0.0, 0.0)
+    spans = [(max(start, first), min(end, last)) for start, end in spans if end > first and start < last]
+    method = "energy_or_silero_and_word_gap" if silero is not None else "energy_only"
+    return [(start, end) for start, end in spans if end - start >= MINIMUM_PAUSE_SECONDS - 1e-9], method
+
+
 def score_transcribe_items(
     items: Sequence[Mapping[str, Any]],
     rubric: RubricDefinition | None = None,
+    acoustic: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Measure and score timed words without inventing scores for short speech."""
+    """Measure and score timed words without inventing scores for short speech.
+
+    ``acoustic`` is the optional ``pause_inputs`` block from the audio-prep report
+    (energy silences and Silero speech segments). Without it, pauses are Transcribe word gaps.
+    """
 
     active_rubric = rubric or load_rubric()
     words = _words(items)
@@ -118,19 +148,22 @@ def score_transcribe_items(
     pauses: list[dict[str, Any]] = []
     long_pauses: list[dict[str, Any]] = []
     total_pause = 0.0
-    for left, right in zip(words, words[1:]):
-        gap = right.start - left.end
-        if gap >= MINIMUM_PAUSE_SECONDS:
-            pause = {
-                "start_seconds": round(left.end, 2),
-                "end_seconds": round(right.start, 2),
-                "duration_seconds": round(gap, 2),
-                "inside_sentence": not left.sentence_end,
-            }
-            pauses.append(pause)
-            total_pause += gap
-            if (pause["inside_sentence"] and gap >= 1.0) or gap >= 3.0:
-                long_pauses.append(pause)
+    spans, method = _pause_spans(words, acoustic)
+    for start, end in spans:
+        gap = end - start
+        before = [word for word in words if word.end <= (start + end) / 2]
+        if not before:
+            continue
+        pause = {
+            "start_seconds": round(start, 2),
+            "end_seconds": round(end, 2),
+            "duration_seconds": round(gap, 2),
+            "inside_sentence": not before[-1].sentence_end,
+        }
+        pauses.append(pause)
+        total_pause += gap
+        if (pause["inside_sentence"] and gap >= 1.0) or gap >= 3.0:
+            long_pauses.append(pause)
     speaking_seconds = max(0.0, duration - total_pause)
     inside_count = sum(pause["inside_sentence"] for pause in pauses)
     between_count = len(pauses) - inside_count
@@ -144,7 +177,7 @@ def score_transcribe_items(
     return {
         "rubric_version": active_rubric.version,
         "rubric_status": "scored" if eligible else "insufficient_speech",
-        "pause_detection_method": "transcribe_word_gaps",
+        "pause_detection_method": method,
         "transcribed_word_count": len(words),
         "word_count": spoken_count,
         "duration_seconds": round(duration, 2),

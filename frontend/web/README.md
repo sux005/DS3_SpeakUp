@@ -1,92 +1,64 @@
 # SpeakUp frontend
 
-The SpeakUp MVP frontend, built from the Figma file. It runs on fake JSON, so it works without AWS. Nothing is connected to the backend yet, but `lib/api.ts` has the calls ready.
+This Next.js frontend is a local, interactive preview of the SpeakUp presentation practice flow. It does not call AWS or generate speech analysis.
 
-## Run it
+## Run locally
 
-You need [Node.js](https://nodejs.org) 20.9 or newer. Check with `node -v`.
+Use Node.js 20.9 or newer. From `frontend/web`:
 
 ```bash
-cd frontend/web
 npm install
 npm run dev
 ```
 
-Then open [http://localhost:3000](http://localhost:3000). Pages update when you save a file. Press `Ctrl+C` to stop the server.
+Open [http://localhost:3000](http://localhost:3000). Run `npm run lint` and `npm run build` to check the app.
 
-`npm install` is only needed the first time, and again after `package.json` changes.
+## Tests
 
-## Screens
+```bash
+npm run test       # unit and component/integration tests
+npm run test:coverage # instrument frontend source for unit/integration coverage
+npm run test:all   # coverage, production build, and browser tests
+```
 
-| Figma screen | URL |
+The browser suite runs against a local production server on port 3102. It uses the local demo fixtures and browser storage; it does not need the backend or AWS. On macOS it uses installed Google Chrome when available. On other systems install Playwright Chromium with `npx playwright install chromium` or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to a Chromium-compatible browser.
+If Turbopack fails because the environment restricts local worker ports,
+`npx next build --webpack` is an alternative production build.
+Run `npm run build` first when invoking `npm run test:e2e` by itself; `npm run test:all` includes the build.
+The coverage report measures unit and integration execution of the frontend source. Browser tests are reported separately by Playwright.
+
+## Try the flow
+
+1. On the home page, choose **New presentation** and upload or record audio immediately. A title is optional; the presentation is created when you start the demo review. You can also open the seeded [Demo Day presentation](http://localhost:3000/projects/project-demo-day).
+2. For another attempt in an existing presentation, choose **New attempt**. Preview or discard the audio before starting the demo processing flow.
+3. Watch the recording move through simulated processing stages, then open its review. The local recording can be played during this browser session.
+4. The seeded [sample review](http://localhost:3000/recordings/8f2d9305-51f8-5ea1-9dbf-d5fc94b87f08) shows example transcript, metrics, and coaching. Those artifacts belong only to that recording. New recordings show no invented scores.
+
+Presentation and recording state is held in `lib/demo-store.tsx`, seeded from `data/`, and saved in browser `localStorage`. Recording audio uses an in-memory object URL, so playback is unavailable after a full page reload. Clear the `speakup-frontend-demo-v1` localStorage entry to reset the preview.
+
+## Code map
+
+| Path | Purpose |
 | --- | --- |
-| A · Your presentations | [/](http://localhost:3000/) |
-| B · Project & progress | [/projects/project-demo-day](http://localhost:3000/projects/project-demo-day) |
-| C · Record or upload | [/projects/project-demo-day/new](http://localhost:3000/projects/project-demo-day/new) |
-| D · Analyzing | [/recordings/ec4bb4c2-f423-5f06-86b7-5ee814c4b598/analyzing](http://localhost:3000/recordings/ec4bb4c2-f423-5f06-86b7-5ee814c4b598/analyzing) |
-| E1 · Results | [/recordings/8f2d9305-51f8-5ea1-9dbf-d5fc94b87f08](http://localhost:3000/recordings/8f2d9305-51f8-5ea1-9dbf-d5fc94b87f08) |
-| Rubric | [/rubric](http://localhost:3000/rubric) |
-| Sign in (demo) | [/login](http://localhost:3000/login) |
+| `app/` | Presentation, recording, status, and review routes |
+| `lib/demo-store.tsx` | Single client-side source for presentations, recordings, reviews, and status progression |
+| `lib/recordings.ts` | Pure selectors and display formatting |
+| `components/RecorderUploader.tsx` | Microphone capture, file selection, and local preview |
+| `components/AudioReviewPlayer.tsx` | Playback and time-linked review moments |
+| `data/` | Seed API payloads for this frontend preview |
 
-Screen D shows whichever stage matches the recording's status. The failed sample recording is at `/recordings/63c7255c-c5fd-5d77-86c2-b9ad4ec15498/analyzing`.
+`frontend/sample-payloads/` contains the original example API payloads. The runtime reads only `frontend/web/data/`; when refreshing demo examples, update that set deliberately and keep recording IDs consistent across transcript, analysis, and feedback.
 
-On screen E1, filler words are red. Click any word, timestamp or moment chip to play the audio from 0.5 seconds before it. The word being spoken is highlighted as the audio plays, and the transcript scrolls inside its own box.
+The AWS API contract is documented in [docs/aws-payload-api.md](../../docs/aws-payload-api.md). Authentication, upload, processing, and generated analysis still require backend integration.
 
-## Fake data
+## Integrated MVP features
 
-`data/` is a copy of [`frontend/sample-payloads/`](../sample-payloads/README.md), Arjun's sample API responses. The copy is needed because Next.js can't import files from outside `frontend/web`.
+The interactive demo also retains `/rubric`, `/login` (demo only), and the
+unused AWS helpers in `lib/api.ts`. Review transcripts preserve punctuation,
+filler highlighting, filtering, and clickable words/timestamps with a 0.5-second
+lead-in when audio is available. Seed feedback stays attached to its original
+recording; new local recordings do not receive sample analysis.
 
-If the samples change, refresh the copy from the repo root:
-
-```bash
-cp frontend/sample-payloads/*.json frontend/web/data/
-```
-
-## Demo audio
-
-Screen E1 plays `public/demo/sample-take.mp3`. Git ignores it, because the team doesn't commit audio. Without it, the page still works but shows a "No audio file found" note.
-
-To make it, you need `clip5_acl.wav` (a public ACL 2022 conference talk) from the team's clip tool, and `ffmpeg` (`brew install ffmpeg`). From the repo root:
-
-```bash
-ffmpeg -i path/to/clip5_acl.wav -b:a 64k frontend/web/public/demo/sample-take.mp3
-```
-
-`data/demo/transcript.json` and `data/demo/analysis.json` are that talk's real Amazon Transcribe output (from the clip tool's `results/raw/transcribe/clip5_acl.json`), scored by the backend's own `score_transcribe_items`. That's why they line up with the audio. They're separate from Arjun's samples, whose talk has no audio file.
-
-## Where things are
-
-| Path | What's there |
-| --- | --- |
-| `app/page.tsx` | Screen A |
-| `app/projects/[projectId]/` | Screens B and C |
-| `app/recordings/[recordingId]/` | Screens D and E1 |
-| `app/rubric/`, `app/login/` | Rubric page and demo sign-in page |
-| `components/` | Shared pieces: nav, buttons, headings, progress charts, rubric score |
-| `components/TranscriptPlayer.tsx` | Audio player and clickable transcript (a client component) |
-| `lib/transcript.ts` | Turns transcript words into sentences and marks fillers |
-| `lib/rubric.ts` | Copy of `src/scoring/rubrics/speaking-2026-10-31.csv`, plus coaching tips per score |
-| `lib/api.ts` | Ready-to-use API calls, including the full upload flow. Not used yet |
-| `lib/recordings.ts` | Reads the fake data and formats dates, times and scores |
-| `lib/types.ts` | The shape of each API response |
-| `public/figma/` | Mascot and waveform images exported from Figma |
-
-## Not connected yet
-
-These are placeholders until the app talks to AWS. The calls for each are in `lib/api.ts`, which is written against [docs/aws-payload-api.md](../../docs/aws-payload-api.md) but **not tested against the real API yet**.
-
-- **API URL:** set `NEXT_PUBLIC_SPEAKUP_API_URL` in `frontend/web/.env.local`. The value is `SPEAKUP_API_URL` in `.env.development.example`.
-- **Data:** everything comes from `data/`. Replace the JSON imports in `lib/recordings.ts` and in `app/recordings/[recordingId]/page.tsx` with `getProjects`, `getProjectRecordings` and `getArtifact`.
-- **Sign-in:** `/login` doesn't check anything yet. It just goes to the home page. Connect it to Cognito and keep the JWT, which every API call needs.
-- **Recording and upload:** the buttons on screen C don't do anything yet. `uploadRecording()` does the whole flow: `POST /uploads`, `PUT` the file, then poll.
-- **Analyzing:** screen D doesn't refresh. Use `waitForRecording()`.
-- **Audio playback:** E1 plays the local demo file. Use `getDownloadUrl()` for the real recording's `download_url`.
-- **Coaching:** the "Overall" card shows `feedback.json`. The per-metric cards use fixed tips from `lib/rubric.ts`, chosen by score. Bedrock feedback is off in deployment right now.
-- **File types:** screen C accepts WAV, MP3 and M4A, as in the Figma design currently. Check what is wanted to be accepted in the MVP.
-
-## Checks
-
-```bash
-npm run lint
-npm run build
-```
+The MVP's real transcript and analysis remain in `data/demo/`. They belong to
+`public/demo/sample-take.mp3` (not committed) and are not substituted for unrelated
+recordings. The legacy `TranscriptPlayer` remains available for that demo.

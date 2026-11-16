@@ -1,26 +1,48 @@
 @import "tailwindcss";
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 :root {
   --background: #f5f1e8;
   --foreground: #19333a;
+  --surface-paper: #f5f1e8;
+  --surface-ink: #19333a;
+  --surface-teal: #246c70;
+  --surface-muted: #637579;
+  --surface-line: #d9ddd5;
+  --surface-pale: #e4ede5;
+  --surface-rust: #b5532b;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #102b32;
+  --foreground: #fffcf6;
+  --surface-paper: #102b32;
+  --surface-ink: #fffcf6;
+  --surface-teal: #a8d9cb;
+  --surface-muted: #a8d9cb;
+  --surface-line: #345057;
+  --surface-pale: #345057;
+  --surface-rust: #eea777;
 }
 
 /* Colours and fonts from the SpeakUp Figma file. */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-paper: #f5f1e8;
-  --color-ink: #19333a;
-  --color-teal: #246c70;
-  --color-muted: #637579;
-  --color-line: #d9ddd5;
+  --color-paper: var(--surface-paper);
+  --color-ink: var(--surface-ink);
+  --color-teal: var(--surface-teal);
+  --color-muted: var(--surface-muted);
+  --color-line: var(--surface-line);
   --color-night: #102b32;
   --color-night-line: #345057;
+  --color-night-soft: #1b3a42;
   --color-peach: #eea777;
   --color-mint: #a8d9cb;
   --color-cream: #fffcf6;
-  --color-pale: #e4ede5;
-  --color-rust: #b5532b;
+  --color-pale: var(--surface-pale);
+  --color-rust: var(--surface-rust);
   --font-sans: var(--font-dm-sans);
   --font-display: var(--font-space-grotesk);
   --font-mono: var(--font-dm-mono);
@@ -30,4 +52,53 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-dm-sans), sans-serif;
+}
+
+.pip-signal {
+  top: 33px;
+  right: 5px;
+  width: 35px;
+  height: 35px;
+  border: 2px solid var(--color-mint);
+  border-radius: 50%;
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .analyzing-dots span {
+    animation: analyzing-dot 1.5s infinite;
+  }
+
+  .analyzing-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .analyzing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+  .pip-motion { animation: pip-float 3s ease-in-out infinite; }
+  .pip-motion .pip-signal { animation: pip-pulse 2.4s ease-out infinite; }
+  .analysis-stage-active { animation: stage-highlight 0.75s ease-out; }
+  .analysis-stage-check { display: inline-block; animation: stage-check-in 0.3s ease-out; }
+}
+
+@keyframes analyzing-dot {
+  0%, 45%, 100% { opacity: 0.25; }
+  20% { opacity: 1; }
+}
+
+@keyframes pip-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px); }
+}
+
+@keyframes pip-pulse {
+  0%, 45%, 100% { opacity: 0; transform: scale(0.5); }
+  18% { opacity: 0.55; transform: scale(1); }
+}
+
+@keyframes stage-highlight {
+  from { background-color: rgb(238 167 119 / 14%); transform: translateX(-6px); }
+  to { background-color: transparent; transform: translateX(0); }
+}
+
+@keyframes stage-check-in {
+  from { opacity: 0; transform: scale(0.75); }
+  to { opacity: 1; transform: scale(1); }
 }

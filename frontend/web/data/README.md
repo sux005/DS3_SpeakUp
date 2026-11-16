@@ -14,7 +14,7 @@ They contain no real user data, credentials, S3 URLs, or usable presigned URLs.
 | `upload-reservation.json` | `POST /uploads` | Upload progress flow; its URL is intentionally nonfunctional. |
 | `active-workflow-limit-error.json` | Processing HTTP 429 | Retry/error state; production also returns `Retry-After: 60`. |
 
-Use these as fetch mocks until James's frontend branch is available. The live
+The Next.js skeleton uses these fixtures until its API client is connected. The live
 client should read the base URL from `SPEAKUP_API_URL`, attach the Cognito JWT as
 `Authorization: Bearer <token>`, and treat statuses as a state machine rather
 than assuming processing finishes in one request.
@@ -27,7 +27,9 @@ The browser upload sequence is:
    `required_headers` entry.
 3. Poll `GET /recordings/{recordingId}` until `COMPLETE` or `FAILED`; the S3
    object event confirms the upload and starts processing automatically.
-4. For a completed review, fetch the three artifact routes above in parallel.
+4. For a completed review, fetch `/recordings/{recordingId}/review` for the
+   transcript, summary metrics, and optional feedback. Fetch the `analysis`
+   artifact for timed filler and pause markers.
 
 Recording lists intentionally contain only compact `summary_metrics`. Exact
 filler and pause occurrences live in the analysis artifact so DynamoDB does not

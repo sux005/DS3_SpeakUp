@@ -6,7 +6,7 @@ from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 
-from src.aws_payload.errors import OwnershipViolationError
+from src.aws_payload.errors import OwnershipViolationError, PayloadNotFoundError
 from src.aws_payload.models import PayloadType, Project, Recording, RecordingStatus, UploadIntent
 
 
@@ -242,6 +242,110 @@ def test_public_recording_shape_excludes_storage_and_workflow_details(monkeypatc
         "transcription_job_name", "raw_transcript_s3_key", "feedback_s3_key",
     ):
         assert private_field not in body
+
+
+def test_review_route_returns_timed_transcript_and_feedback(monkeypatch):
+    module = load_handler_module()
+    recording = Recording(
+        "user-1", "project-1", "recording-1", "2026-01-01T00:00:00Z",
+        "2026-01-01T00:01:00Z", status=RecordingStatus.COMPLETE,
+    )
+    artifacts = {
+        "transcript.v1": {"data": {"text": "hello world", "items": [
+            {"type": "pronunciation", "start_time": "0.0", "end_time": "0.4",
+             "alternatives": [{"content": "hello"}]},
+        ]}},
+        "feedback.v1": {"data": {"feedback": "Clear opening.", "schema_version": 2,
+            "model_id": "internal-model",
+            "categories": {"pace": {"observation": "150 WPM.", "next_step": "Keep this pace."}},
+            "moments": [
+            {"id": "s1", "start_seconds": 0.0, "end_seconds": 0.4,
+             "text": "hello", "kind": "strength", "observation": "Clear opening.",
+             "next_step": "Keep this clarity."},
+        ]}},
+    }
+
+    class Store:
+        def get_recording(self, user_id, recording_id):
+            assert user_id == "user-1"
+            assert recording_id == "recording-1"
+            return recording
+
+        def get_json_artifact(self, user_id, recording_id, payload_type):
+            assert user_id == "user-1"
+            return artifacts[payload_type.value]
+
+    monkeypatch.setattr(module, "payloads", lambda: Store())
+    response = module.handler(
+        authenticated_event("GET /recordings/{recordingId}/review", path={"recordingId": "recording-1"}),
+        None,
+    )
+    assert response["statusCode"] == 200
+    body = json.loads(response["body"])
+    assert body["transcript"]["items"][0]["start_time"] == "0.0"
+    assert body["feedback"]["moments"][0]["id"] == "s1"
+    assert body["feedback"]["categories"]["pace"]["next_step"] == "Keep this pace."
+    assert "model_id" not in body["feedback"]
+
+
+def test_review_route_returns_transcript_and_metrics_when_feedback_disabled(monkeypatch):
+    module = load_handler_module()
+    recording = Recording(
+        "user-1", "project-1", "recording-1", "2026-01-01T00:00:00Z",
+        "2026-01-01T00:01:00Z", status=RecordingStatus.COMPLETE,
+        summary_metrics={"words_per_minute": 150},
+    )
+
+    class Store:
+        def get_recording(self, user_id, recording_id):
+            assert (user_id, recording_id) == ("user-1", "recording-1")
+            return recording
+
+        def get_json_artifact(self, user_id, recording_id, payload_type):
+            assert (user_id, recording_id) == ("user-1", "recording-1")
+            if payload_type is PayloadType.TRANSCRIPT:
+                return {"data": {"text": "hello", "items": []}}
+            if payload_type is PayloadType.FEEDBACK:
+                raise PayloadNotFoundError("feedback was not generated")
+            raise AssertionError(payload_type)
+
+    monkeypatch.setattr(module, "payloads", lambda: Store())
+    response = module.handler(
+        authenticated_event("GET /recordings/{recordingId}/review", path={"recordingId": "recording-1"}),
+        None,
+    )
+    assert response["statusCode"] == 200
+    assert json.loads(response["body"]) == {
+        "recording_id": "recording-1",
+        "transcript": {"text": "hello", "items": []},
+        "feedback": None,
+        "summary_metrics": {"words_per_minute": 150},
+    }
+
+
+def test_review_route_hides_artifacts_until_complete(monkeypatch):
+    module = load_handler_module()
+    recording = Recording(
+        "user-1", "project-1", "recording-1", "2026-01-01T00:00:00Z",
+        "2026-01-01T00:01:00Z", status=RecordingStatus.ANALYZED,
+    )
+    calls = []
+
+    class Store:
+        def get_recording(self, *_):
+            return recording
+
+        def get_json_artifact(self, *_):
+            calls.append(True)
+            raise AssertionError("artifacts must not be read before completion")
+
+    monkeypatch.setattr(module, "payloads", lambda: Store())
+    response = module.handler(
+        authenticated_event("GET /recordings/{recordingId}/review", path={"recordingId": "recording-1"}),
+        None,
+    )
+    assert response["statusCode"] == 409
+    assert calls == []
 
 
 def test_public_failure_reason_does_not_expose_worker_exception():
