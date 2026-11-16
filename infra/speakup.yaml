@@ -34,6 +34,11 @@ Parameters:
     Type: String
     Default: amazon.nova-lite-v1:0
     AllowedPattern: '^[A-Za-z0-9._:-]+$'
+  BedrockInferenceMode:
+    Type: String
+    Default: converse
+    AllowedValues: [converse, mantle-chat]
+    Description: Use Bedrock Runtime Converse or the signed Bedrock Mantle chat endpoint.
   LogRetentionDays:
     Type: Number
     Default: 14
@@ -579,6 +584,13 @@ Resources:
                 Effect: Allow
                 Action: bedrock:InvokeModel
                 Resource: !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}'
+              - Sid: GenerateMantleFeedback
+                Effect: Allow
+                Action: bedrock-mantle:CreateInference
+                Resource: !Sub 'arn:${AWS::Partition}:bedrock-mantle:${AWS::Region}:${AWS::AccountId}:project/*'
+                Condition:
+                  StringEquals:
+                    bedrock-mantle:Model: !Ref BedrockModelId
               - Sid: WriteTraces
                 Effect: Allow
                 Action: [xray:PutTraceSegments, xray:PutTelemetryRecords]
@@ -793,6 +805,7 @@ Resources:
           MAX_ACTIVE_WORKFLOWS: !Ref MaxActiveWorkflows
           ENFORCE_WORKFLOW_ADMISSIONS: !Ref EnforceWorkflowAdmissions
           BEDROCK_MODEL_ID: !Ref BedrockModelId
+          BEDROCK_INFERENCE_MODE: !Ref BedrockInferenceMode
           BEDROCK_MAX_INPUT_CHARS: !Ref BedrockMaxInputChars
           ENABLE_BEDROCK_FEEDBACK: !Ref EnableBedrockFeedback
           PROCESSOR_BUILD_ID: !Sub '${ProcessorCodeS3Key}:${ProcessorCodeS3Version}'

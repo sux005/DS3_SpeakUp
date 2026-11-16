@@ -180,9 +180,10 @@ access uses the short-lived `speakup-dev` profile.
 - Build Lambda packages: `python scripts/build_lambda_packages.py`
 - Calculate transcript WPM: `python scripts/calculate_wpm.py <transcript.json>`
 - Count transcript fillers: `python scripts/count_fillers.py <transcript.json>`
-- Run a bounded, content-safe Bedrock availability check with
+- Run a bounded, content-safe Bedrock Runtime availability check with
   `python scripts/smoke_test_bedrock.py` after signing in to the `speakup-dev`
-  profile.
+  profile. The deployed pipeline may instead use the signed Bedrock Mantle
+  endpoint selected by the `BedrockInferenceMode` stack parameter.
 - Launch notebooks: `jupyter lab notebooks/`
 - Validate locally: `python -m pytest -q --basetemp .test-tmp -p no:cacheprovider`
 - Opt-in deployed workflow smoke test: set `SPEAKUP_LIVE_E2E=1`,
@@ -285,5 +286,8 @@ runtime dependency map, `src/aws_payload/README.md` for a concise API overview, 
 `docs/sign-in-process.md` for app-user and developer authentication and
 `docs/bedrock-upload-pipeline.md` for Bedrock diagnosis and end-to-end
 verification. `docs/research/README.md` indexes the
-research behind the rubric cutoffs, the proposed pause method, and the Bedrock prompt. Amazon
-Transcribe is currently blocked while the AWS project remains on the Free plan.
+research behind the rubric cutoffs, the proposed pause method, and the Bedrock
+prompt. The development pipeline has completed live Amazon Transcribe runs. Its
+Bedrock Runtime quota remains unavailable, so the deployed `speakup-dev` stack
+enables feedback through the separately quota-managed Bedrock Mantle endpoint.
+Preserve `BedrockInferenceMode=mantle-chat` when updating that stack.

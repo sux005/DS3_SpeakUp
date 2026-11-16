@@ -10,9 +10,10 @@ workflow in `infra/speakup.yaml`:
 3. The workflow runs Transcribe and deterministic analytics.
 4. `GenerateFeedback` calls the processor Lambda with `action=feedback`.
 5. The processor reads the persisted transcript and metrics from private S3 and
-   DynamoDB references, invokes Amazon Nova Lite through the Bedrock Converse
-   API, writes a versioned `feedback.json` artifact to S3, adds its reference to
-   the recording, and marks the recording `COMPLETE`.
+   DynamoDB references, invokes the configured model through Bedrock Runtime
+   Converse or the signed Bedrock Mantle Chat Completions endpoint, writes a
+   versioned `feedback.json` artifact to S3, adds its reference to the recording,
+   and marks the recording `COMPLETE`.
 
 The workflow is wired, but the deployment flag defaults to
 `EnableBedrockFeedback=false`. With that value, `GenerateFeedback` records a
@@ -64,24 +65,42 @@ Live bounded requests to both `amazon.nova-lite-v1:0` and
 CloudWatch reported eight `InvocationThrottles` in the inspected 24-hour window
 and no `InputTokenCount` or `OutputTokenCount` datapoints. This means requests
 were rejected before model execution; the prompt, output cap, processor IAM role,
-and Nova model availability were not the cause. The account's Bedrock Runtime
-allowance or account plan must be restored before enabling feedback. Do not set
-`EnableBedrockFeedback=true` while this condition remains, because the workflow
-correctly treats a failed required feedback stage as a failed recording.
+and Nova model availability were not the cause. Do not enable feedback in
+`converse` mode while this Bedrock Runtime allowance remains exhausted, because
+the workflow treats a failed required feedback stage as a failed recording.
 
-The account exposes positive quotas for the separate Bedrock Mantle endpoint,
-but silently replacing Converse/Nova with that endpoint would change the model,
-client API, IAM surface, and prompt behavior. It is not a minimal bug fix and was
-not used as an automatic fallback. The AWS account owner should first recheck
-Bedrock Runtime after the daily quota window and then review the account plan or
-open an AWS support case if bounded calls still receive the same error.
+The account has a separate quota on the Bedrock Mantle endpoint. A signed Chat
+Completions request to `openai.gpt-oss-20b` succeeded on 2026-11-12, and a second
+call through the processor's `_mantle_chat_completion` function also succeeded:
+0.718 seconds, 171 input tokens, 36 output tokens, stop reason `stop`, and 32
+characters of text. The response text was not recorded. The processor therefore
+supports an explicit `mantle-chat` mode and does not silently fall back between
+APIs or models. The Lambda role grants only `bedrock-mantle:CreateInference` on
+account projects and restricts requests to the configured model with the
+`bedrock-mantle:Model` condition. The Mantle path uses
+`https://bedrock-mantle.us-east-2.api.aws/v1/chat/completions` and SigV4 service
+`bedrock`, which matches the model card for `openai.gpt-oss-20b`.
+
+## Local template validation (2026-11-12)
+
+`cfn-lint` is not on `PATH`. The installed Python `cfnlint` API validated
+`infra/speakup.yaml` for `us-east-2` with 0 errors, 0 warnings, and 0 info
+messages. `cfn-guard` 3.2.1 is installed, but this repository has no Guard rules
+file, so security and compliance rules were not evaluated. CloudFormation
+service validation still runs when the change set is created. The template is
+63,822 bytes, so the change set must use an S3 `--template-url`.
 
 ## Enable and verify
 
 Enabling the flag changes the deployed stack and therefore requires explicit
-team approval. Preserve every existing CloudFormation parameter and change only
-`EnableBedrockFeedback` to `true`; do not edit the Lambda environment by hand,
-because a later stack update would overwrite it.
+team approval. Preserve every existing CloudFormation parameter. For the
+current development account, upload a new immutable processor archive, then set
+`BedrockInferenceMode=mantle-chat`, `BedrockModelId=openai.gpt-oss-20b`,
+`EnableBedrockFeedback=true`, and the new `ProcessorCodeS3Key` plus
+`ProcessorCodeS3Version`. Leave every other parameter on its previous value.
+Do not edit the Lambda environment by hand, because a later stack update would
+overwrite it. Do not leave the mode at `converse` while enabling feedback:
+that path still targets Nova and the exhausted Bedrock Runtime allowance.
 
 After deployment, upload one non-private spoken-English recording through the
 normal public API path:
@@ -132,5 +151,39 @@ route and automatic S3 trigger:
 DynamoDB recorded status `COMPLETE` and references for the original audio, four
 audio-preparation artifacts, preprocessing report, transcript, and speech
 analysis. Every inspected S3 object was private, versioned, and encrypted with
-SSE-S3. No feedback artifact exists because Bedrock was deliberately not enabled
-while the account rejects model invocations.
+SSE-S3. No feedback artifact existed in this baseline because Bedrock was
+deliberately disabled while the original Bedrock Runtime endpoint rejected model
+invocations.
+
+## Enabled Mantle deployment (2026-11-12)
+
+CloudFormation change set `enable-mantle-feedback-20261112` updated
+`speakup-dev` with no resource replacements. `describe-events` returned no
+validation errors. The processor archive is:
+
+`deployments/speakup-dev/processor-mantle-chat-d72bb4c5c1f6.zip`
+
+The deployed processor uses `BEDROCK_INFERENCE_MODE=mantle-chat`,
+`BEDROCK_MODEL_ID=openai.gpt-oss-20b`, and `ENABLE_BEDROCK_FEEDBACK=true`.
+IAM simulation allowed `bedrock-mantle:CreateInference` for that model and
+denied it for `amazon.nova-lite-v1:0`.
+
+One real `SPEAKUP 2.m4a` upload then completed through the public API:
+
+- Project: `cb502314-def5-45b5-88de-79d3ba57fc4a`
+- Recording: `50c8358f-986d-5ca3-be20-90ab56e1f42c`
+- Step Functions execution: `SUCCEEDED`
+- `GenerateFeedback`: entered and exited in 2.61 seconds
+- Upload-to-terminal processing: 56.602 seconds
+- Transcript artifact: 92 timestamped items
+- Analysis: 67 words, 116.86 WPM, 4 fillers, 11 pauses,
+  `insufficient_speech`
+- Feedback artifact: 1,761 characters
+- Original download: SHA-256 matched the uploaded bytes
+
+The public recording response still omits storage keys. DynamoDB status was
+`COMPLETE` and its `feedback_s3_key` pointed at a versioned `feedback.json`
+encrypted with SSE-S3. CloudWatch recorded `feedback.bedrock` `SUCCESS` for
+this recording with stop reason `stop`, 447 input tokens, 626 output tokens,
+and no transcript or feedback text. The privacy-safe runner log is
+`results/live-e2e/pipeline-20261112T215554Z.jsonl`.

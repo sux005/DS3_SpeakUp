@@ -26,6 +26,7 @@ def load_processor(monkeypatch):
         "AWS_SECRET_ACCESS_KEY": "test",
         "ENVIRONMENT": "test",
         "BEDROCK_MODEL_ID": "model-test",
+        "BEDROCK_INFERENCE_MODE": "converse",
         "ENABLE_BEDROCK_FEEDBACK": "true",
     }.items():
         monkeypatch.setenv(key, value)
@@ -713,6 +714,94 @@ def test_feedback_generates_and_persists_model_output(monkeypatch, caplog):
     assert '"total_tokens": 43' in caplog.text
     assert "Practice pauses." not in caplog.text
     assert "secret" not in caplog.text
+
+
+def test_feedback_supports_bedrock_mantle_chat(monkeypatch, caplog):
+    module = load_processor(monkeypatch)
+    monkeypatch.setenv("BEDROCK_INFERENCE_MODE", "mantle-chat")
+    store = FakeStore(status=RecordingStatus.ANALYZED)
+    module.payloads = lambda: store
+    calls = []
+    module._mantle_chat_completion = lambda model_id, prompt: (
+        calls.append((model_id, prompt))
+        or {
+            "feedback": "Practice your pauses.",
+            "stop_reason": "stop",
+            "input_tokens": 50,
+            "output_tokens": 8,
+            "total_tokens": 58,
+        }
+    )
+    module.BEDROCK = SimpleNamespace(
+        converse=lambda **kwargs: pytest.fail("Converse must not run")
+    )
+
+    result = module.handler(event("feedback", summary_metrics={"word_count": 2}), None)
+
+    assert result["status"] == RecordingStatus.COMPLETE.value
+    assert calls[0][0] == "model-test"
+    assert json.loads(calls[0][1])["transcript"] == "hello world"
+    assert store.artifacts[-1]["data"]["feedback"] == "Practice your pauses."
+    assert '"total_tokens": 58' in caplog.text
+    assert "Practice your pauses." not in caplog.text
+
+
+def test_feedback_rejects_unknown_bedrock_inference_mode(monkeypatch):
+    module = load_processor(monkeypatch)
+    monkeypatch.setenv("BEDROCK_INFERENCE_MODE", "unknown")
+
+    with pytest.raises(ValueError, match="must be converse or mantle-chat"):
+        module._generate_feedback("model-test", "{}")
+
+
+def test_mantle_chat_signs_request_and_normalizes_response(monkeypatch):
+    module = load_processor(monkeypatch)
+    captured = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        @staticmethod
+        def read():
+            return json.dumps({
+                "choices": [{
+                    "finish_reason": "stop",
+                    "message": {"content": "Use a deliberate pause."},
+                }],
+                "usage": {
+                    "prompt_tokens": 100,
+                    "completion_tokens": 20,
+                    "total_tokens": 120,
+                },
+            }).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(module, "urlopen", fake_urlopen)
+
+    result = module._mantle_chat_completion("openai.gpt-oss-20b", "prompt-data")
+
+    request = captured["request"]
+    assert request.full_url.endswith("/v1/chat/completions")
+    assert request.headers["Authorization"].startswith("AWS4-HMAC-SHA256")
+    body = json.loads(request.data)
+    assert body["model"] == "openai.gpt-oss-20b"
+    assert body["max_tokens"] == module.BEDROCK_MAX_OUTPUT_TOKENS
+    assert body["messages"][1]["content"] == "prompt-data"
+    assert result == {
+        "feedback": "Use a deliberate pause.",
+        "stop_reason": "stop",
+        "input_tokens": 100,
+        "output_tokens": 20,
+        "total_tokens": 120,
+    }
 
 
 def test_feedback_uses_persisted_metrics_over_workflow_event(monkeypatch):
