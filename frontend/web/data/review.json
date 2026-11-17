@@ -1,0 +1,173 @@
+{
+  "recording_id": "8f2d9305-51f8-5ea1-9dbf-d5fc94b87f08",
+  "transcript": {
+    "text": "Um, welcome to the project update.",
+    "items": [
+      {
+        "type": "pronunciation",
+        "start_time": "0.000",
+        "end_time": "0.280",
+        "alternatives": [
+          {
+            "content": "Um"
+          }
+        ]
+      },
+      {
+        "type": "punctuation",
+        "alternatives": [
+          {
+            "content": ","
+          }
+        ]
+      },
+      {
+        "type": "pronunciation",
+        "start_time": "0.520",
+        "end_time": "0.900",
+        "alternatives": [
+          {
+            "content": "welcome"
+          }
+        ]
+      },
+      {
+        "type": "pronunciation",
+        "start_time": "0.940",
+        "end_time": "1.080",
+        "alternatives": [
+          {
+            "content": "to"
+          }
+        ]
+      },
+      {
+        "type": "pronunciation",
+        "start_time": "1.110",
+        "end_time": "1.260",
+        "alternatives": [
+          {
+            "content": "the"
+          }
+        ]
+      },
+      {
+        "type": "pronunciation",
+        "start_time": "1.300",
+        "end_time": "1.680",
+        "alternatives": [
+          {
+            "content": "project"
+          }
+        ]
+      },
+      {
+        "type": "pronunciation",
+        "start_time": "2.050",
+        "end_time": "2.430",
+        "alternatives": [
+          {
+            "content": "update"
+          }
+        ]
+      },
+      {
+        "type": "punctuation",
+        "alternatives": [
+          {
+            "content": "."
+          }
+        ]
+      }
+    ]
+  },
+  "feedback": {
+    "feedback": "Your pace was steady and easy to follow. Start without the opening filler, and leave a short pause before the main point.",
+    "schema_version": 2,
+    "categories": {
+      "general": {
+        "observation": "The opening line is clear and gets to the topic quickly.",
+        "next_step": "Say the opening line once out loud before you record so it comes out without a filler."
+      },
+      "pace": {
+        "observation": "120 words per minute is a comfortable speed for listeners.",
+        "next_step": "Keep this speed and slow down slightly on key numbers or names."
+      },
+      "fillers": {
+        "observation": "The talk starts with \"um\" before the first word.",
+        "next_step": "Take a breath instead of saying \"um\" before your first sentence."
+      },
+      "pauses": {
+        "observation": "There is a short pause in the middle of \"project update\".",
+        "next_step": "Keep phrases together and save pauses for the ends of sentences."
+      }
+    },
+    "moments": [
+      {
+        "id": "s1",
+        "start_seconds": 0.0,
+        "end_seconds": 2.43,
+        "text": "Um, welcome to the project update.",
+        "kind": "improve",
+        "observation": "The first word is a filler.",
+        "next_step": "Start directly with \"Welcome\"."
+      }
+    ],
+    "metrics": {
+      "rubric_version": "2026-10-31",
+      "rubric_status": "scored",
+      "pause_detection_method": "transcribe_word_gaps",
+      "transcribed_word_count": 135,
+      "word_count": 132,
+      "duration_seconds": 66.0,
+      "speaking_duration_seconds": 63.0,
+      "words_per_minute": 120.0,
+      "filler_words": {
+        "um": 2,
+        "uh": 1
+      },
+      "filler_count": 3,
+      "fillers_per_100_words": 2.27,
+      "watch_words": {
+        "like": 2
+      },
+      "pauses_inside_sentences": 8,
+      "pauses_between_sentences": 2,
+      "pauses_per_speaking_minute": 7.62,
+      "total_pause_seconds": 3.0,
+      "rubric_scores": {
+        "speaking_rate": 3,
+        "filler_words": 3,
+        "pauses_inside_sentences": 4
+      }
+    }
+  },
+  "summary_metrics": {
+    "rubric_version": "2026-10-31",
+    "rubric_status": "scored",
+    "pause_detection_method": "transcribe_word_gaps",
+    "transcribed_word_count": 135,
+    "word_count": 132,
+    "duration_seconds": 66.0,
+    "speaking_duration_seconds": 63.0,
+    "words_per_minute": 120.0,
+    "filler_words": {
+      "um": 2,
+      "uh": 1
+    },
+    "filler_count": 3,
+    "fillers_per_100_words": 2.27,
+    "watch_words": {
+      "like": 2
+    },
+    "pauses_inside_sentences": 8,
+    "pauses_between_sentences": 2,
+    "pauses_per_speaking_minute": 7.62,
+    "total_pause_seconds": 3.0,
+    "rubric_scores": {
+      "speaking_rate": 3,
+      "filler_words": 3,
+      "pauses_inside_sentences": 4
+    }
+  }
+}

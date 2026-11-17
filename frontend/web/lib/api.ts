@@ -8,7 +8,7 @@
 //   2. Sign in with Cognito on /login and keep the JWT (ID token).
 //   3. Swap the fake imports in lib/recordings.ts and the pages for these calls.
 
-import type { Project, Recording } from "@/lib/types";
+import type { Project, Recording, RecordingReview } from "@/lib/types";
 
 const API_URL = process.env.NEXT_PUBLIC_SPEAKUP_API_URL ?? "";
 
@@ -67,6 +67,14 @@ export const getArtifact = <T>(token: string, recordingId: string, type: Artifac
   request<{ recording_id: string; artifact_type: ArtifactType; data: T }>(
     token,
     `/recordings/${encodeURIComponent(recordingId)}/artifacts/${type}`,
+  );
+
+// Transcript, summary metrics and structured feedback for a COMPLETE recording.
+// Returns HTTP 409 while the recording is still processing.
+export const getReview = (token: string, recordingId: string) =>
+  request<Omit<RecordingReview, "analysis">>(
+    token,
+    `/recordings/${encodeURIComponent(recordingId)}/review`,
   );
 
 // Short-lived link to the original audio, for <audio src>.
