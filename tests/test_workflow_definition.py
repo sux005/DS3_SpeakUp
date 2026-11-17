@@ -172,6 +172,9 @@ def test_processing_roles_can_resolve_missing_retry_artifacts_and_feedback_is_ga
     assert "EnableBedrockFeedback:" in template
     assert "Default: 'false'" in template
     assert "ENABLE_BEDROCK_FEEDBACK: !Ref EnableBedrockFeedback" in template
+    assert "BEDROCK_INFERENCE_MODE: !Ref BedrockInferenceMode" in template
+    assert "Action: bedrock-mantle:CreateInference" in template
+    assert "bedrock-mantle:Model: !Ref BedrockModelId" in template
 
 
 def test_migrations_have_safe_defaults_and_production_alarm_guard():

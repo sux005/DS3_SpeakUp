@@ -12,9 +12,11 @@ and integration contracts, not James's frontend application source. The live
 pipeline runner performs the same reservation, upload, and polling calls that
 the frontend needs to implement.
 
-Bedrock feedback is currently disabled. A recording still proceeds through
-upload, audio preparation, Amazon Transcribe, deterministic analytics, rubric
-evaluation, and completion.
+The deployed `speakup-dev` stack enables Bedrock Mantle feedback. A recording
+proceeds through upload, audio preparation, Amazon Transcribe, deterministic
+analytics, and rubric evaluation, then `GenerateFeedback` stores coaching before
+completion. The template default remains off, so a later deployment must preserve
+`BedrockInferenceMode`, `BedrockModelId`, and `EnableBedrockFeedback`.
 
 ## Architecture at a glance
 
@@ -362,9 +364,10 @@ When `ENABLE_BEDROCK_FEEDBACK=false`, the processor:
 2. Logs that feedback was skipped.
 3. Changes the recording to `COMPLETE`.
 
-When enabled, it would read the normalized transcript, combine it with the
-calculated measurements, invoke the configured Bedrock model, store
-`feedback.json` in S3, attach its reference, and then mark the recording
+When enabled, it reads the normalized transcript, combines it with the
+calculated measurements, invokes the configured model through either Bedrock
+Runtime Converse or the signed Bedrock Mantle Chat Completions endpoint, stores
+`feedback.json` in S3, attaches its reference, and then marks the recording
 `COMPLETE`.
 
 Bedrock is never allowed to invent the deterministic measurements. It receives
