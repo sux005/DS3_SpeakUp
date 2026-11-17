@@ -416,21 +416,25 @@ def run(args: argparse.Namespace) -> Path:
         )
 
         artifact_summaries: dict[str, Any] = {}
-        artifact_types = ["transcript", "analysis"]
-        if recording.get("feedback_s3_key"):
-            artifact_types.append("feedback")
-        else:
-            log.emit(
-                "artifact.feedback",
-                "SKIPPED",
-                reason="Bedrock feedback is disabled for this deployment",
-            )
+        # The public recording body intentionally omits storage keys. Feedback is
+        # present only when its owner-scoped artifact route returns the coaching text.
+        artifact_types = ["transcript", "analysis", "feedback"]
         for artifact_type in artifact_types:
-            _, artifact = _api_json(
-                "GET", api,
-                f"/recordings/{recording_id}/artifacts/{artifact_type}",
-                token=token,
-            )
+            try:
+                _, artifact = _api_json(
+                    "GET", api,
+                    f"/recordings/{recording_id}/artifacts/{artifact_type}",
+                    token=token,
+                )
+            except RuntimeError as error:
+                if artifact_type == "feedback" and "HTTP 404" in str(error):
+                    log.emit(
+                        "artifact.feedback",
+                        "SKIPPED",
+                        reason="feedback artifact was not stored",
+                    )
+                    continue
+                raise
             data = artifact["data"]
             if artifact_type == "transcript":
                 summary = {
