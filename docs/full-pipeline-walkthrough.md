@@ -315,7 +315,8 @@ The processor reads the raw Transcribe JSON from S3. The document supplies:
 
 - complete transcript text;
 - pronunciation items with word start and end timestamps; and
-- punctuation items used to estimate sentence boundaries.
+- punctuation items used to estimate sentence and phrase boundaries (periods,
+  question marks, exclamation marks and commas).
 
 The processor passes the timed items to `score_transcribe_items()` in
 `src/scoring/rubric.py`.

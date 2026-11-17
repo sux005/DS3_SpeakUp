@@ -53,8 +53,8 @@ def _build_version(base: str) -> str:
 
 TRANSCRIBE_VERSION = _build_version("raw-v1")
 TRANSCRIPT_VERSION = _build_version("1.0.0")
-ANALYSIS_VERSION = _build_version("4.0.0")
-HISTORICAL_ANALYSIS_VERSIONS = ("1.0.0", "2.0.0", "3.0.0")
+ANALYSIS_VERSION = _build_version("5.0.0")
+HISTORICAL_ANALYSIS_VERSIONS = ("1.0.0", "2.0.0", "3.0.0", "4.0.0")
 FEEDBACK_VERSION = _build_version("3.0.0")
 MAX_TRANSCRIBE_POLLS = 80
 DEFAULT_BEDROCK_MAX_INPUT_CHARS = 80_000
