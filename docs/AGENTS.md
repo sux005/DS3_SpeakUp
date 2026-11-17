@@ -214,6 +214,10 @@ access uses the short-lived `speakup-dev` profile.
 - Frontend unit, component, and route integration tests live in
   `frontend/web/tests/`; browser tests live in `frontend/web/e2e/`. Run
   `npm run test:all` from `frontend/web/` before opening a frontend PR.
+- The frontend's development guest bridge uses `NEXT_PUBLIC_SPEAKUP_API_URL=/api/speakup`
+  and `SPEAKUP_DEV_GUEST_MODE=1`; it is disabled in production. Run
+  `npm run test:e2e:live` from `frontend/web/` to check the live-mode browser
+  flow with intercepted API and S3 requests, without contacting AWS.
 
 ## Code style & conventions
 

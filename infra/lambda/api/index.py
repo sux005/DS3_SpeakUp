@@ -212,6 +212,19 @@ def _recording_body(recording: Recording) -> dict[str, Any]:
     return body
 
 
+def _public_feedback(data: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep the structured coaching contract while redacting private metadata."""
+
+    feedback = data.get("feedback")
+    if not isinstance(feedback, str):
+        raise PayloadIntegrityError("stored feedback is invalid")
+    public = {"feedback": feedback}
+    for field in ("schema_version", "categories", "moments", "metrics"):
+        if field in data:
+            public[field] = data[field]
+    return public
+
+
 def _artifact_body(
     store: SpeakUpPayloadStore,
     user_id: str,
@@ -247,10 +260,7 @@ def _artifact_body(
             raise PayloadIntegrityError("stored analysis is invalid")
         public_data = {"metrics": dict(metrics)}
     else:
-        feedback = data.get("feedback")
-        if not isinstance(feedback, str):
-            raise PayloadIntegrityError("stored feedback is invalid")
-        public_data = {"feedback": feedback}
+        public_data = _public_feedback(data)
 
     return {
         "recording_id": recording_id,
@@ -626,12 +636,9 @@ def _dispatch(event: dict[str, Any]) -> dict[str, Any]:
             feedback = None
         else:
             feedback_data = feedback_document.get("data")
-            if not isinstance(feedback_data, Mapping) or not isinstance(feedback_data.get("feedback"), str):
+            if not isinstance(feedback_data, Mapping):
                 raise PayloadIntegrityError("stored feedback is invalid")
-            feedback = {"feedback": feedback_data["feedback"]}
-            for field in ("schema_version", "categories", "moments", "metrics"):
-                if field in feedback_data:
-                    feedback[field] = feedback_data[field]
+            feedback = _public_feedback(feedback_data)
         return reply(
             200,
             {

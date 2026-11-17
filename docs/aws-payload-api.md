@@ -80,6 +80,9 @@ is `transcript`, `analysis`, or `feedback`. The API strongly reads the
 authenticated owner's recording before reading S3 and returns
 `recording_id`, `artifact_type`, and `data`. It does not expose S3 references,
 producer metadata, or the Bedrock model ID.
+The feedback artifact exposes the public `feedback` summary and, when present,
+`schema_version`, `categories`, `moments`, and `metrics`, matching the coaching
+fields in `/review`. Older feedback artifacts may contain only the summary.
 
 `GET /recordings/{recordingId}/review` returns HTTP 409 until processing is
 `COMPLETE`. Its `transcript` object contains `text` and timed Transcribe `items`.

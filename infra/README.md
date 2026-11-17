@@ -105,9 +105,10 @@ deletion requires the exact recording ID as confirmation.
 
 ### Frontend input and original-download contract
 
-The frontend should offer **Record audio** and **Upload audio file** as two
-ways to create an original recording. This is a planned interface contract;
-`frontend/` does not yet contain an app.
+The frontend offers **Record audio** and **Upload audio file** as two
+ways to create an original recording. The local development frontend can use
+the server-only guest bridge with `SPEAKUP_DEV_GUEST_MODE=1`; deployed API routes
+remain JWT-protected and should not be made public.
 
 - **Record audio:** A user clicks Record, grants microphone permission, sees an
   active recording indicator and elapsed time, and can Stop or Cancel. Stop
@@ -140,11 +141,11 @@ ways to create an original recording. This is a planned interface contract;
   Download original action. A bare S3 key does not grant access. Do not log or
   persist the signed URL; someone holding it can use it until it expires.
 
-Add frontend tests for both input paths, the selected browser formats, invalid or
-oversized audio, denied microphone permission, cancelled recordings, original
-download, and cross-owner download denial. The browser recording controls are
-future work; signed upload, browser-audio MIME support, and
-original-download backend routes already exist.
+Frontend tests cover both input paths, selected browser formats, invalid or
+oversized audio, denied microphone permission, cancelled recordings, and the
+signed upload and review flow. Backend tests cover owner-scoped download; the
+live browser QA suite mocks AWS and the development guest bridge is intended for
+local verification only.
 
 ## Current upload and processing workflow
 

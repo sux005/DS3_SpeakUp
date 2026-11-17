@@ -8,10 +8,12 @@ export type RecorderStatus = "idle" | "recording" | "ready";
 type RecorderUploaderProps = {
   maxAudioBytes: number;
   maxAudioDurationSeconds: number;
-  onSubmit: (blob: Blob, filename: string) => void;
+  onSubmit: (blob: Blob, filename: string) => Promise<string | void> | string | void;
   submitLabel?: string;
   /** Lets the page react (for example the mascot) as recording starts and audio is ready. */
   onStatusChange?: (status: RecorderStatus) => void;
+  disabled?: boolean;
+  live?: boolean;
 };
 
 function formatDuration(seconds: number) {
@@ -37,6 +39,8 @@ export function RecorderUploader({
   onSubmit,
   submitLabel = "Analyze demo recording",
   onStatusChange,
+  disabled = false,
+  live = false,
 }: RecorderUploaderProps) {
   const [selected, setSelected] = useState<File | Blob | null>(null);
   const [filename, setFilename] = useState("");
@@ -44,6 +48,7 @@ export function RecorderUploader({
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const previewUrlRef = useRef<string | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -193,6 +198,7 @@ export function RecorderUploader({
   }
 
   function clearSelection() {
+    if (submitting) return;
     if (recording) stopRecording();
     setSelected(null);
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
@@ -203,16 +209,29 @@ export function RecorderUploader({
     setError(null);
   }
 
+  async function submitSelection() {
+    if (!selected || submitting || disabled) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      await onSubmit(selected, filename);
+    } catch (submissionError) {
+      setError(submissionError instanceof Error ? submissionError.message : "The recording could not be created. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   const maxMinutes = Math.round(maxAudioDurationSeconds / 60);
   const maxMegabytes = Math.round(maxAudioBytes / 1024 / 1024);
   const hint = "text-sm text-muted on-dark:text-cream/80";
 
   return (
-    <section className="flex w-full flex-col gap-5" aria-label="Demo recording upload">
+    <section className="flex w-full flex-col gap-5" aria-label={live ? "Recording upload" : "Demo recording upload"}>
       {/* Each control sits with the limits that apply to it. */}
       <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
         <div className="flex flex-col items-start gap-2">
-          <button type="button" className={buttonClass("accent")} onClick={recording ? stopRecording : startRecording}>
+          <button type="button" className={buttonClass("accent")} disabled={submitting || disabled} onClick={recording ? stopRecording : startRecording}>
             {recording ? "■ Stop recording" : "● Record audio"}
           </button>
           <p className={hint}>Uses your microphone. Recording stops after {maxMinutes} {maxMinutes === 1 ? "minute" : "minutes"}.</p>
@@ -224,7 +243,7 @@ export function RecorderUploader({
               type="file"
               accept=".wav,.mp3,.m4a,.webm,audio/*"
               className="sr-only"
-              disabled={recording}
+              disabled={recording || submitting || disabled}
               onChange={(event) => {
                 chooseFile(event.target.files?.[0] ?? null);
                 event.target.value = "";
@@ -251,16 +270,16 @@ export function RecorderUploader({
 
       <p className="flex items-center gap-2 font-mono text-sm text-teal on-dark:text-mint" aria-live="polite">
         {recording && <span aria-hidden="true" className="recording-dot size-2.5 shrink-0 rounded-full bg-[#ff6b5e]" />}
-        <span>{recording ? `RECORDING ${formatDuration(elapsed)} / ${formatDuration(maxAudioDurationSeconds)}` : selected ? `READY · ${filename}` : "DEMO ONLY · Nothing is sent to AWS"}</span>
+        <span>{recording ? `RECORDING ${formatDuration(elapsed)} / ${formatDuration(maxAudioDurationSeconds)}` : selected ? `READY · ${filename}` : live ? "READY TO ANALYZE · Audio is sent after you submit" : "DEMO ONLY · Nothing is sent to AWS"}</span>
       </p>
       {error && <p className="text-sm font-semibold text-rust on-dark:text-peach" role="alert">{error}</p>}
       {previewUrl && <audio controls src={previewUrl} className="w-full" aria-label="Preview selected audio" />}
       {selected && (
         <div className="flex flex-wrap gap-4">
-          <button type="button" className={buttonClass("primary")} onClick={() => onSubmit(selected, filename)}>
-            {submitLabel}
+          <button type="button" className={buttonClass("primary")} disabled={submitting || disabled} onClick={submitSelection}>
+            {submitting ? "Saving…" : submitLabel}
           </button>
-          <button type="button" className={buttonClass("secondary")} onClick={clearSelection}>
+          <button type="button" className={buttonClass("secondary")} disabled={submitting || disabled} onClick={clearSelection}>
             Discard
           </button>
         </div>

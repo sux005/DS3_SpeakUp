@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Project, Recording, RecordingReview } from "@/lib/types";
@@ -30,7 +30,13 @@ vi.mock("@/components/PageHeading", () => ({
   PageHeading: ({ crumb, title, subtitle }: { crumb: string; title: React.ReactNode; subtitle: string }) => <header><span>{crumb}</span><h1>{title}</h1><p>{subtitle}</p></header>,
 }));
 vi.mock("@/components/RecorderUploader", () => ({
-  RecorderUploader: ({ onSubmit, submitLabel = "Analyze demo recording" }: { onSubmit: (blob: Blob, name: string) => void; submitLabel?: string }) => <button type="button" onClick={() => onSubmit(new Blob(["audio"], { type: "audio/wav" }), "test.wav")}>{submitLabel}</button>,
+  RecorderUploader: (() => {
+    const audio = new Blob(["audio"], { type: "audio/wav" });
+    function RecorderUploaderMock({ onSubmit, submitLabel = "Analyze demo recording" }: { onSubmit: (blob: Blob, name: string) => void | Promise<void>; submitLabel?: string }) {
+      return <button type="button" onClick={() => { void Promise.resolve(onSubmit(audio, "test.wav")).catch(() => undefined); }}>{submitLabel}</button>;
+    }
+    return RecorderUploaderMock;
+  })(),
 }));
 vi.mock("@/components/ProgressCharts", () => ({ ProgressCharts: ({ takes }: { takes: Recording[] }) => <div data-testid="charts">charts:{takes.length}</div> }));
 vi.mock("@/components/AudioReviewPlayer", () => ({
@@ -102,7 +108,7 @@ describe("home and project routes", () => {
   it("shows loading and empty presentation states", () => {
     harness.store.ready = false;
     render(<Home />);
-    expect(screen.getByText("Loading local presentations…")).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Loading local presentations…" })).toBeTruthy();
     expect((screen.getByRole("button", { name: "+ New presentation" }) as HTMLButtonElement).disabled).toBe(true);
     cleanup();
     harness.store.ready = true;
@@ -111,16 +117,32 @@ describe("home and project routes", () => {
     expect(screen.getByText(/No presentations yet/)).toBeTruthy();
   });
 
-  it("toggles the home form and submits a custom titled presentation", () => {
+  it("toggles the home form and submits a custom titled presentation", async () => {
     render(<Home />);
     fireEvent.click(screen.getByRole("button", { name: "+ New presentation" }));
     fireEvent.change(screen.getByPlaceholderText("We’ll use today’s date if you skip this"), { target: { value: "  Talk  " } });
     fireEvent.click(screen.getByRole("button", { name: "Start presentation with audio" }));
     expect(harness.store.createProject).toHaveBeenCalledWith("Talk", "");
-    expect(harness.store.createRecording).toHaveBeenCalled();
-    expect(harness.router.push).toHaveBeenCalledWith("/recordings/created-recording/analyzing");
+    await waitFor(() => expect(harness.store.createRecording).toHaveBeenCalled());
+    await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith("/recordings/created-recording/analyzing"));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByText("Start with your audio")).toBeNull();
+  });
+
+  it("reuses the created project when recording upload is retried", async () => {
+    harness.store.createRecording
+      .mockImplementationOnce(() => { throw new Error("upload failed"); })
+      .mockReturnValue("retry-recording");
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "+ New presentation" }));
+    const submit = screen.getByRole("button", { name: "Start presentation with audio" });
+    fireEvent.click(submit);
+    await waitFor(() => expect(harness.store.createRecording).toHaveBeenCalledTimes(1));
+    fireEvent.click(submit);
+    await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith("/recordings/retry-recording/analyzing"));
+    expect(harness.store.createProject).toHaveBeenCalledTimes(1);
+    expect(harness.store.createRecording).toHaveBeenCalledTimes(2);
+    expect((harness.store.createRecording.mock.calls[0] as unknown[])[0]).toBe((harness.store.createRecording.mock.calls[1] as unknown[])[0]);
   });
 
   it("renders project status rows and action links for complete, failed, and processing takes", () => {
@@ -149,13 +171,13 @@ describe("home and project routes", () => {
     expect(screen.getAllByText("Presentation not found.")).toHaveLength(2);
   });
 
-  it("submits a new attempt for the current project and navigates to its status", () => {
+  it("submits a new attempt for the current project and navigates to its status", async () => {
     render(<NewAttemptPage />);
     expect(screen.getByRole("heading", { name: "Record or upload" })).toBeTruthy();
     expect(screen.getByText(/preview or discard your audio/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Analyze demo recording" }));
     expect(harness.store.createRecording).toHaveBeenCalledWith("project-1", expect.any(Blob), "test.wav");
-    expect(harness.router.push).toHaveBeenCalledWith("/recordings/created-recording/analyzing");
+    await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith("/recordings/created-recording/analyzing"));
   });
 });
 

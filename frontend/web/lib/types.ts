@@ -92,11 +92,17 @@ export type FeedbackMoment = {
 export type RecordingReview = {
   recording_id: string;
   transcript: { text: string; items: TranscriptItem[] };
+  // Review responses expose compact metrics at the top level. Keep this
+  // optional so persisted demo reviews and older payloads remain valid.
+  summary_metrics?: SummaryMetrics;
   analysis?: AnalysisMetrics;
-  feedback: {
-    feedback: string;
-    schema_version?: number;
-    categories?: Partial<Record<"general" | "pace" | "fillers" | "pauses", FeedbackCategory>>;
-    moments?: FeedbackMoment[];
-  } | null;
+  feedback: RecordingFeedback | null;
+};
+
+export type RecordingFeedback = {
+  feedback: string;
+  schema_version?: number;
+  categories?: Partial<Record<"general" | "pace" | "fillers" | "pauses", FeedbackCategory>>;
+  moments?: FeedbackMoment[];
+  metrics?: SummaryMetrics;
 };

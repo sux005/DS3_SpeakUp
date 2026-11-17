@@ -1,12 +1,13 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { ButtonLink } from "@/components/Button";
+import { AnalyzingSkeleton } from "@/components/LoadingSkeleton";
 import { Mascot } from "@/components/Mascot";
 import { MascotState } from "@/components/MascotState";
 import { PageHeading, PageShell } from "@/components/PageHeading";
-import { useDemoStore } from "@/lib/demo-store";
+import { useAppStore } from "@/lib/live-store";
 import { formatTake, getProject, getTake } from "@/lib/recordings";
 import type { RecordingStatus } from "@/lib/types";
 
@@ -35,15 +36,49 @@ const listeningGoals = [
   { label: "Confidence", prompt: "Where did your voice sound most like you?" },
 ];
 
+const terminalStatuses = new Set<RecordingStatus>(["COMPLETE", "FAILED", "DELETED", "PURGE_PENDING"]);
+
 export default function AnalyzingPage() {
-  return <Suspense fallback={<PageShell><MascotState busy message="Loading recording…" /></PageShell>}><AnalyzingContent /></Suspense>;
+  return <Suspense fallback={<PageShell><AnalyzingSkeleton /></PageShell>}><AnalyzingContent /></Suspense>;
 }
 
 function AnalyzingContent() {
   const { recordingId } = useParams<{ recordingId: string }>();
-  const { projects, recordings, reviews, ready } = useDemoStore();
+  const { projects, recordings, reviews, ready, live, error, refreshRecording, loadReview, loadAudio } = useAppStore();
   const [listeningGoal, setListeningGoal] = useState<number | null>(null);
-  if (!ready) return <PageShell><MascotState busy message="Loading recording…" /></PageShell>;
+  const recording = recordings.find((item) => item.recording_id === recordingId);
+  const recordingStatus = recording?.status;
+
+  useEffect(() => {
+    if (!live || !recordingId) return;
+    let cancelled = false;
+    const refresh = async () => {
+      if (!cancelled) {
+        try {
+          await refreshRecording(recordingId);
+        } catch {
+          // The store records provider errors for the page to display.
+        }
+      }
+    };
+    void refresh();
+    const interval = recordingStatus && terminalStatuses.has(recordingStatus)
+      ? undefined
+      : window.setInterval(() => void refresh(), 2_000);
+    return () => {
+      cancelled = true;
+      if (interval) window.clearInterval(interval);
+    };
+  }, [live, recordingStatus, recordingId, refreshRecording]);
+
+  useEffect(() => {
+    if (!live || recording?.status !== "COMPLETE") return;
+    void loadReview(recordingId).catch(() => undefined);
+    void loadAudio(recordingId).catch(() => undefined);
+  }, [live, recording?.status, recordingId, loadReview, loadAudio]);
+
+  if (!ready) return <PageShell><AnalyzingSkeleton /></PageShell>;
+  if (error && !recording) return <PageShell><p role="alert">{error}</p><ButtonLink href="/">All presentations</ButtonLink></PageShell>;
   const take = getTake(recordings, recordingId);
   if (!take) return <PageShell><MascotState message="Recording not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
   const project = getProject(projects, take.project_id);
@@ -53,6 +88,10 @@ function AnalyzingContent() {
   const removed = take.status === "DELETED" || take.status === "PURGE_PENDING";
   const finished = finishedStages[take.status];
   const hasAnalysis = Boolean(reviews[recordingId]?.analysis);
+  const processingSubtitle = live
+    ? "Your recording is being processed. This page will update automatically."
+    : "Your audio is ready. This local preview simulates transcript and measurement stages.";
+  const completionTitle = live ? "Analysis ready" : "Demo processing complete";
 
   return (
     <PageShell>
@@ -60,8 +99,8 @@ function AnalyzingContent() {
         crumb={`${project.project_title.toUpperCase()} / ${formatTake(take.take).toUpperCase()}`}
         crumbHref={`/projects/${take.project_id}`}
         showBackArrow={false}
-        title={failed ? "Analysis failed" : removed ? "Recording unavailable" : finished === 4 ? "Demo processing complete" : <>Analyzing<span className="analyzing-dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span></>}
-        subtitle={failed ? (take.failure_reason ?? "Processing failed.") : removed ? "This recording is unavailable." : "Your audio is ready. This local preview simulates transcript and measurement stages."}
+        title={failed ? "Analysis failed" : removed ? "Recording unavailable" : finished === 4 ? completionTitle : <>Analyzing<span className="analyzing-dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span></>}
+        subtitle={failed ? (take.failure_reason ?? "Processing failed.") : removed ? "This recording is unavailable." : processingSubtitle}
       />
 
       {!failed && !removed && (
@@ -74,7 +113,7 @@ function AnalyzingContent() {
                 </span>
                 <div className="flex flex-col gap-1.5">
                   <p className="font-display text-2xl font-bold text-cream">{stage.title}</p>
-                  <p className="text-sm text-mint">{index < finished ? stage.done : index === finished ? stage.active : stage.waiting}</p>
+                <p className="text-sm text-mint">{index < finished ? (live ? "Stage complete." : stage.done) : index === finished ? (live ? "Processing…" : stage.active) : (live ? "Waiting for previous stage" : stage.waiting)}</p>
                 </div>
               </li>
             ))}
@@ -99,7 +138,7 @@ function AnalyzingContent() {
         {finished === 4 && <ButtonLink href={`/recordings/${recordingId}`}>See results →</ButtonLink>}
         <ButtonLink variant="secondary" href={`/projects/${take.project_id}`}>Return to project</ButtonLink>
       </div>
-      {!failed && !removed && (
+      {!failed && !removed && !live && (
         <p className="max-w-[1100px] text-sm text-muted">This local demo continues processing in your browser. Transcript, scores, and coaching require the AWS pipeline.</p>
       )}
 
@@ -127,9 +166,10 @@ function AnalyzingContent() {
         </section>
       )}
 
-      {finished === 4 && !hasAnalysis && (
+      {finished === 4 && !hasAnalysis && !live && (
         <p className="max-w-[1100px] text-sm text-muted">This demo recording has no transcript or scores. Connect the AWS pipeline to generate them.</p>
       )}
+      {error && <p className="max-w-[1100px] text-sm text-peach" role="alert">{error}</p>}
     </PageShell>
   );
 }

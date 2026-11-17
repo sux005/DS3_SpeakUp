@@ -1,15 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { pageColumn } from "@/components/PageHeading";
 import { Button, ButtonLink } from "@/components/Button";
 import { Mascot } from "@/components/Mascot";
-import { MascotState } from "@/components/MascotState";
+import { HomeSkeleton } from "@/components/LoadingSkeleton";
 import { FernCluster, Perch, ValleyBackdrop } from "@/components/Scenery";
 import { RecorderUploader } from "@/components/RecorderUploader";
-import { useDemoStore } from "@/lib/demo-store";
+import { useAppStore } from "@/lib/live-store";
 import { formatDate, formatTake, getTakes } from "@/lib/recordings";
 import type { Take } from "@/lib/types";
 
@@ -26,17 +26,22 @@ function latestAttempt(take: Take) {
 
 export default function Home() {
   const router = useRouter();
-  const { projects, recordings, reviews, createProject, createRecording, limits, ready } = useDemoStore();
+  const { projects, recordings, reviews, createProject, createRecording, limits, ready, error, live } = useAppStore();
   // A finished, scored take to point newcomers at, when one exists.
   const scored = recordings.find((recording) => recording.status === "COMPLETE" && reviews[recording.recording_id]?.analysis);
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
+  const pendingProject = useRef<{ name: string; id: string } | null>(null);
 
-  function startPresentation(audio: Blob, filename: string) {
+  async function startPresentation(audio: Blob, filename: string) {
     if (!ready) return;
     const name = title.trim() || `Presentation ${new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date())}`;
-    const projectId = createProject(name, "");
-    const recordingId = createRecording(projectId, audio, filename);
+    let projectId = pendingProject.current?.name === name ? pendingProject.current.id : undefined;
+    if (!projectId) {
+      projectId = await createProject(name, "");
+      pendingProject.current = { name, id: projectId };
+    }
+    const recordingId = await createRecording(projectId, audio, filename);
     router.push(`/recordings/${recordingId}/analyzing`);
   }
 
@@ -60,7 +65,7 @@ export default function Home() {
         <ValleyBackdrop className="-z-10" />
         <div className={`${pageColumn} relative`}>
           <div className={`flex max-w-xl flex-col items-start gap-4 ${firstVisit ? "pt-12 pb-[270px] md:pt-20 md:pb-[190px]" : "pt-9 pb-[250px] md:pt-12 md:pb-[160px]"}`}>
-            <p className="font-mono text-xs text-teal">LOCAL DEMO</p>
+            <p className="font-mono text-xs text-teal">{live ? "LIVE SYNC" : "LOCAL DEMO"}</p>
             {firstVisit && <p className="font-display text-6xl font-bold leading-none tracking-tight text-ink md:text-7xl">SpeakUp</p>}
             <h1 className={`font-display font-bold tracking-tight text-ink ${firstVisit ? "text-3xl" : "text-4xl md:text-5xl"}`}>Practice your next presentation</h1>
             <p className="text-[17px] text-ink">
@@ -87,14 +92,14 @@ export default function Home() {
           <section id="new-presentation" className="relative z-10 -mt-8 flex w-full flex-col gap-5 rounded-2xl border-2 border-outline bg-card p-6">
             <div>
               <h2 className="font-display text-2xl font-bold text-ink">Start with your audio</h2>
-              <p className="mt-1.5 text-muted">Upload a file or record now. We’ll create the presentation when you start the demo review.</p>
+              <p className="mt-1.5 text-muted">Upload a file or record now. We’ll create the presentation when you start the review.</p>
             </div>
             <label className="flex max-w-xl flex-col gap-2 font-semibold text-ink">
               Presentation title (optional)
               <input autoFocus maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)}
                 className="rounded-xl border-2 border-line bg-background p-3 text-base font-normal" placeholder="We’ll use today’s date if you skip this" />
             </label>
-            <RecorderUploader maxAudioBytes={limits.max_audio_upload_bytes}
+            <RecorderUploader live={live} maxAudioBytes={limits.max_audio_upload_bytes}
               maxAudioDurationSeconds={limits.max_audio_duration_seconds}
               submitLabel="Start presentation with audio"
               onSubmit={startPresentation} />
@@ -103,7 +108,8 @@ export default function Home() {
 
         <section aria-labelledby="presentations-heading" className={`flex w-full flex-col gap-6 ${creating ? "" : "-mt-8"}`}>
           <h2 id="presentations-heading" className={recent ? "sr-only" : "pt-10 font-display text-[28px] font-bold text-ink"}>Your presentations</h2>
-          {!ready ? <MascotState busy message="Loading local presentations…" /> : !recent ? (
+          {error && <p className="text-sm text-rust" role="alert">{error}</p>}
+          {!ready ? <HomeSkeleton label={live ? "Loading presentations…" : "Loading local presentations…"} /> : !recent ? (
             <div className="flex flex-col gap-1">
               <p className="text-lg font-semibold text-ink">No presentations yet.</p>
               <p className="text-muted">Create one to start practicing.</p>
@@ -168,7 +174,7 @@ export default function Home() {
               .
             </p>
           )}
-          <p className="text-sm text-muted">Local demo data stays in this browser. AWS sign-in and sync are not connected.</p>
+          <p className="text-sm text-muted">{live ? "Recordings sync to your SpeakUp account." : "Local demo data stays in this browser. AWS sign-in and sync are not connected."}</p>
         </div>
       </div>
     </main>

@@ -8,6 +8,7 @@ const port = 3102;
 
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: "live-api-flow.spec.ts",
   fullyParallel: true,
   retries: 0,
   use: {

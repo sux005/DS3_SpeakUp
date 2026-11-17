@@ -403,7 +403,14 @@ def test_artifact_routes_owner_check_and_expose_only_public_data(monkeypatch):
         },
         PayloadType.FEEDBACK: {
             "producer": "private",
-            "data": {"feedback": "Try a shorter opening.", "model_id": "private-model"},
+            "data": {
+                "feedback": "Try a shorter opening.",
+                "schema_version": 2,
+                "categories": {"pace": {"observation": "150 WPM.", "next_step": "Keep this pace."}},
+                "moments": [{"id": "s1", "kind": "strength", "text": "hello"}],
+                "metrics": {"words_per_minute": 150},
+                "model_id": "private-model",
+            },
         },
     }
 
@@ -433,7 +440,13 @@ def test_artifact_routes_owner_check_and_expose_only_public_data(monkeypatch):
     ]
     assert responses["transcript"]["data"] == documents[PayloadType.TRANSCRIPT]["data"]
     assert responses["analysis"]["data"] == documents[PayloadType.SPEECH_ANALYSIS]["data"]
-    assert responses["feedback"]["data"] == {"feedback": "Try a shorter opening."}
+    assert responses["feedback"]["data"] == {
+        "feedback": "Try a shorter opening.",
+        "schema_version": 2,
+        "categories": {"pace": {"observation": "150 WPM.", "next_step": "Keep this pace."}},
+        "moments": [{"id": "s1", "kind": "strength", "text": "hello"}],
+        "metrics": {"words_per_minute": 150},
+    }
     for response in responses.values():
         assert "producer" not in response
 

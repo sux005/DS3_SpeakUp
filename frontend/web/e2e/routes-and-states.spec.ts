@@ -132,6 +132,17 @@ test.describe("analyzing and results route states", () => {
 });
 
 test.describe("responsive route smoke", () => {
+  test("keeps the site header visible while scrolling", async ({ page }) => {
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 700 });
+      await page.goto("/rubric");
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+      await expect(page.locator("header")).toBeInViewport();
+      expect(await page.locator("header").evaluate((header) => header.getBoundingClientRect().top)).toBe(0);
+    }
+  });
+
   test("keeps the home controls usable on a narrow viewport", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await cleanHome(page);

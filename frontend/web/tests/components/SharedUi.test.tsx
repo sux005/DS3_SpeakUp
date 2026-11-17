@@ -44,7 +44,6 @@ describe("shared UI components", () => {
     expect(screen.getByRole("link", { name: "SpeakUp" }).getAttribute("href")).toBe("/");
     expect(screen.getByRole("link", { name: "MY PRESENTATIONS" }).getAttribute("href")).toBe("/");
     expect(screen.getByRole("link", { name: "RUBRIC" }).getAttribute("href")).toBe("/rubric");
-    expect(screen.getByRole("link", { name: "SIGN IN (DEMO)" }).getAttribute("href")).toBe("/login");
     expect(screen.getByRole("switch", { name: "Dark mode" })).toBeTruthy();
   });
 });

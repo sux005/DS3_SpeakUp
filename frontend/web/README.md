@@ -1,6 +1,6 @@
 # SpeakUp frontend
 
-This Next.js frontend is a local, interactive preview of the SpeakUp presentation practice flow. It does not call AWS or generate speech analysis.
+This Next.js frontend supports two modes. Without `NEXT_PUBLIC_SPEAKUP_API_URL`, it runs a local fixture-backed preview. With that variable set and `SPEAKUP_DEV_GUEST_MODE=1`, it connects the local development server to the existing AWS audio-analysis workflow through a server-only guest bridge.
 
 ## Run locally
 
@@ -13,6 +13,18 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000). Run `npm run lint` and `npm run build` to check the app.
 
+### Connect to the backend
+
+Set `NEXT_PUBLIC_SPEAKUP_API_URL=/api/speakup`, `SPEAKUP_DEV_GUEST_MODE=1`, and `AWS_PROFILE=speakup` for local development. The server bridge invokes `speakup-dev-api` with an owner-scoped guest session; browser code receives no AWS credentials or JWT. The bridge refuses requests in production. The AWS CLI and an active profile session are required on the development machine.
+
+```bash
+AWS_PROFILE=speakup SPEAKUP_DEV_GUEST_MODE=1 NEXT_PUBLIC_SPEAKUP_API_URL=/api/speakup npm run dev
+```
+
+The browser creates projects, reserves an upload, sends the original file to the signed S3 URL, polls the recording, then loads the transcript, analysis metrics, optional coaching, and a signed playback URL. The backend performs noise cancellation, transcription, scoring, and optional Bedrock generation. Set the stack parameter `EnableBedrockFeedback=true` to generate coaching; otherwise a completed review can return `feedback: null`.
+
+The deployed development API serves `/recordings/{recordingId}/review` with Bedrock categories and anchored moments. The frontend reads the transcript, analysis, and feedback artifacts if that route returns 404; the feedback artifact also includes the structured coaching fields. A local guest session uses a process-local signing secret unless `SPEAKUP_DEV_GUEST_SECRET` is set, so restarting or reloading the development server may start a new guest session.
+
 ## Tests
 
 ```bash
@@ -22,10 +34,19 @@ npm run test:all   # coverage, production build, and browser tests
 ```
 
 The browser suite runs against a local production server on port 3102. It uses the local demo fixtures and browser storage; it does not need the backend or AWS. On macOS it uses installed Google Chrome when available. Microsoft Edge also works: set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to its binary. On other systems install Playwright Chromium with `npx playwright install chromium` or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to a Chromium-compatible browser.
-If Turbopack fails because the environment restricts local worker ports,
-`npx next build --webpack` is an alternative production build.
+Use the configured Turbopack build for visual checks; it runs the app's Tailwind loader.
 Run `npm run build` first when invoking `npm run test:e2e` by itself; `npm run test:all` includes the build.
 The coverage report measures unit and integration execution of the frontend source. Browser tests are reported separately by Playwright.
+
+### Live API browser QA
+
+The live-mode suite builds the app with `NEXT_PUBLIC_SPEAKUP_API_URL=/api/speakup`, then intercepts the development guest bridge API calls and signed S3 `PUT` in Playwright. It does not contact AWS and does not use the local demo fixtures.
+
+```bash
+npm run test:e2e:live
+```
+
+This command runs a production build first, then `e2e/live-api-flow.spec.ts` on port 3103. The suite covers project creation, signed upload, processing-to-complete transitions, reload during processing, transcript/metrics/feedback rendering (including nullable feedback and the deployed API artifact fallback), failed processing, and a 429 rate-limit response. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` when a compatible Chromium browser is not installed.
 
 ## Try the flow
 
@@ -97,7 +118,10 @@ The mascot is the approved artwork in `public/mascot/`: three transparent PNGs, 
 | Path | Purpose |
 | --- | --- |
 | `app/` | Presentation, recording, status, and review routes |
-| `lib/demo-store.tsx` | Single client-side source for presentations, recordings, reviews, and status progression |
+| `lib/live-store.tsx` | API state, uploads, status, review, and playback URLs |
+| `lib/demo-store.tsx` | Local preview state and simulated status progression |
+| `app/api/speakup/` | Development-only server bridge to the protected API |
+| `lib/api.ts` | HTTP API and signed upload client |
 | `lib/recordings.ts` | Pure selectors and display formatting |
 | `components/RecorderUploader.tsx` | Microphone capture with a live level meter, file selection, and local preview |
 | `components/Mascot.tsx`, `MascotCoach.tsx`, `MascotState.tsx` | The approved mascot PNGs, the speech bubble, and loading, empty and error panels |
@@ -114,13 +138,14 @@ The mascot is the approved artwork in `public/mascot/`: three transparent PNGs, 
 
 `frontend/sample-payloads/` contains the original example API payloads. The runtime reads only `frontend/web/data/`; when refreshing demo examples, update that set deliberately and keep recording IDs consistent across transcript, analysis, and feedback.
 
-The AWS API contract is documented in [docs/aws-payload-api.md](../../docs/aws-payload-api.md). Authentication, upload, processing, and generated analysis still require backend integration.
+The AWS API contract is documented in [docs/aws-payload-api.md](../../docs/aws-payload-api.md).
 
 ## Integrated MVP features
 
-The interactive demo also retains `/rubric`, `/login` (demo only), and the
-unused AWS helpers in `lib/api.ts`. New local recordings do not receive sample
-analysis.
+The interactive demo also retains `/rubric`. The review transcript preserves punctuation,
+filler highlighting, and clickable timestamps with a 0.5-second lead-in when audio is
+available. Seed feedback stays attached to its original recording; new local recordings
+do not receive sample analysis.
 
 The seeded review uses `data/demo/` (see [Demo audio](#demo-audio)).
 `data/transcript.json`, `data/analysis.json` and `data/feedback.json` remain as short

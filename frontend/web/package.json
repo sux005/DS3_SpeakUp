@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "test:e2e:live": "NEXT_PUBLIC_SPEAKUP_API_URL=/api/speakup npm run build && playwright test --config playwright.live.config.ts",
     "test:all": "npm run test:coverage && npm run build && npm run test:e2e"
   },
   "dependencies": {

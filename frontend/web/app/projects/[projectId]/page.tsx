@@ -3,10 +3,11 @@
 import { Suspense } from "react";
 import { useParams } from "next/navigation";
 import { ButtonLink } from "@/components/Button";
+import { ProjectSkeleton } from "@/components/LoadingSkeleton";
 import { MascotState } from "@/components/MascotState";
 import { PageHeading, PageShell } from "@/components/PageHeading";
 import { ProgressCharts } from "@/components/ProgressCharts";
-import { useDemoStore } from "@/lib/demo-store";
+import { useAppStore } from "@/lib/live-store";
 import {
   formatClock,
   formatDate,
@@ -45,13 +46,13 @@ function TakeAction({ take }: { take: Take }) {
 }
 
 export default function ProjectPage() {
-  return <Suspense fallback={<PageShell><MascotState busy message="Loading presentation…" /></PageShell>}><ProjectContent /></Suspense>;
+  return <Suspense fallback={<PageShell><ProjectSkeleton /></PageShell>}><ProjectContent /></Suspense>;
 }
 
 function ProjectContent() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { projects, recordings, ready } = useDemoStore();
-  if (!ready) return <PageShell><MascotState busy message="Loading presentation…" /></PageShell>;
+  const { projects, recordings, ready, error } = useAppStore();
+  if (!ready) return <PageShell><ProjectSkeleton /></PageShell>;
   const project = getProject(projects, projectId);
   if (!project) return <PageShell><MascotState message="Presentation not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
 
@@ -69,6 +70,7 @@ function ProjectContent() {
         />
         <ButtonLink href={`/projects/${projectId}/new`}>+ New attempt</ButtonLink>
       </div>
+      {error && <p className="w-full text-sm text-rust" role="alert">{error}</p>}
 
       {/* Scores and attempts share one surface: they are the same workspace. */}
       <div className="w-full overflow-hidden rounded-2xl border-2 border-line bg-card">
