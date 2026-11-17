@@ -37,7 +37,7 @@ Step by step detail: [docs/full-pipeline-walkthrough.md](docs/full-pipeline-walk
 | --- | --- | --- |
 | Noise cleanup | DeepFilterNet3 | Removes background noise while keeping speech intact, and runs on CPU inside Lambda |
 | Speech to text | Amazon Transcribe (en-US) | Keeps um and uh in the transcript (normal Whisper dropped most of them) and gives word timestamps and punctuation |
-| Pause detection | Volume (energy) plus Silero VAD, checked against Transcribe word timing | Also catches pauses filled with laughter, clapping or breathing, which are not quiet. Falls back to Transcribe word gaps when the audio-prep step has no pause data |
+| Pause detection | A quiet stretch of 0.3 s or more (energy), or Silero VAD hearing no speech at a Transcribe word gap | Silero also catches pauses filled with laughter, clapping or breathing, which are not quiet. Only pauses inside a sentence count against the score. Falls back to Transcribe word gaps when the audio-prep step has no pause data |
 | Feedback | Amazon Bedrock: Nova Lite (`converse` mode) or `openai.gpt-oss-20b` through the Mantle endpoint (`mantle-chat` mode) | Runs in our Region (`us-east-2`). Mantle was added because the dev account hit Bedrock Runtime's daily token limit. The scores come from code, so the model only writes the wording |
 
 The research behind every rubric cutoff, the filler word list, the pause rules
