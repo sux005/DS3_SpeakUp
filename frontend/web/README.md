@@ -112,7 +112,7 @@ The mascot is the approved artwork in `public/mascot/`: three transparent PNGs, 
 | `lib/transcript.ts` | Sentences, the playing sentence, and pause placement |
 | `data/` | Seed API payloads for this frontend preview; `data/demo/` holds the seeded review |
 
-`frontend/sample-payloads/` contains the original example API payloads. The runtime reads only `frontend/web/data/`; when refreshing demo examples, update that set deliberately and keep recording IDs consistent across transcript, analysis, and feedback.
+`frontend/sample-payloads/` contains the original example API payloads. The runtime reads only `frontend/web/data/`; when refreshing demo examples, update that set deliberately and keep recording IDs consistent across transcript, analysis, and review. The seeded review comes from `data/review.json` (the `GET /recordings/{recordingId}/review` response) plus `data/analysis.json` for the filler and pause markers.
 
 The AWS API contract is documented in [docs/aws-payload-api.md](../../docs/aws-payload-api.md). Authentication, upload, processing, and generated analysis still require backend integration.
 

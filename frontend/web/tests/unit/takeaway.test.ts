@@ -2,15 +2,16 @@ import { describe, expect, it } from "vitest";
 import { rubric } from "@/lib/rubric";
 import { buildEvidence, buildNextStep, buildTakeaway, lowestScored } from "@/lib/takeaway";
 import { compareToTarget, targetText } from "@/lib/targets";
-import type { AnalysisMetrics, RecordingReview } from "@/lib/types";
+import type { AnalysisMetrics, Pause, RecordingReview } from "@/lib/types";
 import demoAnalysis from "@/data/demo/analysis.json";
+import { summaryMetrics } from "../fixtures";
 
 const demo = demoAnalysis.data.metrics as AnalysisMetrics;
 const transcript = { text: "", items: [] };
 const scores = (rate: number | null, fillers: number | null, pauses: number | null): AnalysisMetrics =>
   ({ ...demo, rubric_scores: { speaking_rate: rate, filler_words: fillers, pauses_inside_sentences: pauses } });
-const uncoached = (metrics?: AnalysisMetrics): RecordingReview => ({ recording_id: "r1", transcript, analysis: metrics, feedback: null });
-const coached = (feedback: NonNullable<RecordingReview["feedback"]>): RecordingReview => ({ recording_id: "r1", transcript, analysis: demo, feedback });
+const uncoached = (metrics?: AnalysisMetrics): RecordingReview => ({ recording_id: "r1", transcript, summary_metrics: summaryMetrics(), analysis: metrics, feedback: null });
+const coached = (feedback: NonNullable<RecordingReview["feedback"]>): RecordingReview => ({ recording_id: "r1", transcript, summary_metrics: summaryMetrics(), analysis: demo, feedback });
 
 describe("target helpers", () => {
   it("quotes the rubric's own score-4 wording", () => {
@@ -154,9 +155,11 @@ describe("evidence", () => {
   });
 
   it("uses a pause's own start and end when no duration is given, and skips natural pauses", () => {
+    // Older payloads can leave out duration_seconds and inside_sentence, which
+    // the API type now requires, so these pauses are cast on purpose.
     const metrics: AnalysisMetrics = { ...demo, filler_occurrences: [], pauses: [
-      { start_seconds: 1, end_seconds: 2.5 },
-      { start_seconds: 5, end_seconds: 9, inside_sentence: false },
+      { start_seconds: 1, end_seconds: 2.5 } as Pause,
+      { start_seconds: 5, end_seconds: 9, inside_sentence: false } as Pause,
     ] };
     expect(buildEvidence(uncoached(), metrics).items).toEqual([{ at: 1, label: "Pause inside a sentence, 1.5 s", detail: "One of the longest" }]);
   });

@@ -4,13 +4,15 @@ import { EvidenceList, NextStep, Takeaway } from "@/components/ResultsSummary";
 import { rubric } from "@/lib/rubric";
 import type { AnalysisMetrics, RecordingReview } from "@/lib/types";
 import demoAnalysis from "@/data/demo/analysis.json";
+import { summaryMetrics } from "../fixtures";
 
 const metrics = demoAnalysis.data.metrics as AnalysisMetrics;
 const transcript = { text: "", items: [] };
-const uncoached: RecordingReview = { recording_id: "r1", transcript, analysis: metrics, feedback: null };
+const uncoached: RecordingReview = { recording_id: "r1", transcript, summary_metrics: summaryMetrics(), analysis: metrics, feedback: null };
 const coached: RecordingReview = {
   recording_id: "r1",
   transcript,
+  summary_metrics: summaryMetrics(),
   analysis: metrics,
   feedback: {
     feedback: "You kept a steady pace.",

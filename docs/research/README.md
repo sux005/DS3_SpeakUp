@@ -14,6 +14,7 @@ here and will go up as separate PRs for the team to review.
 |---|---|
 | `RUBRIC_README.md` | The rubric in plain language: every cutoff, where it came from, and the models we picked |
 | `bedrock_prompt_comparison.md` | Old vs new Bedrock prompt on Links 13 to 16 |
+| `noise_cancellation_ab.md` | Reproducible raw/enhanced ASR comparison and verified SPEAKUP 2 Whisper result |
 
 ## Background
 

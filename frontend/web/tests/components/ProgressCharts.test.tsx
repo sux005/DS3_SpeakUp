@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { ProgressCharts } from "@/components/ProgressCharts";
 import type { Take } from "@/lib/types";
+import { summaryMetrics } from "../fixtures";
 
 const take = (id: string, score?: number): Take => ({
   project_id: "p1",
@@ -10,13 +11,13 @@ const take = (id: string, score?: number): Take => ({
   status: "COMPLETE",
   take: Number(id.replace(/\D/g, "")) || 1,
   ...(score === undefined ? {} : {
-    summary_metrics: {
+    summary_metrics: summaryMetrics({
       duration_seconds: 60,
       words_per_minute: score,
       fillers_per_100_words: 1,
       pauses_per_speaking_minute: 4,
       rubric_scores: { speaking_rate: 3, filler_words: 4, pauses_inside_sentences: 3 },
-    },
+    }),
   }),
 });
 
@@ -60,10 +61,10 @@ describe("ProgressCharts", () => {
   it("states the distance from target by subtraction, and trusts the score for on-target", () => {
     const metrics = (wpm: number, fillers: number, scores: [number | null, number | null, number | null]): Take => ({
       ...take("take1", wpm),
-      summary_metrics: {
+      summary_metrics: summaryMetrics({
         duration_seconds: 60, words_per_minute: wpm, fillers_per_100_words: fillers, pauses_per_speaking_minute: 20,
         rubric_scores: { speaking_rate: scores[0], filler_words: scores[1], pauses_inside_sentences: scores[2] },
-      },
+      }),
     });
     const { unmount } = render(<ProgressCharts takes={[metrics(134.08, 11.64, [3, 0, null])]} />);
     expect(screen.getByText("0.92 below the target range")).toBeTruthy();

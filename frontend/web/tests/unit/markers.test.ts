@@ -2,17 +2,20 @@ import { describe, expect, it } from "vitest";
 import { clusterMoments, momentsFromAnalysis, momentsFromFeedback, nextMoment, type ReviewMoment } from "@/lib/markers";
 import type { AnalysisMetrics } from "@/lib/types";
 import demoAnalysis from "@/data/demo/analysis.json";
+import { pause, summaryMetrics } from "../fixtures";
 
 const metrics = {
-  duration_seconds: 20,
-  words_per_minute: 140,
-  fillers_per_100_words: 1,
-  pauses_per_speaking_minute: 1,
-  rubric_scores: { speaking_rate: 4, filler_words: 4, pauses_inside_sentences: 4 },
+  ...summaryMetrics({
+    duration_seconds: 20,
+    words_per_minute: 140,
+    fillers_per_100_words: 1,
+    pauses_per_speaking_minute: 1,
+    rubric_scores: { speaking_rate: 4, filler_words: 4, pauses_inside_sentences: 4 },
+  }),
   filler_occurrences: [{ filler: "um", start_seconds: 5, end_seconds: 5.3 }],
   pauses: [
-    { start_seconds: 2, end_seconds: 2.4, duration_seconds: 0.4, inside_sentence: true },
-    { start_seconds: 9, end_seconds: 10, inside_sentence: false },
+    pause(2, 2.4),
+    pause(9, 10, false),
   ],
   long_pauses: [],
 } satisfies AnalysisMetrics;

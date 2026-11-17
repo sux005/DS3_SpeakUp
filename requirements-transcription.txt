@@ -1,2 +1,4 @@
-# Optional local transcription workflow; install alongside requirements.txt.
+# Optional local transcription workflow. Keep PyAV pinned because newer releases
+# removed the metadata_errors argument used by faster-whisper 1.2.1.
 faster-whisper==1.2.1
+av==15.1.0

@@ -3,8 +3,8 @@
 SpeakUp is a DS3 public-speaking diagnostics platform. Its backend stores
 original recordings without rewriting them during processing, prepares speech
 for analysis, produces timestamped transcripts and speech metrics, and stores
-versioned coaching feedback in private AWS resources. A Next.js frontend
-skeleton lives in [`frontend/web`](frontend/web/README.md) and currently uses
+versioned coaching feedback in private AWS resources. The current Next.js
+interface lives in [`frontend/web`](frontend/web/README.md) and still uses
 sample data rather than the live API.
 
 ## AWS payload API
@@ -59,9 +59,12 @@ python -m pytest -q --basetemp .test-tmp -p no:cacheprovider
 └── models/
 ```
 
-`frontend/` currently contains only its README. The backend HTTP contract is in
+The backend HTTP contract is in
 [docs/aws-payload-api.md](docs/aws-payload-api.md); deployment and migration
-instructions are in [infra/README.md](infra/README.md).
+instructions are in [infra/README.md](infra/README.md). Operational guides cover
+the [sign-in process](docs/sign-in-process.md),
+[Bedrock upload stage](docs/bedrock-upload-pipeline.md), and
+[noise-cancellation A/B method](docs/research/noise_cancellation_ab.md).
 
 ## Quick start
 
