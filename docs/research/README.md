@@ -30,6 +30,7 @@ here and will go up as separate PRs for the team to review.
 |---|---|
 | `results/link15_blind_test.md`, `results/link16_blind_test.md` | Pause detectors, noise cleanup and inside/between, on two clips marked by hand without seeing any model output |
 | `results/links13_14_*.md` | Punctuation model and Transcribe tests on Links 13 and 14 |
+| `results/comma_pause_rule.md` | Period vs comma rule for deciding which pauses count, on 220 hand-labeled pauses |
 | `results/rubric_validation.md` | The rubric run on TED talks, conference talks and hesitant speakers |
 | `results/section_flags.md` | Whether "this section was faster / had more fillers" flags are real or chance |
 | `results/pipeline_step_outputs.md` | The raw output format of every pipeline step |

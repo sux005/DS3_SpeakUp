@@ -148,3 +148,38 @@ def test_speech_minimum_uses_time_after_pauses():
 def test_invalid_word_timing_fails_closed(items):
     with pytest.raises(ValueError, match="timing"):
         score_transcribe_items(items)
+
+
+def _pause_after(tokens, split, marks, *, gap=0.5):
+    """Words one second apart with a ``gap`` silence after word ``split - 1``; ``marks`` maps index -> punctuation."""
+
+    items = []
+    for index, token in enumerate(tokens):
+        start = index + (gap if index >= split else 0.0)
+        items.append({"type": "pronunciation", "start_time": str(start), "end_time": str(start + 1.0),
+                      "alternatives": [{"content": token}]})
+        if index in marks:
+            items.append({"type": "punctuation", "alternatives": [{"content": marks[index]}]})
+    return score_transcribe_items(items)["pauses"]
+
+
+@pytest.mark.parametrize("tokens,marks,inside", [
+    (["we", "trained", "the", "model", "today"], {}, True),
+    (["we", "trained", "it", "then", "tested"], {2: "."}, False),
+    (["apples", "pears", "plums", "and", "figs"], {2: ","}, False),
+    (["it", "was", "um", "the", "model"], {2: ","}, True),
+    (["it", "was", "um", "the", "model"], {2: "."}, True),
+    (["is", "by", "saving", "saving", "money"], {2: ","}, True),
+    (["is", "by", "saving", "um", "saving"], {2: ","}, True),
+    (["or", "you", "could", "or", "you", "could"], {2: ","}, True),
+    (["types", "of", "tears", "tears", "of"], {2: "."}, False),
+    (["save", "your", "money", "money", "matters"], {}, True),
+])
+def test_pause_location_uses_commas_fillers_and_repeats(tokens, marks, inside):
+    pauses = _pause_after(tokens, 3, marks)
+    assert [pause["inside_sentence"] for pause in pauses] == [inside]
+
+
+def test_comma_inside_a_number_is_not_a_phrase_break():
+    pauses = _pause_after(["about", "1,000", "people", "came", "today"], 2, {})
+    assert [pause["inside_sentence"] for pause in pauses] == [True]
