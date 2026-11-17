@@ -1,6 +1,9 @@
 """Pause detection chosen 2026-11-09: energy 0.3 s OR (Silero no-speech AND a transcript word gap).
 
-The quiet parts come from a loudness (energy) detector and are limited to transcript word gaps.
+The quiet parts come from a loudness (energy) detector. An energy silence is kept whole when it
+overlaps a transcript word gap or contains a word edge, because Transcribe often stretches a word's
+timing over a real silence (Link 14: 42 energy pauses, only 16 survived the old clip-to-word-gap
+step). Silences that sit fully inside one word, with no gap and no edge, are dropped.
 Pauses filled with laughter, clapping or breathing are not quiet, so a second check adds any
 stretch where Silero hears no speech AND the
 transcript has a word gap. Silences the detector split in two (for example by a tongue click) are
@@ -49,12 +52,22 @@ def intersect(first: Sequence[Interval], second: Sequence[Interval]) -> list[Int
     return sorted(out)
 
 
+def _touches_word_boundary(silence: Interval, word_spans: Sequence[Interval],
+                           word_gaps: Sequence[Interval]) -> bool:
+    """True when the silence overlaps a word gap or a word starts or ends inside it."""
+
+    start, end = silence
+    return (any(start < gap_end and end > gap_start for gap_start, gap_end in word_gaps)
+            or any(start < edge < end for span in word_spans for edge in span))
+
+
 def combine(energy_silences: Sequence[Interval], word_spans: Sequence[Interval],
             silero_speech: Sequence[Interval] | None, total_seconds: float | None = None) -> list[Interval]:
     """Energy pauses, plus Silero-and-word-gap pauses that energy missed, merged."""
 
     word_gaps = gaps_between(word_spans, total_seconds)
-    pauses = longer_than(intersect(energy_silences, word_gaps))
+    pauses = longer_than([silence for silence in energy_silences
+                          if _touches_word_boundary(silence, word_spans, word_gaps)])
     if silero_speech is not None:
         silero_gaps = gaps_between(silero_speech, total_seconds)
         for extra in longer_than(intersect(silero_gaps, word_gaps)):

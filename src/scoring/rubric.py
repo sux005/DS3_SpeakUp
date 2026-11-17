@@ -187,7 +187,7 @@ def score_transcribe_items(
         gap = end - start
         middle = (start + end) / 2
         split = next((index + 1 for index in range(len(words) - 1, -1, -1)
-                      if words[index].end <= middle), 0)
+                      if (words[index].start + words[index].end) / 2 <= middle), 0)
         if not split:
             continue
         pause = {

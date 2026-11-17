@@ -35,10 +35,12 @@ here and will go up as separate PRs for the team to review.
 | `results/section_flags.md` | Whether "this section was faster / had more fillers" flags are real or chance |
 | `results/pipeline_step_outputs.md` | The raw output format of every pipeline step |
 
-## Known issue with the acoustic pause method
+## Acoustic pause method: word-gap clipping (fixed 11/17)
 
-On Link 15 (TED talk) energy + Silero finds 31 pauses where the hand count has 21, and the pause
-score drops from 4 to 3. About half the extra inside-sentence pauses are short quiet moments the
-hand count skipped. The other half are real between-sentence pauses that Transcribe's punctuation
-puts inside a sentence. Only counting energy pauses that line up with a transcript word gap fixes
-Link 15 but breaks Link 14, where Transcribe stretches words over real silences. Left as is for now.
+The first version cut every energy silence down to the Transcribe word gaps. Transcribe often
+stretches a word's timing over a real silence, so most pauses vanished on some clips (Link 14:
+42 energy pauses of 0.3 s or more, 16 kept). Now an energy silence is kept whole when it overlaps
+a word gap or a word starts or ends inside it, and a pause is placed after the last word whose
+midpoint comes before it. On 220 hand-marked pauses (Links 13 to 19) the method now finds 205
+instead of 144. It also finds 39 pauses the hand count skipped (mostly short quiet moments on
+Links 15 and 17), which have not hurt any clip score so far. See `results/comma_pause_rule.md`.
