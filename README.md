@@ -36,9 +36,40 @@ Step by step detail: [docs/full-pipeline-walkthrough.md](docs/full-pipeline-walk
 | Step | Model | Why |
 | --- | --- | --- |
 | Noise cleanup | DeepFilterNet3 | Removes background noise while keeping speech intact, and runs on CPU inside Lambda |
-| Speech to text | Amazon Transcribe (en-US) | Keeps um and uh in the transcript (normal Whisper dropped most of them) and gives word timestamps and punctuation |
-| Pause detection | A quiet stretch of 0.3 s or more (energy), or Silero VAD hearing no speech at a Transcribe word gap | Silero also catches pauses filled with laughter, clapping or breathing, which are not quiet. Only pauses inside a sentence count against the score. Falls back to Transcribe word gaps when the audio-prep step has no pause data |
+| Speech to text | Amazon Transcribe (en-US) | Keeps um and uh in the transcript and gives word timestamps and punctuation. Caught 87.6% of hand-labeled um/uh in our test, vs about 10% for plain Whisper. See [below](#speech-to-text-transcribe-vs-crisperwhisper) for why we did not switch to CrisperWhisper |
+| Pause detection | A quiet stretch of 0.3 s or more (energy), or Silero VAD hearing no speech at a Transcribe word gap | Silero also catches pauses filled with laughter, clapping or breathing, which are not quiet. A pause counts against the score unless it comes after a period, question mark, exclamation mark or comma. A pause right after um/uh, or a comma pause before repeated words ("by saving, saving money"), still counts. Falls back to Transcribe word gaps when the audio-prep step has no pause data |
 | Feedback | Amazon Bedrock: Nova Lite (`converse` mode) or `openai.gpt-oss-20b` through the Mantle endpoint (`mantle-chat` mode) | Runs in our Region (`us-east-2`). Mantle was added because the dev account hit Bedrock Runtime's daily token limit. The scores come from code, so the model only writes the wording |
+
+### Speech to text: Transcribe vs CrisperWhisper
+
+CrisperWhisper is a Whisper model tuned to write filler words, so we tested
+whether it would score speech better than Transcribe. We are keeping Transcribe.
+
+**Fillers.** We used the 8 test episodes of the public PodcastFillers dataset
+(first 20 minutes each), where 830 um/uh were labeled by hand. A label counts as
+caught when the model writes um/uh within 0.35 s of it.
+
+| Model | Labeled um/uh caught | um/uh written | Written with no label nearby |
+| --- | --- | --- | --- |
+| Amazon Transcribe | 87.6% | 820 | 11% |
+| CrisperWhisper 2.0 turbo | 92.2% | 908 | 15% |
+| CrisperWhisper 2.0 small / medium / large | 92.3 to 93.1% | 933 to 971 | 16 to 19% |
+| Whisper with a verbatim prompt (4 episodes) | 82.8% | 406 (436 labeled) | 11% |
+
+CrisperWhisper catches about 5 points more of the labeled fillers, but it also
+writes more um/uh with no label nearby, so its total runs high (908 or more vs
+830). Transcribe's total is closer, and the filler score is based on the total.
+Some unlabeled um/uh may be real fillers the labelers skipped, so the last
+column is an upper bound on false alarms.
+
+**Pauses and WPM.** On 220 hand-labeled pauses, CrisperWhisper's punctuation
+agreed with our labels 85 to 86% of the time, the same as Transcribe (86%).
+Seven open punctuation models gave 81 to 87%, which is within noise. Word counts
+were within about 1.5% of Transcribe's, so WPM would barely change.
+
+**Why we did not switch.** The filler gain is small and comes with more extra
+fillers. CrisperWhisper 2.0 is licensed for non-commercial research only and
+would need its own GPU hosting, while Transcribe already runs in the pipeline.
 
 The research behind every rubric cutoff, the filler word list, the pause rules
 and the Bedrock prompt is in [docs/research/](docs/research/README.md). Start
@@ -245,117 +276,28 @@ Docker on Apple Silicon) are covered in [docs/macos-setup.md](docs/macos-setup.m
 | [docs/macos-setup.md](docs/macos-setup.md) | Mac setup and fixes |
 | [docs/AGENTS.md](docs/AGENTS.md) | Repo guide for AI coding tools |
 
-Build the zip-based Lambda packages with `python scripts/build_lambda_packages.py`.
 
 ## Audio preparation
 
-SpeakUp includes a distortion-gated, model-driven speech preparation pipeline.
-Version 2 sends full-band 48 kHz mono audio to DeepFilterNet3 without fixed high-pass,
-hum-notch, or presence-EQ denoising. The learned output is selected first when it
-passes the speech-preservation gate; a conservative dry/model blend and the normalized
-reference remain safety fallbacks. The original recording is never overwritten.
+The audio-prep step sends 48 kHz mono audio to DeepFilterNet3. It uses the
+cleaned audio when it passes a speech-preservation check, and otherwise falls
+back to a dry/cleaned blend or the plain normalized audio. The original
+recording is never overwritten.
 
-Set up `.venv-audio-v2` as in [setup step 5](#5-run-noise-cleanup-on-your-own-audio).
-
-Generate the reproducible synthetic before/after example with:
+Set up `.venv-audio-v2` as in [setup step 5](#5-run-noise-cleanup-on-your-own-audio), then:
 
 ```bash
-python scripts/generate_audio_prep_example.py
+python scripts/generate_audio_prep_example.py   # synthetic before/after example
+python scripts/run_real_audio_qa.py             # private data/raw/SPEAKUP 1-6.mp4 clips
 ```
 
-The output directory contains `reference.wav`, `enhanced_model.wav`,
-`enhanced_blended.wav`, `diagnostic.wav`, a legacy `enhanced.wav` alias, and
-`report.json`. The report records the pipeline version, exact model and runtime
-configuration, speech-preservation measurements, warnings, and which signal passed
-the distortion-aware transcription gate.
+The example writes `reference.wav`, `enhanced_model.wav`, `enhanced_blended.wav`,
+`diagnostic.wav` and a `report.json` that records the model settings, the
+speech-preservation checks and which signal was picked. Real-clip QA goes to
+`results/real_audio_qa/<clip>/` (ignored by Git) and are only rerun when the
+input or settings change.
 
-For local QA with the private `data/raw/SPEAKUP 1.mp4` through `SPEAKUP 6.mp4`
-recordings, activate `.venv-audio-v2` and run
-`python scripts/run_real_audio_qa.py`.
-The command writes one
-ignored `results/real_audio_qa/<clip>/` directory per source file. Each
-`report.json` records the source filename and SHA-256 of the exact input bytes.
-The runner skips identical source bytes within a batch and reuses a prior
-result only when its report matches the source and processing configuration and
-all expected artifacts exist. Changed inputs or incomplete outputs are rerun.
-The six-file end-to-end test below checks the same source files using temporary
-outputs. Generated QA artifacts remain ignored by Git.
-
-## Local transcription and accuracy review
-
-Install the optional local ASR dependency with
-`pip install -r requirements-transcription.txt`, then run
-`python scripts/transcribe_local.py`.
-The default `small.en` model downloads once into the ignored `models/` directory.
-The command reads the six original MP4 files and writes one ignored
-`results/local_transcripts/<clip>/transcript.json` per file. Each automatic
-transcript contains the source SHA-256, model details, full text, segments, and
-word start/end times. It is a hypothesis, not verified ground truth.
-
-Run `python scripts/create_review_templates.py` to prefill ignored
-`data/references/SPEAKUP x.json` files with the automatic transcript and its
-word-timestamped segments. Existing reviewed text is preserved. To measure
-transcription accuracy, listen to each source recording, correct the reference
-`text` to the exact words heard, and change `review_status` to `reviewed`:
-
-```json
-{
-  "source_sha256": "copy the hash from the automatic transcript",
-  "review_status": "reviewed",
-  "text": "the exact words confirmed by listening to the recording"
-}
-```
-
-Run the comparison after review:
-
-```bash
-python scripts/check_transcript_accuracy.py \
-  "results/local_transcripts/SPEAKUP 1/transcript.json" \
-  "data/references/SPEAKUP 1.json"
-```
-
-The checker rejects references whose source hash differs. Review word timestamps
-by playing the matching time ranges in the original audio, for example
-`ffplay -ss 10 -t 5 -autoexit "data/raw/SPEAKUP 1.mp4"`. Model word
-probabilities alone do not establish transcription accuracy. The reviewed JSON
-is the reference for rubric evaluation and must be updated deliberately when the
-source recording changes.
-
-### WPM and filler metrics
-
-Run the same deterministic rubric calculation used by the AWS processor against
-raw Amazon Transcribe JSON, a stored SpeakUp transcript payload, or the local
-Faster Whisper transcript format:
-
-```bash
-python scripts/calculate_wpm.py path/to/transcript.json
-python scripts/count_fillers.py path/to/transcript.json
-```
-
-Both commands print JSON and require word timestamps. WPM follows the finalized
-rubric definition, so scored filler tokens are excluded from `word_count`. The
-calculator loads score bands from
-[`src/scoring/rubrics/speaking-2026-10-31.csv`](src/scoring/rubrics/speaking-2026-10-31.csv),
-whose minimal runtime schema is documented in
-[`docs/rubric-csv-format.md`](docs/rubric-csv-format.md).
-
-### Local test commands
-
-After installing `requirements.txt` and `requirements-transcription.txt` in the
-active Python environment, run the fast unit suite with `python -m pytest -q`.
-The model-backed end-to-end test is opt-in because it processes all six private
-clips and downloads the `small.en` model on first use:
-
-```bash
-SPEAKUP_RUN_LOCAL_E2E=1 python -m pytest -q tests/test_local_audio_e2e.py
-```
-
-This local test runs audio preparation, transcription, and review-template
-generation from each raw file. It validates source hashes, output formats, and
-word timestamp bounds. Spoken-word accuracy still requires the human-reviewed
-reference files and `check_transcript_accuracy.py`.
-
-Create a level-matched listening example with:
+To make a level-matched A/B listening file:
 
 ```bash
 python scripts/create_audio_ab_example.py \
@@ -363,106 +305,49 @@ python scripts/create_audio_ab_example.py \
   results/prepared/ab_example.wav
 ```
 
-The legacy RNNoise backend is not required by the default pipeline. Developers
-who explicitly need it can install `requirements-rnnoise.txt`; its pinned macOS
-wheel requires macOS 15 or newer. See [the macOS setup guide](docs/macos-setup.md)
-for the complete supported workflow and troubleshooting notes.
+The old RNNoise backend is optional (`requirements-rnnoise.txt`, macOS 15 or newer).
 
-## Repository guidelines
+## Local transcription and accuracy review
 
-- Keep notebooks for exploration and visualization.
-- Put reusable logic in src so notebooks stay readable.
-- Do not commit secrets, API keys, or large data files.
-- Use clear filenames and short, documented functions.
-- Add tests for any core logic that will be reused.
-
-## Git and GitHub workflow for DS3 projects
-
-Using Git and GitHub well is just as important as writing good code. A clean workflow makes collaboration easier and helps the project stay organized.
-
-### 1. Use GitHub Issues for tracking work
-
-Create an Issue for each task, bug, experiment, or feature request. Keep each issue focused and include:
-
-- a short title
-- a clear description of the work
-- acceptance criteria if relevant
-- labels such as bug, enhancement, documentation, or blocked
-
-Example workflow:
-- one issue for data cleaning
-- one issue for model training
-- one issue for documentation updates
-
-### 2. Use branches to separate work
-
-Each person or feature should usually work in its own branch. This prevents people from overwriting each other's changes.
-
-Common branch commands:
+This uses local Whisper (`small.en`), not Transcribe, so you can test without AWS.
 
 ```bash
-git branch
-git checkout -b feature/my-task
-git checkout main
-git branch -d feature/my-task
+pip install -r requirements-transcription.txt
+python scripts/transcribe_local.py          # writes results/local_transcripts/<clip>/transcript.json
+python scripts/create_review_templates.py   # prefills data/references/SPEAKUP x.json
 ```
 
-What they mean:
-- `git branch` shows existing branches
-- `git checkout -b feature/my-task` creates and switches to a new branch
-- `git checkout main` switches back to the main branch
-- `git branch -d feature/my-task` deletes a branch after it is merged
-
-### 3. Use pull requests to merge code into main
-
-When work is complete, open a Pull Request (PR) from your branch into `main`. A PR is the place to review changes, discuss issues, and confirm everything is ready.
-
-Important rule:
-- Only project managers or mentors should approve pull requests.
-- Students should contribute code, but approvals should be handled by the designated maintainers.
-
-### 4. Basic Git commands and what they mean
+A model transcript is a guess, not ground truth. To check accuracy, listen to
+the recording, fix the `text` in the reference file and set
+`"review_status": "reviewed"`, then compare:
 
 ```bash
-git clone <repo-url>
-git status
-git add <file>
-git add .
-git commit -m "Describe your change"
-git push origin <branch-name>
-git log
-git merge <branch-name>
-git rebase <branch-name>
+python scripts/check_transcript_accuracy.py \
+  "results/local_transcripts/SPEAKUP 1/transcript.json" \
+  "data/references/SPEAKUP 1.json"
 ```
 
-What they mean:
-- `git clone` copies a repository from GitHub to your local machine
-- `git status` shows which files changed and what branch you are on
-- `git add` stages files for commit
-- `git commit` saves staged changes with a message
-- `git push` uploads your local commits to GitHub
-- `git log` shows recent commit history
-- `git merge` combines another branch into your current branch
-- `git rebase` reapplies your commits on top of another branch and can help keep history cleaner
+The checker rejects a reference whose source hash does not match. To check word
+timestamps, play that stretch of audio, for example
+`ffplay -ss 10 -t 5 -autoexit "data/raw/SPEAKUP 1.mp4"`.
 
-### 5. Recommended team habits
+`calculate_wpm.py` and `count_fillers.py` (setup step 3) work on these
+transcripts too. Filler words are left out of the WPM word count, and the score
+bands come from the rubric CSV ([format](docs/rubric-csv-format.md)).
 
-- Pull the latest changes before starting work
-- Keep commits small and descriptive
-- Avoid committing large data files or secrets
-- Open a PR early for feedback, not only at the end
-- Resolve merge conflicts carefully and communicate with the team
-
-### 6. Example workflow
+The full local test is opt-in because it runs all six private clips and
+downloads `small.en` the first time:
 
 ```bash
-git checkout main
-git pull origin main
-git checkout -b feature/data-cleaning
-git status
-git add .
-git commit -m "Add initial data cleaning script"
-git push origin feature/data-cleaning
+SPEAKUP_RUN_LOCAL_E2E=1 python -m pytest -q tests/test_local_audio_e2e.py
 ```
 
-Then open a Pull Request on GitHub and wait for approval from the appropriate project manager or mentor.
+## Contributing
+
+- Make an Issue for each task or bug, and work on your own branch
+  (`git checkout -b feature/my-task`).
+- Pull `main` before you start, keep commits small, and open a pull request
+  into `main` early so people can comment.
+- Only the project managers or mentors approve and merge pull requests.
+- Put reusable code in `src/` and add tests for it. Keep notebooks for exploring.
+- Never commit secrets, API keys, audio or large data files.
