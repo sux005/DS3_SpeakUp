@@ -1,5 +1,10 @@
 """The finalized 2026-10-31 speaking rubric applied to timed Transcribe words.
 
+A pause counts against the speaker ("inside_sentence") unless it falls after a
+period, question mark, exclamation mark or comma. Two exceptions still count it:
+a pause right after um/uh, and a pause after a comma where the next 1-3 words
+repeat the words just before it ("by saving, | saving money").
+
 Pauses come from Transcribe word gaps by default. When the audio-prep step also
 measured the audio (``acoustic``, see src/audio/pause_detection.py), pauses come
 from energy silences plus Silero-and-word-gap agreement instead (src/scoring/pauses.py).
@@ -17,6 +22,7 @@ from src.scoring.pauses import combine
 from src.scoring.rubric_definition import RubricDefinition, load_rubric
 
 MINIMUM_PAUSE_SECONDS = 0.3
+MAX_REPEAT_WORDS = 3
 SCORED_SINGLE_FILLERS = frozenset({"um", "uh", "er", "erm", "ah"})
 YOU_KNOW_EXCLUSIONS = frozenset({"do", "did", "don't", "if", "as", "would", "to"})
 WATCH_SINGLE = frozenset({
@@ -32,6 +38,7 @@ class _Word:
     end: float
     token: str
     sentence_end: bool
+    comma: bool = False
 
 
 def _token(content: Any) -> str:
@@ -46,7 +53,10 @@ def _words(items: Sequence[Mapping[str, Any]]) -> list[_Word]:
             content = alternatives[0].get("content", "") if alternatives else ""
             if words and any(mark in str(content) for mark in ".?!"):
                 previous = words[-1]
-                words[-1] = _Word(previous.start, previous.end, previous.token, True)
+                words[-1] = _Word(previous.start, previous.end, previous.token, True, previous.comma)
+            elif words and "," in str(content):
+                previous = words[-1]
+                words[-1] = _Word(previous.start, previous.end, previous.token, previous.sentence_end, True)
             continue
         if item.get("type") != "pronunciation":
             continue
@@ -106,6 +116,30 @@ def _fillers(
     return scored, watch, len(words) - len(excluded), occurrences
 
 
+def _repeats(words: Sequence[_Word], split: int) -> bool:
+    """True when the 1-3 words after ``split`` repeat the words before it, ignoring um/uh."""
+
+    before = [word.token for word in words[:split] if word.token not in SCORED_SINGLE_FILLERS]
+    after = [word.token for word in words[split:] if word.token not in SCORED_SINGLE_FILLERS]
+    return any(
+        len(before) >= size and len(after) >= size and before[-size:] == after[:size]
+        for size in range(1, MAX_REPEAT_WORDS + 1)
+    )
+
+
+def _inside_sentence(words: Sequence[_Word], split: int) -> bool:
+    """Whether the pause after ``words[split - 1]`` counts against the speaker."""
+
+    last = words[split - 1]
+    if last.token in SCORED_SINGLE_FILLERS:
+        return True
+    if last.sentence_end:
+        return False
+    if last.comma:
+        return _repeats(words, split)
+    return True
+
+
 def _pause_spans(
     words: Sequence[_Word], acoustic: Mapping[str, Any] | None
 ) -> tuple[list[tuple[float, float]], str]:
@@ -151,14 +185,16 @@ def score_transcribe_items(
     spans, method = _pause_spans(words, acoustic)
     for start, end in spans:
         gap = end - start
-        before = [word for word in words if word.end <= (start + end) / 2]
-        if not before:
+        middle = (start + end) / 2
+        split = next((index + 1 for index in range(len(words) - 1, -1, -1)
+                      if (words[index].start + words[index].end) / 2 <= middle), 0)
+        if not split:
             continue
         pause = {
             "start_seconds": round(start, 2),
             "end_seconds": round(end, 2),
             "duration_seconds": round(gap, 2),
-            "inside_sentence": not before[-1].sentence_end,
+            "inside_sentence": _inside_sentence(words, split),
         }
         pauses.append(pause)
         total_pause += gap
