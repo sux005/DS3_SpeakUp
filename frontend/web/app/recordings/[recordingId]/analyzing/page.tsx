@@ -1,9 +1,10 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import Image from "next/image";
 import { useParams } from "next/navigation";
 import { ButtonLink } from "@/components/Button";
+import { Mascot } from "@/components/Mascot";
+import { MascotState } from "@/components/MascotState";
 import { PageHeading, PageShell } from "@/components/PageHeading";
 import { useDemoStore } from "@/lib/demo-store";
 import { formatTake, getProject, getTake } from "@/lib/recordings";
@@ -35,18 +36,18 @@ const listeningGoals = [
 ];
 
 export default function AnalyzingPage() {
-  return <Suspense fallback={<PageShell><p>Loading recording…</p></PageShell>}><AnalyzingContent /></Suspense>;
+  return <Suspense fallback={<PageShell><MascotState busy message="Loading recording…" /></PageShell>}><AnalyzingContent /></Suspense>;
 }
 
 function AnalyzingContent() {
   const { recordingId } = useParams<{ recordingId: string }>();
   const { projects, recordings, reviews, ready } = useDemoStore();
   const [listeningGoal, setListeningGoal] = useState<number | null>(null);
-  if (!ready) return <PageShell><p>Loading recording…</p></PageShell>;
+  if (!ready) return <PageShell><MascotState busy message="Loading recording…" /></PageShell>;
   const take = getTake(recordings, recordingId);
-  if (!take) return <PageShell><p>Recording not found.</p><ButtonLink href="/">All presentations</ButtonLink></PageShell>;
+  if (!take) return <PageShell><MascotState message="Recording not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
   const project = getProject(projects, take.project_id);
-  if (!project) return <PageShell><p>Presentation not found.</p><ButtonLink href="/">All presentations</ButtonLink></PageShell>;
+  if (!project) return <PageShell><MascotState message="Presentation not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
 
   const failed = take.status === "FAILED";
   const removed = take.status === "DELETED" || take.status === "PURGE_PENDING";
@@ -64,12 +65,12 @@ function AnalyzingContent() {
       />
 
       {!failed && !removed && (
-        <section className="flex w-full flex-col gap-10 bg-night p-6 md:flex-row md:gap-16 md:p-12" aria-label="Analysis stages" aria-live="polite">
+        <section data-surface="dark" className="flex w-full flex-col gap-8 rounded-3xl border-2 border-outline bg-night p-4 sm:p-6 md:flex-row md:gap-12 md:p-12" aria-label="Analysis stages" aria-live="polite">
           <ol className="min-w-0 flex-1">
             {stages.map((stage, index) => (
-              <li key={stage.title} className={`analysis-stage relative flex min-h-[100px] gap-5 border-b border-night-line p-5 ${index === finished && finished < 4 ? "analysis-stage-active" : ""}`} aria-current={index === finished && finished < 4 ? "step" : undefined}>
-                <span className="w-11 shrink-0 font-mono text-[22px] text-peach">
-                  {index < finished ? <span className="analysis-stage-check">✓</span> : String(index + 1).padStart(2, "0")}
+              <li key={stage.title} className={`analysis-stage relative flex min-h-[100px] items-start gap-5 border-b border-night-line p-4 last:border-b-0 sm:p-5 ${index === finished && finished < 4 ? "analysis-stage-active" : ""}`} aria-current={index === finished && finished < 4 ? "step" : undefined}>
+                <span className={`egg-badge ${index > finished ? "opacity-55" : ""}`}>
+                  {index < finished ? <span className="analysis-stage-check">✓</span> : index + 1}
                 </span>
                 <div className="flex flex-col gap-1.5">
                   <p className="font-display text-2xl font-bold text-cream">{stage.title}</p>
@@ -78,11 +79,20 @@ function AnalyzingContent() {
               </li>
             ))}
           </ol>
-          <div className={`${finished < 4 ? "pip-motion " : ""}relative h-[170px] w-[170px] shrink-0 self-center md:self-start`} aria-hidden="true">
-            <Image src="/figma/pip-analyzing.svg" alt="" width={170} height={170} />
-            <span className="pip-signal absolute" />
+          <div className={`${finished < 4 ? "mascot-float " : ""}shrink-0 self-center`} aria-hidden="true">
+            <Mascot state={finished === 4 && hasAnalysis ? "results" : "neutral"} flip className="w-28 md:w-40" />
           </div>
         </section>
+      )}
+
+      {(failed || removed) && (
+        <MascotState
+          tone={failed ? "error" : "plain"}
+          message={failed ? "This take didn’t make it through." : "This recording is no longer here."}
+          detail={failed ? "Nothing was scored. Record or upload another attempt to try again." : "It was removed, so there is nothing to play or review."}
+        >
+          {failed && <ButtonLink href={`/projects/${take.project_id}/new`}>Try another attempt</ButtonLink>}
+        </MascotState>
       )}
 
       <div className="flex flex-wrap gap-4">
@@ -94,7 +104,7 @@ function AnalyzingContent() {
       )}
 
       {!failed && !removed && (
-        <section className="w-full max-w-[1100px] rounded-md border border-line bg-pale p-6 md:p-8" aria-labelledby="listening-goal-title">
+        <section className="w-full max-w-[1100px] rounded-2xl border-2 border-line bg-pale p-6 md:p-8" aria-labelledby="listening-goal-title">
           <p className="font-mono text-xs text-teal">WHILE YOU WAIT · OPTIONAL</p>
           <h2 id="listening-goal-title" className="mt-2 font-display text-2xl font-bold text-ink">Pick a listening goal</h2>
           <p className="mt-2 text-muted">Choose one thing to notice when you replay your recording. This is a reflection prompt, not a score.</p>
@@ -105,7 +115,7 @@ function AnalyzingContent() {
                 type="button"
                 aria-pressed={listeningGoal === index}
                 onClick={() => setListeningGoal(index)}
-                className={`rounded-full border px-5 py-2 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal ${listeningGoal === index ? "border-teal bg-teal text-cream dark:border-peach dark:bg-peach dark:text-night" : "border-line bg-paper text-ink hover:border-teal"}`}
+                className={`min-h-11 cursor-pointer rounded-full border-2 px-5 py-2 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet ${listeningGoal === index ? "border-violet bg-violet text-cream dark:text-night" : "border-line bg-card text-ink hover:border-teal"}`}
               >
                 {goal.label}
               </button>

@@ -54,6 +54,49 @@ describe("RecorderUploader edge cases", () => {
     vi.restoreAllMocks();
   });
 
+  it("drives the level meter from the real microphone stream and clears it on stop", async () => {
+    const close = vi.fn().mockResolvedValue(undefined);
+    const connect = vi.fn();
+    class FakeAudioContext {
+      createAnalyser = () => ({ fftSize: 0, getByteTimeDomainData: (samples: Uint8Array) => samples.fill(160) });
+      createMediaStreamSource = vi.fn(() => ({ connect }));
+      close = close;
+    }
+    Object.defineProperty(window, "AudioContext", { configurable: true, value: FakeAudioContext });
+    const { container } = render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={10} onSubmit={vi.fn()} />);
+    const bars = () => [...container.querySelectorAll<HTMLElement>('[aria-hidden="true"] > span')];
+
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "● Record audio" })); });
+    expect(connect).toHaveBeenCalledOnce();
+    expect(screen.getByText("Live level from your microphone.")).toBeTruthy();
+    await act(async () => { vi.advanceTimersByTime(170); });
+    // Two readings so far: the newest bars carry the measured level, older ones stay flat.
+    expect(bars().at(-1)!.style.height).toBe("100%");
+    expect(bars().at(-2)!.style.height).toBe("100%");
+    expect(bars()[0].style.height).toBe("0%");
+
+    // A reading can land between the recorder stopping and the meter's timer being
+    // cleared. Stop the recorder without letting React re-render, then tick once.
+    const recorder = FakeRecorder.instances[0];
+    await act(async () => {
+      recorder.stop();
+      vi.advanceTimersByTime(90);
+    });
+    expect(close).toHaveBeenCalledOnce();
+    expect(bars().every((bar) => bar.style.height === "0%")).toBe(true);
+    expect(screen.getByText("The level meter moves while you record.")).toBeTruthy();
+    Reflect.deleteProperty(window, "AudioContext");
+  });
+
+  it("still records when the browser cannot set up the level meter", async () => {
+    Object.defineProperty(window, "AudioContext", { configurable: true, value: class { constructor() { throw new Error("no audio"); } } });
+    render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={10} onSubmit={vi.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "● Record audio" })); });
+    expect(screen.getByText("RECORDING 00:00 / 00:10")).toBeTruthy();
+    expect(screen.getByText("The level meter moves while you record.")).toBeTruthy();
+    Reflect.deleteProperty(window, "AudioContext");
+  });
+
   it("captures microphone chunks, chooses the supported MIME type, and submits the recording", async () => {
     const onSubmit = vi.fn();
     render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={10} onSubmit={onSubmit} />);

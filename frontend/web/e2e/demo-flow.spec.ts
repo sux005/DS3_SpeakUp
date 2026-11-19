@@ -31,7 +31,8 @@ test.describe("fixture-backed presentation navigation", () => {
     await page.getByRole("link", { name: "+ New attempt" }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/new$`));
     await expect(page.getByRole("heading", { name: "Record or upload" })).toBeVisible();
-    await expect(page.getByText(/Upload WAV, MP3, M4A, or WebM audio/)).toBeVisible();
+    await expect(page.getByText("WAV, MP3, M4A or WebM, up to 100 MB.")).toBeVisible();
+    await expect(page.getByText("Uses your microphone. Recording stops after 10 minutes.")).toBeVisible();
   });
 
   test("uploads a local audio file and enters analyzing without an API", async ({ page }) => {
@@ -97,12 +98,44 @@ test.describe("analysis and review states", () => {
     await startWithCleanDemo(page);
     await page.goto(`/recordings/${completeRecordingId}`);
     await expect(page.getByRole("heading", { name: "Your results" })).toBeVisible();
-    // 120 WPM shows on the score card and again on the pace coaching card.
-    await expect(page.getByText("120 WPM").first()).toBeVisible();
-    await expect(page.getByRole("heading", { name: "The transcript" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Coaching" })).toBeVisible();
-    await expect(page.getByText("FOR YOUR NEXT TAKE")).toBeVisible();
-    await expect(page.getByText('Take a breath instead of saying "um" before your first sentence.')).toBeVisible();
+    await expect(page.getByRole("region", { name: "Your scores" }).getByText("134.08", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Transcript" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your takeaway" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Moments to replay" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your next practice step" })).toBeVisible();
+    // The seeded clip has no coaching, and the page says so rather than inventing any.
+    await expect(page.getByRole("region", { name: "Your takeaway" }).getByRole("status")).toContainText("Coaching isn't available for this recording.");
+  });
+
+  // Regression: a pause chosen in Moments to replay used to start playing at
+  // the instant the pause began, so the silence was over before it was heard.
+  test("replays a pause from the word before it, in a real audio element", async ({ page }) => {
+    await startWithCleanDemo(page);
+    await page.goto(`/recordings/${completeRecordingId}`);
+    const listen = page.getByRole("region", { name: "Listen back" });
+    const position = () => page.evaluate(() => document.querySelector("audio")!.currentTime);
+
+    // This pause runs from 15.16 s to 15.67 s in the seeded analysis, right
+    // after the word "um" (14.69 to 15.16 s).
+    const pause = listen.getByRole("button", { name: "Play from 00:14: Pause inside a sentence, 0.5 s" });
+    await expect(pause).toHaveText("00:15");
+    await pause.click();
+    const startedAt = await position();
+    expect(startedAt).toBeGreaterThan(14.6);
+    expect(startedAt).toBeLessThan(14.9);
+    await expect(listen.getByRole("button", { name: "Pause recording" })).toBeVisible();
+    // It keeps playing through the pause and into the words after it.
+    await expect.poll(position, { timeout: 10_000 }).toBeGreaterThan(15.67);
+
+    // Choosing it again goes back to the same place, not somewhere later.
+    await pause.click();
+    expect(await position()).toBeLessThan(14.9);
+
+    // A filler still plays from its own time.
+    await listen.getByRole("button", { name: "Play from 00:09: Filler “um”" }).click();
+    const fillerAt = await position();
+    expect(fillerAt).toBeGreaterThan(9.5);
+    expect(fillerAt).toBeLessThan(10.5);
   });
 
   test("guards a review that is still processing", async ({ page }) => {
