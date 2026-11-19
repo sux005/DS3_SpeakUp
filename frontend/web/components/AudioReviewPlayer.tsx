@@ -5,7 +5,7 @@
 // progress bar, the markers and (through onTimeChange) the transcript all read it.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { clusterMoments, momentKindLabels, nextMoment, type MomentCluster, type MomentKind, type ReviewMoment } from "@/lib/markers";
+import { clusterMoments, momentKindLabels, nextMoment, replayStart, type MomentCluster, type MomentKind, type ReviewMoment } from "@/lib/markers";
 
 export type { ReviewMoment } from "@/lib/markers";
 
@@ -53,6 +53,8 @@ export function AudioReviewPlayer({
   const [duration, setDuration] = useState(durationSeconds);
   const [error, setError] = useState<string>();
   const [loadFailed, setLoadFailed] = useState(false);
+  // The moment last chosen from the timeline or the step buttons.
+  const [selected, setSelected] = useState<ReviewMoment>();
   const trackRef = useRef<HTMLDivElement>(null);
   const [trackWidth, setTrackWidth] = useState(0);
 
@@ -76,6 +78,10 @@ export function AudioReviewPlayer({
       if (Number.isFinite(audio.duration)) setDuration(audio.duration);
     };
     const stopPlaying = () => setPlaying(false);
+    // The browser can pause or resume without going through the Play button
+    // (media keys, headphones, another tab taking over sound), so the button
+    // follows the element instead of assuming its last click still holds.
+    const startPlaying = () => setPlaying(true);
     const resetForNewSource = () => {
       setCurrentTime(0);
       setDuration(durationSeconds);
@@ -95,6 +101,8 @@ export function AudioReviewPlayer({
     audio.addEventListener("loadedmetadata", updateDuration);
     audio.addEventListener("durationchange", updateDuration);
     audio.addEventListener("ended", stopPlaying);
+    audio.addEventListener("play", startPlaying);
+    audio.addEventListener("pause", stopPlaying);
     audio.addEventListener("error", handleError);
 
     return () => {
@@ -103,6 +111,8 @@ export function AudioReviewPlayer({
       audio.removeEventListener("loadedmetadata", updateDuration);
       audio.removeEventListener("durationchange", updateDuration);
       audio.removeEventListener("ended", stopPlaying);
+      audio.removeEventListener("play", startPlaying);
+      audio.removeEventListener("pause", stopPlaying);
       audio.removeEventListener("error", handleError);
       audio.pause();
     };
@@ -111,8 +121,9 @@ export function AudioReviewPlayer({
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !audioUrl || !seekRequest || loadFailed) return;
-    audio.currentTime = seekRequest.seconds;
-    onTimeChange?.(seekRequest.seconds);
+    const seconds = Math.max(0, seekRequest.seconds);
+    audio.currentTime = seconds;
+    onTimeChange?.(seconds);
     audio.play().then(() => setPlaying(true)).catch(() => {
       setError("Playback was blocked. Press play again to retry.");
     });
@@ -155,12 +166,18 @@ export function AudioReviewPlayer({
     [moments, timelineLength, trackWidth],
   );
   const kinds = new Set(moments.map((moment) => moment.kind ?? "improve"));
-  const previous = nextMoment(moments, currentTime, -1);
-  const next = nextMoment(moments, currentTime, 1);
+  // A pause is played from the word before it, so right after choosing one the
+  // playhead sits ahead of it. Step from the pause itself until it is reached,
+  // otherwise Next would keep landing on the same pause.
+  const leadingInto = selected && currentTime < selected.at && currentTime >= replayStart(selected) - 0.25 ? selected : undefined;
+  const stepFrom = leadingInto ? leadingInto.at : currentTime;
+  const previous = nextMoment(moments, stepFrom, -1);
+  const next = nextMoment(moments, stepFrom, 1);
 
   const selectMoment = (moment: ReviewMoment) => {
     if (!unavailable) {
-      seek(moment.at);
+      seek(replayStart(moment));
+      setSelected(moment);
       const audio = audioRef.current;
       audio?.play().then(() => setPlaying(true)).catch(() => {
         setError("Playback was blocked. Press play again to retry.");

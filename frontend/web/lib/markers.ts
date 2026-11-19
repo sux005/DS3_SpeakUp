@@ -17,7 +17,37 @@ export type ReviewMoment = {
   kind?: MomentKind;
   observation?: string;
   nextStep?: string;
+  // Where playback starts, when that isn't `at`. Set for pauses.
+  playFrom?: number;
 };
+
+type WordTime = { start: number; end: number };
+
+// A pause inside a sentence lasts well under a second. Starting playback at
+// the instant it begins leaves nothing to hear, and a browser's seek can land
+// a little late and miss it altogether. So a pause is replayed from the start
+// of the word before it: in "I want [pause] food" you hear "want", the
+// silence, then "food". Without a timed word before it (a pause at the very
+// start, or no transcript), playback starts this much earlier instead.
+export const PAUSE_LEAD_IN_SECONDS = 1;
+
+/**
+ * Where to start playing a pause that begins at `pauseStart`: the start of the
+ * last word that begins before it, otherwise a short lead-in clamped to zero.
+ */
+export function pauseReplayStart(pauseStart: number, words: readonly WordTime[] = []) {
+  let before: WordTime | undefined;
+  for (const word of words) {
+    if (word.start < pauseStart && (!before || word.start > before.start)) before = word;
+  }
+  return before ? before.start : Math.max(0, pauseStart - PAUSE_LEAD_IN_SECONDS);
+}
+
+/** Where playback should start for a moment. Only pauses start early. */
+export function replayStart(moment: Pick<ReviewMoment, "at" | "kind" | "playFrom">) {
+  if (moment.playFrom !== undefined) return moment.playFrom;
+  return moment.kind === "pause" ? pauseReplayStart(moment.at) : moment.at;
+}
 
 export const momentKindLabels: Record<MomentKind, string> = {
   filler: "Filler word",
@@ -26,7 +56,9 @@ export const momentKindLabels: Record<MomentKind, string> = {
   strength: "Coaching: strength",
 };
 
-export function momentsFromAnalysis(metrics: AnalysisMetrics | undefined): ReviewMoment[] {
+// `words` are the transcript's word times (wordTimes in lib/transcript.ts),
+// used to start each pause at the word before it.
+export function momentsFromAnalysis(metrics: AnalysisMetrics | undefined, words: readonly WordTime[] = []): ReviewMoment[] {
   if (!metrics) return [];
   const fillers = metrics.filler_occurrences.map((filler, index): ReviewMoment => ({
     id: `filler-${index}`,
@@ -44,6 +76,7 @@ export function momentsFromAnalysis(metrics: AnalysisMetrics | undefined): Revie
         at: pause.start_seconds,
         end: pause.end_seconds,
         kind: "pause",
+        playFrom: pauseReplayStart(pause.start_seconds, words),
         label: `Pause inside sentence, ${seconds.toFixed(1)} s`,
       };
     });
