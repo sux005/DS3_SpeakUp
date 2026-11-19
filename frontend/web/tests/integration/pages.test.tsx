@@ -34,7 +34,7 @@ vi.mock("@/components/RecorderUploader", () => ({
 }));
 vi.mock("@/components/ProgressCharts", () => ({ ProgressCharts: ({ takes }: { takes: Recording[] }) => <div data-testid="charts">charts:{takes.length}</div> }));
 vi.mock("@/components/AudioReviewPlayer", () => ({
-  AudioReviewPlayer: ({ moments, onMomentSelect }: { moments: Array<{ label: string; observation?: string; nextStep?: string }>; onMomentSelect?: (moment: { at: number; label: string; observation?: string; nextStep?: string }) => void }) => <div data-testid="player">{moments.map((moment, index) => <button key={index} type="button" onClick={() => onMomentSelect?.({ ...moment, at: index })}>{moment.label}</button>)}</div>,
+  AudioReviewPlayer: ({ moments, onMomentSelect, seekRequest }: { seekRequest?: { seconds: number }; moments: Array<{ label: string; observation?: string; nextStep?: string; playFrom?: number }>; onMomentSelect?: (moment: { at: number; label: string; observation?: string; nextStep?: string }) => void }) => <div data-testid="player" data-seek={seekRequest?.seconds}>{moments.map((moment, index) => <button key={index} type="button" data-play-from={moment.playFrom} onClick={() => onMomentSelect?.({ ...moment, at: index })}>{moment.label}</button>)}</div>,
 }));
 vi.mock("@/lib/demo-store", () => ({ useDemoStore: () => harness.store }));
 
@@ -235,6 +235,57 @@ describe("results route", () => {
     fireEvent.click(screen.getByRole("button", { name: "Strength" }));
     expect(screen.getAllByText("Clear")).toHaveLength(3);
     expect(screen.getByText(/Repeat/)).toBeTruthy();
+  });
+
+  // Regression: a pause chosen in Moments to replay must start at the word
+  // before it, so "I want [pause] food" plays "want", the silence, then "food".
+  it("starts a pause chosen in Moments to replay at the word before it", () => {
+    harness.store.audioUrls = { "recording-1": "blob:audio" };
+    const word = (content: string, start: string, end: string) => ({ type: "pronunciation", start_time: start, end_time: end, alternatives: [{ content }] });
+    harness.store.reviews = {
+      "recording-1": {
+        recording_id: "recording-1",
+        transcript: { text: "I want food.", items: [
+          word("I", "7.0", "7.2"),
+          word("want", "7.4", "8.0"),
+          word("food", "8.8", "9.3"),
+          { type: "punctuation", alternatives: [{ content: "." }] },
+        ] },
+        analysis: {
+          duration_seconds: 60, words_per_minute: 140, fillers_per_100_words: 1, pauses_per_speaking_minute: 2,
+          rubric_scores: { speaking_rate: 4, filler_words: 3, pauses_inside_sentences: 3 },
+          filler_occurrences: [{ start_seconds: 30, end_seconds: 30.4, filler: "um" }],
+          pauses: [
+            { start_seconds: 8.0, end_seconds: 8.8, duration_seconds: 0.8, inside_sentence: true },
+            // Before the first word, so there is no word to start from.
+            { start_seconds: 0.5, end_seconds: 1.2, duration_seconds: 0.7, inside_sentence: true },
+          ],
+          long_pauses: [],
+        },
+        feedback: null,
+      },
+    };
+    render(<ResultsPage />);
+    const replay = within(screen.getByRole("region", { name: "Listen back" }));
+    const player = screen.getByTestId("player");
+    expect(player.getAttribute("data-seek")).toBeNull();
+
+    fireEvent.click(replay.getByRole("button", { name: "Play from 00:07: Pause inside a sentence, 0.8 s" }));
+    expect(player.getAttribute("data-seek")).toBe("7.4");
+    // The timeline marker for the same pause starts from "want" too.
+    expect(within(player).getByRole("button", { name: "Pause inside sentence, 0.8 s" }).getAttribute("data-play-from")).toBe("7.4");
+
+    // With no word before it, a short lead-in, clamped to zero.
+    fireEvent.click(replay.getByRole("button", { name: "Play from 00:00: Pause inside a sentence, 0.7 s" }));
+    expect(player.getAttribute("data-seek")).toBe("0");
+
+    // A filler is unchanged: it plays from its own time.
+    fireEvent.click(replay.getByRole("button", { name: "Play from 00:30: Filler “um”" }));
+    expect(player.getAttribute("data-seek")).toBe("30");
+
+    // Back to the first pause: it seeks there again.
+    fireEvent.click(replay.getByRole("button", { name: "Play from 00:07: Pause inside a sentence, 0.8 s" }));
+    expect(player.getAttribute("data-seek")).toBe("7.4");
   });
 
   it("guards missing and incomplete recordings", () => {

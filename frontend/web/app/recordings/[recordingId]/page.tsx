@@ -14,7 +14,7 @@ import { SyncedTranscript } from "@/components/SyncedTranscript";
 import { momentsFromAnalysis, momentsFromFeedback } from "@/lib/markers";
 import { useDemoStore } from "@/lib/demo-store";
 import { formatClock, formatDate, formatTake, getProject, getTake, getTakes } from "@/lib/recordings";
-import { toSentences } from "@/lib/transcript";
+import { toSentences, wordTimes } from "@/lib/transcript";
 import type { FeedbackMoment } from "@/lib/types";
 
 export default function ResultsPage() {
@@ -41,16 +41,18 @@ function ResultsContent() {
   const metrics = review?.analysis;
   const sentences = metrics && review ? toSentences(review.transcript.items, metrics) : [];
   const feedbackMoments = review?.feedback?.moments ?? [];
-  const moments = [...momentsFromAnalysis(metrics), ...momentsFromFeedback(feedbackMoments)].sort((a, b) => a.at - b.at);
+  const words = review ? wordTimes(review.transcript.items) : [];
+  const moments = [...momentsFromAnalysis(metrics, words), ...momentsFromFeedback(feedbackMoments)].sort((a, b) => a.at - b.at);
   const categories = review?.feedback?.categories;
   const takeLabel = formatTake(take.take).toUpperCase();
 
   const canSeek = Boolean(audioUrls[recordingId]) && !audioFailed;
   const practiceHref = `/projects/${take.project_id}/new`;
-  // Play from a moment and bring its sentence into view in the transcript.
-  const playFrom = (seconds: number) => {
+  // Play from `seconds` and bring the sentence at `eventAt` into view. The two
+  // differ for a pause, which is played from the word before it.
+  const playFrom = (seconds: number, eventAt = seconds) => {
     setSeekRequest({ seconds });
-    setRevealRequest({ seconds });
+    setRevealRequest({ seconds: eventAt });
   };
 
   return (

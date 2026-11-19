@@ -4,6 +4,7 @@ import { EvidenceList, NextStep, Takeaway } from "@/components/ResultsSummary";
 import { rubric } from "@/lib/rubric";
 import type { AnalysisMetrics, RecordingReview } from "@/lib/types";
 import demoAnalysis from "@/data/demo/analysis.json";
+import demoTranscript from "@/data/demo/transcript.json";
 
 const metrics = demoAnalysis.data.metrics as AnalysisMetrics;
 const transcript = { text: "", items: [] };
@@ -78,7 +79,48 @@ describe("EvidenceList", () => {
     expect(buttons).toHaveLength(6);
     const first = metrics.filler_occurrences[0];
     fireEvent.click(screen.getByRole("button", { name: new RegExp(`Play from 00:0${Math.floor(first.start_seconds)}: Filler “${first.filler}”`) }));
-    expect(onSeek).toHaveBeenCalledWith(first.start_seconds);
+    // A filler plays from its own time, and its sentence is found at that same time.
+    expect(onSeek).toHaveBeenCalledWith(first.start_seconds, first.start_seconds);
+  });
+
+  // Regression: clicking a pause used to seek to the instant it began, so
+  // playback started inside the silence or just after it.
+  it("plays a pause from the start of the word before it, and finds its sentence at the pause itself", () => {
+    const onSeek = vi.fn();
+    const withWords: RecordingReview = { ...uncoached, transcript: demoTranscript.data };
+    render(<EvidenceList review={withWords} metrics={metrics} canSeek onSeek={onSeek} />);
+    // In the demo clip, "um" runs 14.69 to 15.16 s, then this pause, then "um" again at 15.67 s.
+    const pause = metrics.pauses.find((item) => item.start_seconds === 15.16)!;
+    expect(pause.end_seconds).toBe(15.67);
+    const row = screen.getByText("Pause inside a sentence, 0.5 s").closest("li")!;
+    fireEvent.click(within(row).getByRole("button"));
+    expect(onSeek).toHaveBeenCalledOnce();
+    expect(onSeek).toHaveBeenCalledWith(14.69, 15.16);
+    // The label still shows when the pause happens; the button says where playback starts.
+    expect(within(row).getByRole("button").textContent).toBe("00:15");
+    expect(within(row).getByRole("button").getAttribute("aria-label")).toBe("Play from 00:14: Pause inside a sentence, 0.5 s");
+  });
+
+  it("falls back to one second before a pause when the transcript has no words", () => {
+    const onSeek = vi.fn();
+    render(<EvidenceList review={uncoached} metrics={metrics} canSeek onSeek={onSeek} />);
+    fireEvent.click(within(screen.getByText("Pause inside a sentence, 0.5 s").closest("li")!).getByRole("button"));
+    expect(onSeek.mock.calls[0][0]).toBeCloseTo(14.16);
+  });
+
+  it("starts at zero for a pause in the first second of the recording", () => {
+    const onSeek = vi.fn();
+    const early: AnalysisMetrics = { ...metrics, filler_occurrences: [], pauses: [{ start_seconds: 0.7, end_seconds: 1.3, duration_seconds: 0.6, inside_sentence: true }] };
+    render(<EvidenceList review={uncoached} metrics={early} canSeek onSeek={onSeek} />);
+    fireEvent.click(screen.getByRole("button", { name: "Play from 00:00: Pause inside a sentence, 0.6 s" }));
+    expect(onSeek).toHaveBeenCalledWith(0, 0.7);
+  });
+
+  it("plays a coached moment from its own time", () => {
+    const onSeek = vi.fn();
+    render(<EvidenceList review={coached} metrics={metrics} canSeek onSeek={onSeek} />);
+    fireEvent.click(screen.getByRole("button", { name: /Play from 00:12: Try this/ }));
+    expect(onSeek).toHaveBeenCalledWith(12.5, 12.5);
   });
 
   it("uses coaching moments when present and is disabled without audio", () => {

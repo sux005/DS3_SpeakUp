@@ -5,7 +5,8 @@ import { AudioReviewPlayer, type ReviewMoment } from "@/components/AudioReviewPl
 const moments: ReviewMoment[] = [
   { id: "f1", at: 10, end: 10.3, kind: "filler", label: "Filler “um”" },
   { id: "f2", at: 10.5, end: 10.8, kind: "filler", label: "Filler “uh”" },
-  { id: "p1", at: 40, end: 40.6, kind: "pause", label: "Pause inside sentence, 0.6 s" },
+  // The word before this pause starts at 39.2 s.
+  { id: "p1", at: 40, end: 40.6, kind: "pause", playFrom: 39.2, label: "Pause inside sentence, 0.6 s" },
   { id: "c1", at: 80, end: 82, kind: "strength", label: "Strength", text: "Clear close", observation: "Good", nextStep: "Keep it" },
 ];
 
@@ -31,12 +32,63 @@ describe("AudioReviewPlayer timeline markers", () => {
     expect(markers[2].getAttribute("aria-label")).toBe("01:20 · Strength · Clear close");
   });
 
-  it("seeks to and plays from a clicked marker, and reports it", () => {
+  it("plays a pause marker from the word before the pause, so it can be heard, and reports it", () => {
     const { markers, audio, onMomentSelect } = renderPlayer();
     fireEvent.click(markers[1]);
-    expect(audio.currentTime).toBe(40);
+    // The pause runs 40 to 40.6 s. Starting at 40 would begin inside the silence.
+    expect(audio.currentTime).toBe(39.2);
     expect(HTMLMediaElement.prototype.play).toHaveBeenCalled();
     expect(onMomentSelect).toHaveBeenCalledWith(moments[2]);
+  });
+
+  it("still plays filler and coaching markers from their own time", () => {
+    const { markers, audio } = renderPlayer();
+    fireEvent.click(markers[0]);
+    expect(audio.currentTime).toBe(10);
+    fireEvent.click(markers[2]);
+    expect(audio.currentTime).toBe(80);
+  });
+
+  it("falls back to a one-second lead-in for a pause with no word before it", () => {
+    const bare: ReviewMoment[] = [{ id: "p2", at: 40, end: 40.6, kind: "pause", label: "Pause inside sentence, 0.6 s" }];
+    const { markers, audio } = renderPlayer({ moments: bare });
+    fireEvent.click(markers[0]);
+    expect(audio.currentTime).toBe(39);
+  });
+
+  // Regression: moving between moments must seek each time, including back to
+  // a pause that was already chosen, and never land inside or after the pause.
+  it("seeks to the right place each time when clicking between moments", () => {
+    const { markers, audio } = renderPlayer();
+    const plays = vi.mocked(HTMLMediaElement.prototype.play);
+    for (const [index, expected] of [[1, 39.2], [0, 10], [2, 80], [1, 39.2], [1, 39.2]] as const) {
+      audio.currentTime = 55; // wherever playback had got to
+      fireEvent.click(markers[index]);
+      expect(audio.currentTime).toBe(expected);
+    }
+    expect(plays).toHaveBeenCalledTimes(5);
+  });
+
+  it("never starts a pause before the beginning of the recording", () => {
+    const early: ReviewMoment[] = [{ id: "p0", at: 0.6, end: 1.1, kind: "pause", label: "Pause inside sentence, 0.5 s" }];
+    const { markers, audio } = renderPlayer({ moments: early });
+    audio.currentTime = 30;
+    fireEvent.click(markers[0]);
+    expect(audio.currentTime).toBe(0);
+  });
+
+  it("seeks to a requested time and plays, never before zero", () => {
+    const { rerender } = render(<AudioReviewPlayer audioUrl="blob:audio" durationSeconds={100} moments={moments} seekRequest={{ seconds: 13.66 }} />);
+    const audio = document.querySelector("audio")!;
+    expect(audio.currentTime).toBeCloseTo(13.66);
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce();
+    // Asking for the same place again seeks and plays again.
+    audio.currentTime = 50;
+    rerender(<AudioReviewPlayer audioUrl="blob:audio" durationSeconds={100} moments={moments} seekRequest={{ seconds: 13.66 }} />);
+    expect(audio.currentTime).toBeCloseTo(13.66);
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(2);
+    rerender(<AudioReviewPlayer audioUrl="blob:audio" durationSeconds={100} moments={moments} seekRequest={{ seconds: -2 }} />);
+    expect(audio.currentTime).toBe(0);
   });
 
   it("shows a legend for the marker kinds present", () => {
@@ -52,10 +104,21 @@ describe("AudioReviewPlayer timeline markers", () => {
     expect(audio.currentTime).toBe(10);
     fireEvent(audio, new Event("timeupdate"));
     fireEvent.click(screen.getByRole("button", { name: "Next moment" }));
-    expect(audio.currentTime).toBe(40);
+    expect(audio.currentTime).toBe(39.2);
+    expect(onMomentSelect).toHaveBeenLastCalledWith(moments[2]);
     fireEvent(audio, new Event("timeupdate"));
     fireEvent.click(screen.getByRole("button", { name: "Previous moment" }));
     expect(onMomentSelect).toHaveBeenLastCalledWith(moments[1]);
+  });
+
+  it("moves on from a pause while its lead-in is still playing", () => {
+    const { audio, markers, onMomentSelect } = renderPlayer();
+    fireEvent.click(markers[1]);
+    // The playhead is at 39.2 s, ahead of the pause at 40 s that was just chosen.
+    fireEvent(audio, new Event("timeupdate"));
+    fireEvent.click(screen.getByRole("button", { name: "Next moment" }));
+    expect(onMomentSelect).toHaveBeenLastCalledWith(moments[3]);
+    expect(audio.currentTime).toBe(80);
   });
 
   it("rings the marker at the current time", () => {

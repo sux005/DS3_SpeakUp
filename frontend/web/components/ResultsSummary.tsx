@@ -7,6 +7,7 @@
 
 import { ButtonLink } from "@/components/Button";
 import { Mascot } from "@/components/Mascot";
+import { replayStart } from "@/lib/markers";
 import { formatClock } from "@/lib/recordings";
 import { buildEvidence, buildNextStep, buildTakeaway, type Source, type TakeawayLine } from "@/lib/takeaway";
 import type { AnalysisMetrics, RecordingReview } from "@/lib/types";
@@ -82,12 +83,17 @@ export function Takeaway({ review, metrics, canSeek, onSeek }: {
   );
 }
 
-/** Moments to replay, for the dark review panel. Each one plays from its time. */
+/**
+ * Moments to replay, for the dark review panel. Each one plays from its time,
+ * except a pause, which plays from the start of the word before it so the
+ * silence can be heard. The second argument to onSeek is the event's own time,
+ * for finding its sentence.
+ */
 export function EvidenceList({ review, metrics, canSeek, onSeek }: {
   review: RecordingReview;
   metrics?: AnalysisMetrics;
   canSeek: boolean;
-  onSeek: (seconds: number) => void;
+  onSeek: (seconds: number, eventAt?: number) => void;
 }) {
   const { items, source } = buildEvidence(review, metrics);
   return (
@@ -103,8 +109,8 @@ export function EvidenceList({ review, metrics, canSeek, onSeek }: {
               <button
                 type="button"
                 disabled={!canSeek}
-                onClick={() => onSeek(item.at)}
-                aria-label={`Play from ${formatClock(item.at)}: ${item.label}`}
+                onClick={() => onSeek(replayStart(item), item.at)}
+                aria-label={`Play from ${formatClock(replayStart(item))}: ${item.label}`}
                 className="press min-h-8 cursor-pointer rounded-lg border-2 border-night-line px-2 font-mono text-xs text-mint hover:border-mint disabled:cursor-default disabled:opacity-60 disabled:hover:border-night-line"
               >
                 <PlayIcon />{formatClock(item.at)}
