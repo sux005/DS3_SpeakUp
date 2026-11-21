@@ -36,7 +36,7 @@ describe("RecorderUploader", () => {
 
   it("states each control's real limits beside it and keeps the meter flat until recording", () => {
     const { container } = render(<RecorderUploader maxAudioBytes={104_857_600} maxAudioDurationSeconds={600} onSubmit={vi.fn()} />);
-    expect(screen.getByText("Uses your microphone. Recording stops after 10 minutes.")).toBeTruthy();
+    expect(screen.getByText(/Uses your microphone\. Recording stops after 10 minutes\./)).toBeTruthy();
     expect(screen.getByText("WAV, MP3, M4A or WebM, up to 100 MB.")).toBeTruthy();
     expect(screen.getByText("The level meter moves while you record.")).toBeTruthy();
     const bars = [...container.querySelectorAll<HTMLElement>('[aria-hidden="true"] > span')];

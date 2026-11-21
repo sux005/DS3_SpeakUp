@@ -19,6 +19,16 @@ recordings identify their project and are listed through
 transcript, compact metrics, and optional feedback from `/review`; fetch the
 owner-checked `analysis` artifact separately for timed filler and pause markers.
 
+Recording, the countdown, preview, and retakes are local UI actions. In live
+mode, **Start presentation with audio** on the home form or New attempt page is
+the write boundary for project creation and audio upload. The page still reads
+session, project, and limit data on load. Browser speech recognition provides
+provisional live words, filler counts, and pace; a browser vendor may process
+speech for recognition. Only the submitted audio enters SpeakUp's scoring
+pipeline. The retake confirmation's **Don't show again** choice is stored in
+that browser's `localStorage`, not in the user account. See the
+[web app guide](web/README.md#recording-and-submission-boundary) for details.
+
 Run and check the app with the commands in [`web/README.md`](web/README.md).
 The browser tests exercise local and intercepted live flows; they do not prove
 an authenticated deployed workflow.

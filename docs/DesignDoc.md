@@ -41,6 +41,15 @@ recording is not overwritten. The browser can use sample data locally or a
 development API bridge. Production sign-in and a deployed browser-to-backend
 smoke test remain open work.
 
+The recording form keeps microphone capture, countdown, preview, and retakes
+local until **Start presentation with audio**. In live mode, that action creates
+a project if needed and uploads the selected audio. Loading existing projects
+and limits still uses read-only API calls before submission. The live transcript
+and provisional filler and pace estimates use browser speech recognition,
+which may process speech through a browser vendor; backend rubric scores use
+the submitted audio and its timed transcript. The retake confirmation preference
+is browser `localStorage`, not an account setting.
+
 ## Data and scoring
 
 Private S3 objects hold recordings and large JSON artifacts. DynamoDB holds

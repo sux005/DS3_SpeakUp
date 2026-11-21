@@ -15,6 +15,7 @@ import { getProject } from "@/lib/recordings";
 // indicator and timer beside the controls already carry that state.
 const bubble: Record<RecorderStatus, string | null> = {
   idle: "Ready to record.",
+  countdown: "Get ready to speak.",
   recording: null,
   ready: "Have a listen before you start the review.",
 };
@@ -55,6 +56,7 @@ function NewAttemptContent() {
           </div>
           <RecorderUploader
             live={live}
+            submitLabel={live ? "Start presentation with audio" : "Analyze demo recording"}
             maxAudioBytes={limits.max_audio_upload_bytes}
             maxAudioDurationSeconds={limits.max_audio_duration_seconds}
             onSubmit={submit}

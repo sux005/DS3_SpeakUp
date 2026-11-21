@@ -146,6 +146,11 @@ For the local frontend demo, use Node.js 20.9 or newer and run `npm ci` in
 Playwright. It supports sample data and a development API bridge; the bridge
 requires guest mode and is disabled in production. Transcript review uses
 timed words with filler highlighting, filters, and click-to-seek playback.
+Recording, countdown, preview, retake confirmation, and provisional live speech
+estimates run in the browser. Live-mode page load still reads session, projects,
+and limits; **Start presentation with audio** triggers project creation and audio
+upload. Browser speech recognition may use a vendor service. The retake prompt
+preference is browser `localStorage`, not backend account state.
 
 Use `.env.production.example` as the production schema after the production
 CloudFormation stack is deployed. Never commit `.env.development` or

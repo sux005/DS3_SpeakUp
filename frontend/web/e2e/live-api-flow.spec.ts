@@ -76,16 +76,19 @@ async function installLiveApi(page: Page, options: {
   reviewFailures?: number;
   rateLimitProjects?: boolean;
   seedRecording?: boolean;
-}): Promise<{ put: Promise<boolean>; setStatus: (status: RecordingStatus) => void }> {
+}): Promise<{ put: Promise<boolean>; requests: string[]; writes: string[]; setStatus: (status: RecordingStatus) => void }> {
   let statusIndex = 0;
   let reviewFailures = options.reviewFailures ?? 0;
   let overrideStatus: RecordingStatus | null = null;
   let projectCreated = Boolean(options.seedRecording);
   let uploadReserved = Boolean(options.seedRecording);
   let putSeen = false;
+  const requests: string[] = [];
+  const writes: string[] = [];
   const put = new Promise<boolean>((resolve) => {
     void page.route(`${storageOrigin}/**`, async (route) => {
       if (route.request().method() === "PUT") {
+        writes.push("PUT audio");
         putSeen = true;
         await route.fulfill({ status: 200, body: "" });
         resolve(putSeen);
@@ -97,6 +100,8 @@ async function installLiveApi(page: Page, options: {
       const request = route.request();
       const url = new URL(request.url());
       const path = url.pathname.replace(/^\/api\/speakup/, "");
+      requests.push(`${request.method()} ${path}`);
+      if (request.method() !== "GET") writes.push(`${request.method()} ${path}`);
 
       if (path === "/session") {
         await json(route, { guest: true });
@@ -169,7 +174,7 @@ async function installLiveApi(page: Page, options: {
       await route.continue();
     });
   });
-  return { put, setStatus: (status) => { overrideStatus = status; } };
+  return { put, requests, writes, setStatus: (status) => { overrideStatus = status; } };
 }
 
 async function uploadFromHome(page: Page, title = "Live rehearsal") {
@@ -197,6 +202,26 @@ test("creates a project, uploads to the signed URL, and reaches a completed revi
   await expect(page.getByText("Lead with your clearest point.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Today" })).toBeVisible();
   await expect(page.getByRole("button", { name: "update." })).toBeVisible();
+});
+
+test("keeps selected audio local until Start presentation with audio", async ({ page }) => {
+  const { put, requests, writes } = await installLiveApi(page, { statuses: ["UPLOADED"] });
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "+ New presentation" })).toBeEnabled();
+  const initialRequests = [...requests];
+  await page.getByRole("button", { name: "+ New presentation" }).click();
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "local-take.wav",
+    mimeType: "audio/wav",
+    buffer: Buffer.from("RIFF----WAVEfmt "),
+  });
+  await expect(page.getByRole("button", { name: "Start presentation with audio" })).toBeEnabled();
+  expect(requests).toEqual(initialRequests);
+  expect(writes).toEqual([]);
+
+  await page.getByRole("button", { name: "Start presentation with audio" }).click();
+  await expect(put).resolves.toBe(true);
+  expect(writes).toEqual(["POST /projects", "POST /uploads", "PUT audio"]);
 });
 
 test("renders a completed review when feedback is nullable", async ({ page }) => {

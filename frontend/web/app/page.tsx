@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { pageColumn } from "@/components/PageHeading";
@@ -32,6 +32,13 @@ export default function Home() {
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const pendingProject = useRef<{ name: string; id: string } | null>(null);
+  const newPresentationRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!creating) return;
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    newPresentationRef.current?.scrollIntoView?.({ behavior: reducedMotion ? "instant" : "smooth", block: "center" });
+  }, [creating]);
 
   async function startPresentation(audio: Blob, filename: string) {
     if (!ready) return;
@@ -89,14 +96,14 @@ export default function Home() {
         <FernCluster className="pointer-events-none absolute -top-[98px] -left-4 z-20 w-28 md:-left-12 md:w-36" />
 
         {creating && (
-          <section id="new-presentation" className="relative z-10 -mt-8 flex w-full flex-col gap-5 rounded-2xl border-2 border-outline bg-card p-6">
+          <section ref={newPresentationRef} id="new-presentation" className="relative z-10 -mt-8 flex w-full flex-col gap-5 rounded-2xl border-2 border-outline bg-card p-6">
             <div>
               <h2 className="font-display text-2xl font-bold text-ink">Start with your audio</h2>
               <p className="mt-1.5 text-muted">Upload a file or record now. We’ll create the presentation when you start the review.</p>
             </div>
             <label className="flex max-w-xl flex-col gap-2 font-semibold text-ink">
               Presentation title (optional)
-              <input autoFocus maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)}
+              <input maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)}
                 className="rounded-xl border-2 border-line bg-background p-3 text-base font-normal" placeholder="We’ll use today’s date if you skip this" />
             </label>
             <RecorderUploader live={live} maxAudioBytes={limits.max_audio_upload_bytes}

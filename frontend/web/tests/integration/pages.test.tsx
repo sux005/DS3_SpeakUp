@@ -121,12 +121,28 @@ describe("home and project routes", () => {
     render(<Home />);
     fireEvent.click(screen.getByRole("button", { name: "+ New presentation" }));
     fireEvent.change(screen.getByPlaceholderText("We’ll use today’s date if you skip this"), { target: { value: "  Talk  " } });
+    expect(harness.store.createProject).not.toHaveBeenCalled();
+    expect(harness.store.createRecording).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Start presentation with audio" }));
     expect(harness.store.createProject).toHaveBeenCalledWith("Talk", "");
     await waitFor(() => expect(harness.store.createRecording).toHaveBeenCalled());
     await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith("/recordings/created-recording/analyzing"));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByText("Start with your audio")).toBeNull();
+  });
+
+  it("centers the new presentation form when it opens", () => {
+    const previous = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollIntoView");
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
+    try {
+      render(<Home />);
+      fireEvent.click(screen.getByRole("button", { name: "+ New presentation" }));
+      expect(scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ block: "center" }));
+    } finally {
+      if (previous) Object.defineProperty(HTMLElement.prototype, "scrollIntoView", previous);
+      else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+    }
   });
 
   it("reuses the created project when recording upload is retried", async () => {

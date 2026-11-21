@@ -29,6 +29,11 @@ function choose(file: File) {
   fireEvent.change(screen.getByLabelText("↑ Upload audio"), { target: { files: [file] } });
 }
 
+async function beginRecording() {
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "● Record audio" })); });
+  await act(async () => { vi.advanceTimersByTime(3000); });
+}
+
 describe("RecorderUploader edge cases", () => {
   let tracks: FakeTrack[];
   let stream: { getTracks: () => FakeTrack[] };
@@ -66,7 +71,7 @@ describe("RecorderUploader edge cases", () => {
     const { container } = render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={10} onSubmit={vi.fn()} />);
     const bars = () => [...container.querySelectorAll<HTMLElement>('[aria-hidden="true"] > span')];
 
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "● Record audio" })); });
+    await beginRecording();
     expect(connect).toHaveBeenCalledOnce();
     expect(screen.getByText("Live level from your microphone.")).toBeTruthy();
     await act(async () => { vi.advanceTimersByTime(170); });
@@ -91,7 +96,7 @@ describe("RecorderUploader edge cases", () => {
   it("still records when the browser cannot set up the level meter", async () => {
     Object.defineProperty(window, "AudioContext", { configurable: true, value: class { constructor() { throw new Error("no audio"); } } });
     render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={10} onSubmit={vi.fn()} />);
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "● Record audio" })); });
+    await beginRecording();
     expect(screen.getByText("RECORDING 00:00 / 00:10")).toBeTruthy();
     expect(screen.getByText("The level meter moves while you record.")).toBeTruthy();
     Reflect.deleteProperty(window, "AudioContext");
@@ -101,7 +106,7 @@ describe("RecorderUploader edge cases", () => {
     const onSubmit = vi.fn();
     render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={10} onSubmit={onSubmit} />);
 
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "● Record audio" })); });
+    await beginRecording();
     expect(screen.getByText("RECORDING 00:00 / 00:10")).toBeTruthy();
     expect(FakeRecorder.instances).toHaveLength(1);
     expect(FakeRecorder.instances[0].mimeType).toBe("audio/webm;codecs=opus");
@@ -119,13 +124,25 @@ describe("RecorderUploader edge cases", () => {
     FakeRecorder.supported = new Set(["audio/mp4"]);
     render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={10} onSubmit={vi.fn()} />);
 
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "● Record audio" })); });
+    await beginRecording();
     expect(FakeRecorder.instances[0].mimeType).toBe("audio/mp4");
+  });
+
+  it("can cancel the countdown without saving microphone audio", async () => {
+    render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={10} onSubmit={vi.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "● Record audio" })); });
+    expect(screen.getByText("Recording starts in 3…")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel countdown" }));
+    await act(async () => { vi.advanceTimersByTime(3000); });
+
+    expect(FakeRecorder.instances[0].start).not.toHaveBeenCalled();
+    expect(tracks.every((track) => track.stop.mock.calls.length === 1)).toBe(true);
+    expect(screen.getByRole("button", { name: "● Record audio" })).toBeTruthy();
   });
 
   it("automatically stops at the configured duration", async () => {
     render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={1} onSubmit={vi.fn()} />);
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "● Record audio" })); });
+    await beginRecording();
     await act(async () => { vi.advanceTimersByTime(1_250); });
     expect(FakeRecorder.instances[0].stop).toHaveBeenCalledOnce();
     expect(screen.getByText(/READY · speakup-recording-/)).toBeTruthy();
@@ -142,7 +159,7 @@ describe("RecorderUploader edge cases", () => {
 
   it("stops an active stream and revokes the preview on unmount", async () => {
     const view = render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={10} onSubmit={vi.fn()} />);
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "● Record audio" })); });
+    await beginRecording();
     view.unmount();
     expect(tracks.every((track) => track.stop.mock.calls.length === 1)).toBe(true);
   });

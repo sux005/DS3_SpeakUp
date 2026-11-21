@@ -125,10 +125,10 @@ function ResultsContent() {
       )}
 
       {/* 4. Review: listen, replay moments and read along in one place */}
-      <section aria-labelledby="listen-heading" data-surface="dark" className="flex w-full flex-col gap-6 rounded-3xl border-2 border-outline bg-night p-4 sm:p-7">
-        <h2 id="listen-heading" className="font-display text-2xl font-bold text-cream">Listen back</h2>
+      <section aria-labelledby="listen-heading" data-surface="dark" className="w-full rounded-3xl border-2 border-outline bg-night p-4 sm:p-7">
         <div className={`grid gap-x-8 gap-y-7 ${review ? "lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]" : ""}`}>
-          <div className="flex min-w-0 flex-col gap-6">
+          <div className="flex min-w-0 flex-col gap-5">
+            <h2 id="listen-heading" className="font-display text-2xl font-bold text-cream">Listen back</h2>
             <AudioReviewPlayer audioUrl={audioUrls[recordingId]} durationSeconds={metrics?.duration_seconds} seekRequest={seekRequest}
               moments={moments} onTimeChange={setCurrentTime} onLoadError={handleAudioError} onMomentSelect={(moment) => {
                 setRevealRequest({ seconds: moment.at });
@@ -152,17 +152,19 @@ function ResultsContent() {
             {review && <EvidenceList review={review} metrics={metrics} canSeek={canSeek} onSeek={playFrom} />}
           </div>
           {review && (sentences.length > 0 ? (
-            <SyncedTranscript
-              sentences={sentences}
-              pauses={metrics?.pauses ?? []}
-              moments={feedbackMoments}
-              currentTime={currentTime}
-              canSeek={canSeek}
-              onSeek={(seconds) => setSeekRequest({ seconds })}
-              revealRequest={revealRequest}
-            />
+            <div className="min-w-0 lg:pt-14">
+              <SyncedTranscript
+                sentences={sentences}
+                pauses={metrics?.pauses ?? []}
+                moments={feedbackMoments}
+                currentTime={currentTime}
+                canSeek={canSeek}
+                onSeek={(seconds) => setSeekRequest({ seconds })}
+                revealRequest={revealRequest}
+              />
+            </div>
           ) : (
-            <div className="flex min-w-0 flex-col gap-2">
+            <div className="flex min-w-0 flex-col gap-2 lg:pt-14">
               <h3 className="font-display text-xl font-bold text-cream">Transcript</h3>
               <p className="text-mint">{review.transcript.text || "No transcript available."}</p>
             </div>

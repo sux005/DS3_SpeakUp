@@ -23,6 +23,14 @@ AWS_PROFILE=speakup SPEAKUP_DEV_GUEST_MODE=1 NEXT_PUBLIC_SPEAKUP_API_URL=/api/sp
 
 The browser creates projects, reserves an upload, sends the original file to the signed S3 URL, polls the recording, then loads the transcript, analysis metrics, optional coaching, and a signed playback URL. The backend performs noise cancellation, transcription, scoring, and optional Bedrock generation. Set the stack parameter `EnableBedrockFeedback=true` to generate coaching; otherwise a completed review can return `feedback: null`.
 
+### Recording and submission boundary
+
+On **New presentation**, opening the form, recording, the 3–2–1 countdown, previewing, cancelling, and recording again stay in the browser. The form scrolls into view when opened. After a recorded take, **Record again** asks for confirmation; the current take remains available through microphone setup and the countdown, then is replaced when the new recording starts. Confirming with **Don’t show again** stores only `speakup-skip-record-again-confirmation=true` in this browser's `localStorage`. Cancelling does not save that choice. The preference survives reloads on this browser profile, is not account-scoped, and is removed by clearing site data.
+
+Browser `SpeechRecognition` supplies the live transcript and provisional filler and pace estimates. Recognition may use a browser vendor's speech service before submission. The live estimates are not sent to SpeakUp or used for rubric scores; browser recognition may miss filler sounds. The scored review comes from the submitted audio and the backend's timed transcript and analysis.
+
+In live mode, the page makes read-only `/session`, `/projects`, `/account/limits`, and existing-recording requests to load account data. Recorder interactions add no SpeakUp API requests. **Start presentation with audio** is the explicit write boundary on both the home form and the live New attempt page: it creates a project when needed, reserves an upload, and PUTs the audio to the signed S3 URL. In demo mode, submission saves to the browser preview rather than AWS.
+
 The development API contract supports `/recordings/{recordingId}/review` with Bedrock categories and anchored moments when coaching is enabled. The frontend reads the transcript, analysis, and feedback artifacts if that route returns 404; the feedback artifact also includes the structured coaching fields. This response has not been verified through an authenticated browser flow against the deployed stack. A local guest session uses a process-local signing secret unless `SPEAKUP_DEV_GUEST_SECRET` is set, so restarting or reloading the development server may start a new guest session.
 
 ## Tests
@@ -46,11 +54,11 @@ The live-mode suite builds the app with `NEXT_PUBLIC_SPEAKUP_API_URL=/api/speaku
 npm run test:e2e:live
 ```
 
-This command runs a production build first, then `e2e/live-api-flow.spec.ts` on port 3103. The suite covers project creation, signed upload, processing-to-complete transitions, reload during processing, transcript/metrics/feedback rendering (including nullable feedback and the deployed API artifact fallback), failed processing, and a 429 rate-limit response. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` when a compatible Chromium browser is not installed.
+This command runs a production build first, then `e2e/live-api-flow.spec.ts` on port 3103. The suite checks that recorder selection causes no additional API requests or writes before **Start presentation with audio**. It also covers project creation, signed upload, processing-to-complete transitions, reload during processing, transcript/metrics/feedback rendering (including nullable feedback and the deployed API artifact fallback), failed processing, and a 429 rate-limit response. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` when a compatible Chromium browser is not installed.
 
 ## Try the flow
 
-1. On the home page, choose **New presentation** and upload or record audio immediately. A title is optional; the presentation is created when you start the demo review. You can also open the seeded [Demo Day presentation](http://localhost:3000/projects/project-demo-day).
+1. On the home page, choose **New presentation** and upload or record audio. A title is optional; the presentation is created only when you choose **Start presentation with audio** in live mode. You can also open the seeded [Demo Day presentation](http://localhost:3000/projects/project-demo-day).
 2. For another attempt in an existing presentation, choose **New attempt**. Preview or discard the audio before starting the demo processing flow.
 3. Watch the recording move through simulated processing stages, then open its review. The local recording can be played during this browser session.
 4. The seeded [sample review](http://localhost:3000/recordings/8f2d9305-51f8-5ea1-9dbf-d5fc94b87f08) shows a real 2-minute demo talk: its transcript, timeline markers, scores and summary (see [Results page](#results-page)). Those artifacts belong only to that recording. New recordings show no invented scores.
