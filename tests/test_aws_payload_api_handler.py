@@ -432,6 +432,12 @@ def test_examples_are_fixed_read_only_owner_checked_catalog(monkeypatch):
     assert listed_body["recordings"][0]["project_id"] == "example-project"
     assert "user_id" not in listed_body["recordings"][0]
 
+    other_user = authenticated_event("GET /examples")
+    other_user["requestContext"]["authorizer"]["jwt"]["claims"]["sub"] = "user-2"
+    other_listed = module.handler(other_user, None)
+    assert other_listed["statusCode"] == 200
+    assert json.loads(other_listed["body"])["recordings"] == listed_body["recordings"]
+
     recording = module.handler(authenticated_event("GET /examples/{exampleId}", path={"exampleId": "example-strong"}), None)
     assert "user_id" not in json.loads(recording["body"])
 
@@ -442,6 +448,9 @@ def test_examples_are_fixed_read_only_owner_checked_catalog(monkeypatch):
     assert json.loads(analysis["body"])["recording_id"] == "example-strong"
     download = module.handler(authenticated_event("GET /examples/{exampleId}/download", path={"exampleId": "example-strong"}), None)
     assert json.loads(download["body"])["download_url"].startswith("https://")
+    other_user_download = authenticated_event("GET /examples/{exampleId}/download", path={"exampleId": "example-strong"})
+    other_user_download["requestContext"]["authorizer"]["jwt"]["claims"]["sub"] = "user-2"
+    assert module.handler(other_user_download, None)["statusCode"] == 200
     assert module.handler(authenticated_event("GET /examples/{exampleId}", path={"exampleId": "recording-1"}), None)["statusCode"] == 404
     allowed_owners = {metadata["owner_id"] for metadata in module.EXAMPLES.values()}
     assert all(call[1] in allowed_owners for call in calls if call[0] != "download")
