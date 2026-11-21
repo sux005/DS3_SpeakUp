@@ -47,6 +47,8 @@ real production frontend origin before deploying a production stack.
 
 - `POST /projects`
 - `GET /account/limits`
+- `GET /examples` and `GET /examples/{exampleId}`
+- `GET /examples/{exampleId}/review`, `/analysis`, and `/download`
 - `GET /projects`
 - `POST /uploads`
 - `GET /projects/{projectId}/recordings`

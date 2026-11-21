@@ -389,6 +389,79 @@ def test_public_recording_exposes_compact_rubric_scores():
     assert "long_pauses" not in body["summary_metrics"]
 
 
+def test_examples_are_fixed_read_only_owner_checked_catalog(monkeypatch):
+    module = load_handler_module()
+    strong = Recording(
+        module.EXAMPLES["example-strong"]["owner_id"],
+        module.EXAMPLES["example-strong"]["project_id"],
+        module.EXAMPLES["example-strong"]["recording_id"],
+        "2026-01-01T00:00:00Z", "2026-01-01T00:01:00Z",
+        status=RecordingStatus.COMPLETE,
+        summary_metrics={"words_per_minute": 120},
+    )
+    artifacts = {
+        PayloadType.TRANSCRIPT.value: {"data": {"text": "sample", "items": []}},
+        PayloadType.SPEECH_ANALYSIS.value: {"data": {"metrics": {"words_per_minute": 120}}},
+        PayloadType.FEEDBACK.value: {"data": {"feedback": "Clear delivery."}},
+    }
+    calls = []
+
+    class Store:
+        config = SimpleNamespace(upload_url_ttl_seconds=300)
+
+        def get_recording(self, user_id, recording_id):
+            calls.append(("get_recording", user_id, recording_id))
+            if (user_id, recording_id) != (strong.user_id, strong.recording_id):
+                raise PayloadNotFoundError("not found")
+            return strong
+
+        def get_json_artifact(self, user_id, recording_id, payload_type):
+            calls.append(("artifact", user_id, recording_id, payload_type))
+            return artifacts[payload_type.value]
+
+        def create_original_download_url(self, user_id, recording_id):
+            calls.append(("download", user_id, recording_id))
+            return "https://example.invalid/sample"
+
+    monkeypatch.setattr(module, "payloads", lambda: Store())
+    listed = module.handler(authenticated_event("GET /examples"), None)
+    assert listed["statusCode"] == 200
+    listed_body = json.loads(listed["body"])
+    assert listed_body["project"]["project_id"] == "example-project"
+    assert listed_body["recordings"][0]["recording_id"] == "example-strong"
+    assert listed_body["recordings"][0]["project_id"] == "example-project"
+    assert "user_id" not in listed_body["recordings"][0]
+
+    recording = module.handler(authenticated_event("GET /examples/{exampleId}", path={"exampleId": "example-strong"}), None)
+    assert "user_id" not in json.loads(recording["body"])
+
+    review = module.handler(authenticated_event("GET /examples/{exampleId}/review", path={"exampleId": "example-strong"}), None)
+    assert review["statusCode"] == 200
+    assert json.loads(review["body"])["recording_id"] == "example-strong"
+    analysis = module.handler(authenticated_event("GET /examples/{exampleId}/analysis", path={"exampleId": "example-strong"}), None)
+    assert json.loads(analysis["body"])["recording_id"] == "example-strong"
+    download = module.handler(authenticated_event("GET /examples/{exampleId}/download", path={"exampleId": "example-strong"}), None)
+    assert json.loads(download["body"])["download_url"].startswith("https://")
+    assert module.handler(authenticated_event("GET /examples/{exampleId}", path={"exampleId": "recording-1"}), None)["statusCode"] == 404
+    allowed_owners = {metadata["owner_id"] for metadata in module.EXAMPLES.values()}
+    assert all(call[1] in allowed_owners for call in calls if call[0] != "download")
+
+
+def test_examples_require_authentication_and_do_not_write(monkeypatch):
+    module = load_handler_module()
+    assert module.handler({"routeKey": "GET /examples"}, None)["statusCode"] == 401
+
+    class NoWrites:
+        def __getattr__(self, name):
+            if name.startswith(("create", "reserve", "soft", "permanently", "recover", "patch")):
+                raise AssertionError(f"example route called write method {name}")
+            raise AssertionError(name)
+
+    monkeypatch.setattr(module, "payloads", lambda: NoWrites())
+    response = module.handler(authenticated_event("GET /examples/{exampleId}", path={"exampleId": "missing"}), None)
+    assert response["statusCode"] == 404
+
+
 def test_artifact_routes_owner_check_and_expose_only_public_data(monkeypatch):
     module = load_handler_module()
     calls = []

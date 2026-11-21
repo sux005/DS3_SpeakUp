@@ -3,6 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getProjects: vi.fn(),
+  getExamples: vi.fn(),
+  getExampleRecording: vi.fn(),
+  getExampleDownloadUrl: vi.fn(),
   getProjectRecordings: vi.fn(),
   getAccountLimits: vi.fn(),
   createProject: vi.fn(),
@@ -14,8 +17,13 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/demo-store", () => ({ useDemoStore: () => ({ projects: [], recordings: [], reviews: {}, audioUrls: {}, ready: true, limits: {} }) }));
 vi.mock("@/lib/api", () => ({
+  EXAMPLE_PROJECT_ID: "example-project",
+  isExampleRecording: (id: string) => id === "example-strong" || id === "example-improve",
   ApiError: class ApiError extends Error { constructor(public status: number, public code: string | undefined, message: string) { super(message); } },
   getProjects: mocks.getProjects,
+  getExamples: mocks.getExamples,
+  getExampleRecording: mocks.getExampleRecording,
+  getExampleDownloadUrl: mocks.getExampleDownloadUrl,
   getProjectRecordings: mocks.getProjectRecordings,
   getAccountLimits: mocks.getAccountLimits,
   createProject: mocks.createProject,
@@ -31,6 +39,9 @@ beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 200 })));
   for (const mock of Object.values(mocks)) if ("mockReset" in mock) mock.mockReset();
   mocks.getProjects.mockResolvedValue({ items: [{ project_id: "p1", project_title: "Live project", description: "", created_at: "2025-01-01T00:00:00Z" }] });
+  mocks.getExamples.mockResolvedValue({ project: { project_id: "example-project", project_title: "Example speeches", description: "", created_at: "2025-01-01T00:00:00Z" }, recordings: [{ project_id: "example-project", recording_id: "example-strong", created_at: "2025-01-01T00:00:00Z", status: "COMPLETE" }] });
+  mocks.getExampleRecording.mockResolvedValue({ project_id: "example-project", recording_id: "example-strong", created_at: "2025-01-01T00:00:00Z", status: "COMPLETE" });
+  mocks.getExampleDownloadUrl.mockResolvedValue({ download_url: "https://s3.example.test/example" });
   mocks.getProjectRecordings.mockResolvedValue({ items: [] });
   mocks.getAccountLimits.mockResolvedValue({ max_audio_upload_bytes: 1000, max_audio_duration_seconds: 60 });
   mocks.getRecording.mockResolvedValue({ project_id: "p1", recording_id: "r1", created_at: "2025-01-02T00:00:00Z", status: "PROCESSING" });
@@ -42,6 +53,24 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
 describe("live store API handoff", () => {
+  it("loads a shared example and never uploads into the example project", async () => {
+    const { LiveProvider, useAppStore } = await import("@/lib/live-store");
+    function Probe() {
+      const store = useAppStore();
+      return <>
+        <output data-testid="example-audio">{store.audioUrls["example-strong"] ?? ""}</output>
+        <button onClick={() => { void store.refreshRecording("example-strong"); void store.loadAudio("example-strong"); }}>Open example</button>
+        <button onClick={() => { void Promise.resolve(store.createRecording("example-project", new Blob(["audio"]), "talk.wav")).catch(() => undefined); }}>Record into example</button>
+      </>;
+    }
+    render(<LiveProvider><Probe /></LiveProvider>);
+    await waitFor(() => expect(mocks.getExamples).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "Open example" }));
+    await waitFor(() => expect(screen.getByTestId("example-audio").textContent).toBe("https://s3.example.test/example"));
+    expect(mocks.getExampleRecording).toHaveBeenCalledWith("", "example-strong");
+    fireEvent.click(screen.getByRole("button", { name: "Record into example" }));
+    expect(mocks.reserveAndUploadRecording).not.toHaveBeenCalled();
+  });
   it("loads owner projects and limits from the API and creates a backend recording", async () => {
     const { LiveProvider, useAppStore } = await import("@/lib/live-store");
     function Probe() {
@@ -54,10 +83,10 @@ describe("live store API handoff", () => {
       </>;
     }
     render(<LiveProvider><Probe /></LiveProvider>);
-    await waitFor(() => expect(screen.getByTestId("projects").textContent).toBe("Live project"));
+    await waitFor(() => expect(screen.getByTestId("projects").textContent).toBe("Live project,Example speeches"));
     expect(screen.getByTestId("limit").textContent).toBe("1000");
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
-    await waitFor(() => expect(screen.getByTestId("recordings").textContent).toBe("r1"));
+    await waitFor(() => expect(screen.getByTestId("recordings").textContent).toBe("example-strong,r1"));
     expect(mocks.reserveAndUploadRecording).toHaveBeenCalledWith("", "p1", expect.any(File), undefined, expect.any(String));
   });
 
@@ -91,12 +120,12 @@ describe("live store API handoff", () => {
       </>;
     }
     render(<LiveProvider><Probe /></LiveProvider>);
-    await waitFor(() => expect(screen.getByTestId("projects").textContent).toBe("First,Second"));
+    await waitFor(() => expect(screen.getByTestId("projects").textContent).toBe("First,Second,Example speeches"));
     expect(mocks.getProjects.mock.calls.map((call) => call[1])).toEqual([undefined, "next"]);
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     await waitFor(() => expect(screen.getByTestId("projects").textContent).toContain("New"));
     fireEvent.click(screen.getByRole("button", { name: "Refresh recording" }));
-    await waitFor(() => expect(screen.getByTestId("recordings").textContent).toBe("r1"));
+    await waitFor(() => expect(screen.getByTestId("recordings").textContent).toBe("example-strong,r1"));
   });
 
   it("reuses an idempotency key when retrying one failed upload", async () => {

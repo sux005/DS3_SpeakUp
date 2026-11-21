@@ -48,6 +48,13 @@ export function routeFor(segments: string[]) {
   let decoded: string[];
   try { decoded = segments.map((segment) => decodeURIComponent(segment)); } catch { return null; }
   if (decoded.length === 1 && decoded[0] === "projects") return { route: "/projects", pathParameters: {} };
+  if (decoded.length === 1 && decoded[0] === "examples") return { route: "/examples", pathParameters: {} };
+  if (decoded.length >= 2 && decoded.length <= 3 && decoded[0] === "examples") {
+    const route = decoded.length === 2 ? "/examples/{exampleId}" : `/examples/{exampleId}/${decoded[2]}`;
+    if (["/examples/{exampleId}", "/examples/{exampleId}/review", "/examples/{exampleId}/analysis", "/examples/{exampleId}/download"].includes(route)) {
+      return { route, pathParameters: { exampleId: decoded[1] } };
+    }
+  }
   if (decoded.length === 1 && decoded[0] === "uploads") return { route: "/uploads", pathParameters: {} };
   if (decoded.length === 2 && decoded[0] === "account" && decoded[1] === "limits") return { route: "/account/limits", pathParameters: {} };
   if (decoded.length === 3 && decoded[0] === "projects" && decoded[2] === "recordings") return { route: "/projects/{projectId}/recordings", pathParameters: { projectId: decoded[1] } };
@@ -59,6 +66,6 @@ export function routeFor(segments: string[]) {
 }
 
 export function allowed(method: string, route: string) {
-  const reads = new Set(["/projects", "/account/limits", "/projects/{projectId}/recordings", "/recordings/{recordingId}", "/recordings/{recordingId}/review", "/recordings/{recordingId}/artifacts/{artifactType}", "/recordings/{recordingId}/download"]);
+  const reads = new Set(["/projects", "/examples", "/examples/{exampleId}", "/examples/{exampleId}/review", "/examples/{exampleId}/analysis", "/examples/{exampleId}/download", "/account/limits", "/projects/{projectId}/recordings", "/recordings/{recordingId}", "/recordings/{recordingId}/review", "/recordings/{recordingId}/artifacts/{artifactType}", "/recordings/{recordingId}/download"]);
   return method === "GET" ? reads.has(route) : method === "POST" && new Set(["/projects", "/uploads"]).has(route);
 }

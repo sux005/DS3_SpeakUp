@@ -3,12 +3,18 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import limitsFallback from "@/data/account-limits.json";
 import {
+  ApiError,
   createProject as createApiProject,
+  EXAMPLE_PROJECT_ID,
+  getExampleDownloadUrl,
+  getExampleRecording,
+  getExamples,
   getAccountLimits,
   getDownloadUrl,
   getProjectRecordings,
   getProjects,
   getRecording,
+  isExampleRecording,
   loadRecordingReview,
   reserveAndUploadRecording,
 } from "@/lib/api";
@@ -82,16 +88,20 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       try {
         const session = await fetch(`${process.env.NEXT_PUBLIC_SPEAKUP_API_URL}/session`, { cache: "no-store" });
         if (!session.ok) throw new Error("The local analysis session could not start.");
-        const [allProjects, nextLimits] = await Promise.all([
+        const [allProjects, nextLimits, examples] = await Promise.all([
           listAll((cursor) => run((jwt) => getProjects(jwt, cursor))),
           run(getAccountLimits),
+          run(getExamples).catch((failure) => {
+            if (failure instanceof ApiError && failure.status === 404) return null;
+            throw failure;
+          }),
         ]);
         const byProject = await Promise.all(allProjects.map((project) =>
           listAll((cursor) => run((jwt) => getProjectRecordings(jwt, project.project_id, cursor))),
         ));
         if (!active) return;
-        setProjects(allProjects);
-        setRecordings(byProject.flat());
+        setProjects(examples ? [...allProjects.filter((project) => project.project_id !== EXAMPLE_PROJECT_ID), examples.project] : allProjects);
+        setRecordings(examples ? [...byProject.flat(), ...examples.recordings] : byProject.flat());
         setLimits({ ...limitsFallback, ...nextLimits } as Limits);
         setError(null);
       } catch (failure) {
@@ -117,12 +127,13 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   }, [run]);
 
   const createRecording = useCallback(async (projectId: string, audio: Blob, filename: string) => {
+    if (projectId === EXAMPLE_PROJECT_ID) throw new Error("Example speeches are read-only.");
     try {
       const file = new File([audio], filename, { type: audio.type || "audio/wav" });
       const idempotencyKey = retryKeys.current.get(audio) ?? crypto.randomUUID();
       retryKeys.current.set(audio, idempotencyKey);
       const recordingId = await run((jwt) => reserveAndUploadRecording(jwt, projectId, file, undefined, idempotencyKey));
-      const recording = await run((jwt) => getRecording(jwt, recordingId));
+      const recording = await run((jwt) => isExampleRecording(recordingId) ? getExampleRecording(jwt, recordingId) : getRecording(jwt, recordingId));
       setRecordings((previous) => upsertRecording(previous, recording));
       retryKeys.current.delete(audio);
       setError(null);
@@ -135,7 +146,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
 
   const refreshRecording = useCallback(async (recordingId: string) => {
     try {
-      const recording = await run((jwt) => getRecording(jwt, recordingId));
+      const recording = await run((jwt) => isExampleRecording(recordingId) ? getExampleRecording(jwt, recordingId) : getRecording(jwt, recordingId));
       setRecordings((previous) => upsertRecording(previous, recording));
       setError(null);
     } catch (failure) {
@@ -157,7 +168,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
 
   const loadAudio = useCallback(async (recordingId: string) => {
     try {
-      const { download_url } = await run((jwt) => getDownloadUrl(jwt, recordingId));
+      const { download_url } = await run((jwt) => isExampleRecording(recordingId) ? getExampleDownloadUrl(jwt, recordingId) : getDownloadUrl(jwt, recordingId));
       setAudioUrls((previous) => ({ ...previous, [recordingId]: download_url }));
       setError(null);
     } catch (failure) {

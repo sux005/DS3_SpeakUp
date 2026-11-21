@@ -96,6 +96,18 @@ Not shown because the payloads don't include it: times for watch-list words (onl
 
 Motion uses the tokens in `app/globals.css` (CSS transitions, 200 ms or less). With reduced motion on, colour and opacity changes stay and movement is removed.
 
+### Shared example project
+
+In live mode the home page loads a read-only “Example speeches” project from
+`GET /examples`. Its two reviews use the same results page as personal recordings,
+including audio playback from short-lived S3 URLs, timed transcript, rubric scores,
+filler and pause markers, and available coaching. The examples are kept out of
+“Your presentations” and cannot accept new attempts. The backend source IDs are
+fixed in `infra/lambda/api/index.py`; the browser never chooses an owner or S3 key.
+The development guest bridge supports these reads. The deployed API routes require
+a Cognito JWT; this frontend still needs a production Cognito sign-in client before
+an authenticated production user can reach them.
+
 ### Demo audio
 
 The seeded review's transcript and analysis in `data/demo/` were produced by the backend scorer from `public/demo/sample-take.mp3`, an excerpt of a public ACL 2022 conference talk. The mp3 is not committed (`.gitignore`). Ask a teammate for the file and place it at `public/demo/sample-take.mp3` to hear playback. Without it, the page shows "This recording could not be loaded." and turns off playback and transcript seeking; the transcript, markers, scores and summary still display.

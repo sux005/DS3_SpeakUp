@@ -15,6 +15,11 @@ def test_http_routes_have_expected_authorization():
     assert routes == {
         "GET /health": "NONE",
         "GET /account/limits": "JWT",
+        "GET /examples": "JWT",
+        "GET /examples/{exampleId}": "JWT",
+        "GET /examples/{exampleId}/review": "JWT",
+        "GET /examples/{exampleId}/analysis": "JWT",
+        "GET /examples/{exampleId}/download": "JWT",
         "POST /projects": "JWT",
         "GET /projects": "JWT",
         "POST /uploads": "JWT",

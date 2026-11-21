@@ -14,6 +14,7 @@ import { EvidenceList, NextStep, Takeaway } from "@/components/ResultsSummary";
 import { SyncedTranscript } from "@/components/SyncedTranscript";
 import { momentsFromAnalysis, momentsFromFeedback } from "@/lib/markers";
 import { useAppStore } from "@/lib/live-store";
+import { EXAMPLE_PROJECT_ID } from "@/lib/api";
 import { formatClock, formatDate, formatTake, getProject, getTake, getTakes } from "@/lib/recordings";
 import { toSentences } from "@/lib/transcript";
 import type { FeedbackMoment } from "@/lib/types";
@@ -73,12 +74,13 @@ function ResultsContent() {
   if (!project) return <PageShell><MascotState message="Presentation not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
 
   const review = reviews[recordingId];
+  const example = take.project_id === EXAMPLE_PROJECT_ID;
   const metrics = review?.analysis;
   const sentences = metrics && review ? toSentences(review.transcript.items, metrics) : [];
   const feedbackMoments = review?.feedback?.moments ?? [];
   const moments = [...momentsFromAnalysis(metrics), ...momentsFromFeedback(feedbackMoments)].sort((a, b) => a.at - b.at);
   const categories = review?.feedback?.categories;
-  const takeLabel = formatTake(take.take).toUpperCase();
+  const takeLabel = example ? (recordingId === "example-strong" ? "STRONGER DELIVERY" : "ROOM TO IMPROVE") : formatTake(take.take).toUpperCase();
 
   const canSeek = Boolean(audioUrls[recordingId]) && !audioFailed;
   const practiceHref = `/projects/${take.project_id}/new`;
@@ -95,10 +97,10 @@ function ResultsContent() {
         <PageHeading
           crumb={`${project.project_title.toUpperCase()} / ${takeLabel}`}
           crumbHref={`/projects/${take.project_id}`}
-          title={live || metrics ? "Your results" : "Your demo recording"}
+          title={example ? "Example review" : live || metrics ? "Your results" : "Your demo recording"}
           subtitle={`${formatDate(take.created_at)}${metrics ? ` · ${formatClock(metrics.duration_seconds)}` : ""}${live ? "" : " · Local preview"}`}
         />
-        <ButtonLink variant={review ? "secondary" : "primary"} href={practiceHref}>Practice again →</ButtonLink>
+        {!example && <ButtonLink variant={review ? "secondary" : "primary"} href={practiceHref}>Practice again →</ButtonLink>}
       </div>
 
       {!metrics && live && !reviewLoadFailed && <ReviewSkeleton />}
@@ -173,10 +175,10 @@ function ResultsContent() {
       </section>
 
       {/* 5. One thing to do next */}
-      {review && <NextStep review={review} metrics={metrics} practiceHref={practiceHref} />}
+      {review && !example && <NextStep review={review} metrics={metrics} practiceHref={practiceHref} />}
 
       {/* 6. History, once there is something to compare */}
-      <ProgressCharts takes={getTakes(recordings, take.project_id)} single="note" />
+      {!example && <ProgressCharts takes={getTakes(recordings, take.project_id)} single="note" />}
       {!live && <p className="text-xs text-muted">Demo sample scores are shown only for the seeded recording. New local recordings have no calculated scores.</p>}
       {error && !reviewLoadFailed && <p className="text-sm text-peach" role="alert">{error}</p>}
     </PageShell>

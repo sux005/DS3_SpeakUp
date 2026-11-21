@@ -10,6 +10,7 @@ import { HomeSkeleton } from "@/components/LoadingSkeleton";
 import { FernCluster, Perch, ValleyBackdrop } from "@/components/Scenery";
 import { RecorderUploader } from "@/components/RecorderUploader";
 import { useAppStore } from "@/lib/live-store";
+import { EXAMPLE_PROJECT_ID } from "@/lib/api";
 import { formatDate, formatTake, getTakes } from "@/lib/recordings";
 import type { Take } from "@/lib/types";
 
@@ -27,6 +28,7 @@ function latestAttempt(take: Take) {
 export default function Home() {
   const router = useRouter();
   const { projects, recordings, reviews, createProject, createRecording, limits, ready, error, live } = useAppStore();
+  const exampleProject = projects.find((project) => project.project_id === EXAMPLE_PROJECT_ID);
   // A finished, scored take to point newcomers at, when one exists.
   const scored = recordings.find((recording) => recording.status === "COMPLETE" && reviews[recording.recording_id]?.analysis);
   const [creating, setCreating] = useState(false);
@@ -53,7 +55,7 @@ export default function Home() {
   }
 
   // Most recently worked-on presentation first: by its latest attempt, else by when it was created.
-  const presentations = projects
+  const presentations = projects.filter((project) => project.project_id !== EXAMPLE_PROJECT_ID)
     .map((project) => {
       const takes = getTakes(recordings, project.project_id);
       const last = takes.at(-1);
@@ -110,6 +112,15 @@ export default function Home() {
               maxAudioDurationSeconds={limits.max_audio_duration_seconds}
               submitLabel="Start presentation with audio"
               onSubmit={startPresentation} />
+          </section>
+        )}
+
+        {exampleProject && (
+          <section aria-labelledby="examples-heading" className="relative z-10 w-full rounded-2xl border-2 border-outline bg-card p-6 md:p-7">
+            <p className="label">Explore before you record</p>
+            <h2 id="examples-heading" className="mt-2 font-display text-2xl font-bold text-ink">Example speeches</h2>
+            <p className="mt-2 max-w-2xl text-muted">Hear a stronger delivery and one with clear areas to improve. Open either detailed review to see how SpeakUp explains pace, filler words, and pauses.</p>
+            <Link href={`/projects/${EXAMPLE_PROJECT_ID}`} className="mt-4 inline-block font-semibold text-teal underline decoration-2 underline-offset-4">Explore the example project →</Link>
           </section>
         )}
 

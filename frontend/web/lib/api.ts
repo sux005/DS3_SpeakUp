@@ -80,6 +80,19 @@ export const getProjects = (token: string, cursor?: string) =>
     cursor ? `/projects?cursor=${encodeURIComponent(cursor)}` : "/projects",
   );
 
+export const EXAMPLE_PROJECT_ID = "example-project";
+export const isExampleRecording = (recordingId: string) =>
+  recordingId === "example-strong" || recordingId === "example-improve";
+
+export const getExamples = (token: string) =>
+  request<{ project: Project; recordings: Recording[] }>(token, "/examples");
+
+export const getExampleRecording = (token: string, recordingId: string) =>
+  request<Recording>(token, `/examples/${encodeURIComponent(recordingId)}`);
+
+export const getExampleDownloadUrl = (token: string, recordingId: string) =>
+  request<{ download_url: string }>(token, `/examples/${encodeURIComponent(recordingId)}/download`);
+
 export const createProject = (token: string, projectTitle: string, description = "") =>
   request<Project>(token, "/projects", {
     method: "POST",
@@ -122,6 +135,14 @@ type AnalysisArtifact = { metrics: AnalysisMetrics };
 
 /** Load the review envelope and detailed analysis into the UI's review shape. */
 export async function loadRecordingReview(token: string, recordingId: string): Promise<RecordingReview> {
+  if (isExampleRecording(recordingId)) {
+    const path = `/examples/${encodeURIComponent(recordingId)}`;
+    const [review, analysis] = await Promise.all([
+      request<RecordingReviewResponse>(token, `${path}/review`),
+      request<{ data: AnalysisArtifact }>(token, `${path}/analysis`),
+    ]);
+    return { ...normalizeReview(review), analysis: analysis.data.metrics };
+  }
   let review: RecordingReviewResponse;
   try {
     review = await getRecordingReview(token, recordingId);

@@ -68,6 +68,26 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("home and project routes", () => {
+  it("shows the shared examples separately and keeps their project read-only", () => {
+    harness.store.projects = [project(), { ...project("example-project"), project_title: "Example speeches" }];
+    harness.store.recordings = [recording("recording-1"), recording("example-strong", "COMPLETE", "example-project"), recording("example-improve", "COMPLETE", "example-project")];
+    render(<Home />);
+    expect(screen.getByRole("link", { name: /Explore the example project/ }).getAttribute("href")).toBe("/projects/example-project");
+    expect(screen.queryByRole("heading", { name: "Other presentations" })).toBeNull();
+    cleanup();
+
+    harness.params.projectId = "example-project";
+    render(<ProjectPage />);
+    expect(screen.getByRole("heading", { level: 1, name: "Example speeches" })).toBeTruthy();
+    expect(screen.getByText("Stronger delivery")).toBeTruthy();
+    expect(screen.getByText("Room to improve")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "+ New attempt" })).toBeNull();
+    cleanup();
+
+    render(<NewAttemptPage />);
+    expect(screen.getByText("Example speeches are read-only.")).toBeTruthy();
+    expect(harness.store.createRecording).not.toHaveBeenCalled();
+  });
   it("features the most recently worked-on presentation and lists the others", () => {
     harness.store.projects = [project("project-1"), { ...project("project-2"), project_title: "Second talk" }];
     harness.store.recordings = [recording("recording-1"), { ...recording("recording-2", "PROCESSING", "project-2"), created_at: "2025-02-01T00:00:00.000Z" }];
@@ -229,6 +249,15 @@ describe("analyzing route", () => {
 });
 
 describe("results route", () => {
+  it("labels an example review and omits personal practice actions", () => {
+    harness.params.recordingId = "example-strong";
+    harness.store.projects = [{ ...project("example-project"), project_title: "Example speeches" }];
+    harness.store.recordings = [recording("example-strong", "COMPLETE", "example-project")];
+    render(<ResultsPage />);
+    expect(screen.getByRole("heading", { name: "Example review" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Practice again →" })).toBeNull();
+    expect(screen.queryByTestId("charts")).toBeNull();
+  });
   it("shows no-analysis messaging for a complete local recording", () => {
     render(<ResultsPage />);
     expect(screen.getByRole("heading", { name: "Your demo recording" })).toBeTruthy();

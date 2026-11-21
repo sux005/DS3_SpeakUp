@@ -9,6 +9,7 @@ import { PageHeading, PageShell } from "@/components/PageHeading";
 import { MascotCoach } from "@/components/MascotCoach";
 import { RecorderUploader, type RecorderStatus } from "@/components/RecorderUploader";
 import { useAppStore } from "@/lib/live-store";
+import { EXAMPLE_PROJECT_ID } from "@/lib/api";
 import { getProject } from "@/lib/recordings";
 
 // What the mascot's bubble says. While recording it says nothing: the red
@@ -32,6 +33,7 @@ function NewAttemptContent() {
   if (!ready) return <PageShell><NewAttemptSkeleton /></PageShell>;
   const project = getProject(projects, projectId);
   if (!project) return <PageShell><MascotState message="Presentation not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
+  if (projectId === EXAMPLE_PROJECT_ID) return <PageShell><MascotState message="Example speeches are read-only." detail="Create your own presentation to record a new attempt."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
 
   async function submit(audio: Blob, filename: string) {
     const id = await createRecording(projectId, audio, filename);

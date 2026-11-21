@@ -11,10 +11,13 @@ describe("development guest API boundary", () => {
       route: "/recordings/{recordingId}/review", pathParameters: { recordingId: "r1" },
     });
     expect(routeFor(["admin", "users"])).toBeNull();
+    expect(routeFor(["examples", "example-strong", "review"])).toEqual({ route: "/examples/{exampleId}/review", pathParameters: { exampleId: "example-strong" } });
   });
 
   it("allows reads plus only project and upload writes", () => {
     expect(allowed("GET", "/recordings/{recordingId}/review")).toBe(true);
+    expect(allowed("GET", "/examples/{exampleId}/download")).toBe(true);
+    expect(allowed("POST", "/examples")).toBe(false);
     expect(allowed("POST", "/projects")).toBe(true);
     expect(allowed("POST", "/uploads")).toBe(true);
     expect(allowed("DELETE", "/recordings/{recordingId}")).toBe(false);

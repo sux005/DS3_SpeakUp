@@ -219,6 +219,8 @@ access uses the short-lived `speakup` profile.
   choose buckets, tables, indexes, or raw keys.
 - Keep HTTP recording responses on the explicit public serializer in the API
   adapter; do not return DynamoDB items, payload references, or workflow IDs.
+- Keep the curated example catalog read-only and fixed to reviewed recordings;
+  never turn example routes into arbitrary cross-user recording lookups.
 - Completed review responses include transcript and summary metrics; feedback is
   null when no feedback artifact exists.
 - Ground Bedrock coaching in persisted metrics and the matching rubric CSV bands.
