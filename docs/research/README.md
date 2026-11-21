@@ -4,9 +4,11 @@ Research behind the speaking rubric, the pause method and the Bedrock coaching p
 Docs only. The scripts named in these files live in Allen's private research repo, because they
 need local audio and hand labels that are not in this repo.
 
-The cutoffs described here are the ones in `src/scoring/rubrics/speaking-2026-10-31.csv`. The
-acoustic pause method and the new Bedrock prompt are proposals, not on `main`. They are tested
-here and will go up as separate PRs for the team to review.
+The cutoffs described here are the ones in `src/scoring/rubrics/speaking-2026-10-31.csv`.
+The acoustic pause inputs are implemented in `src/audio/pause_detection.py` and are passed to
+the scorer when available; the scorer falls back to Transcribe word gaps when they are absent.
+The Bedrock prompt comparison below is historical research. The processor implementation validates
+structured feedback in `infra/lambda/processor/index.py`.
 
 ## Start here
 
@@ -33,10 +35,13 @@ here and will go up as separate PRs for the team to review.
 | `results/section_flags.md` | Whether "this section was faster / had more fillers" flags are real or chance |
 | `results/pipeline_step_outputs.md` | The raw output format of every pipeline step |
 
-## Known issue with the acoustic pause method
+## Historical acoustic pause comparison
 
 On Link 15 (TED talk) energy + Silero finds 31 pauses where the hand count has 21, and the pause
 score drops from 4 to 3. About half the extra inside-sentence pauses are short quiet moments the
 hand count skipped. The other half are real between-sentence pauses that Transcribe's punctuation
-puts inside a sentence. Only counting energy pauses that line up with a transcript word gap fixes
-Link 15 but breaks Link 14, where Transcribe stretches words over real silences. Left as is for now.
+puts inside a sentence. In that research setup, only counting energy pauses that
+lined up with a transcript word gap fixed Link 15 but missed Link 14 pauses
+where Transcribe stretched words over real silences. The current runtime
+intersects acoustic candidates with transcript word gaps and applies a 0.3 s
+scoring floor; these dated counts are not a runtime accuracy guarantee.

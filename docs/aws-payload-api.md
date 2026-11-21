@@ -198,10 +198,10 @@ and remove GSIs in the same production change.
 
 ```powershell
 python scripts/backfill_recording_owner_index.py `
-  --table speakup-dev-recordings --profile speakup-dev --region us-east-2
+  --table speakup-dev-recordings --profile speakup --region us-east-2
 
 python scripts/backfill_recording_owner_index.py `
-  --table speakup-dev-recordings --profile speakup-dev --region us-east-2 --apply
+  --table speakup-dev-recordings --profile speakup --region us-east-2 --apply
 ```
 
 The script scans because legacy rows lack the new partition key. It is the only

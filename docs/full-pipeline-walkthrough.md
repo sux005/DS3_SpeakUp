@@ -7,10 +7,11 @@ data is stored.
 ## Current scope
 
 The backend pipeline is connected and has been exercised end to end with a real
-48 kHz recording. The `frontend/` directory currently contains sample payloads
-and integration contracts, not James's frontend application source. The live
-pipeline runner performs the same reservation, upload, and polling calls that
-the frontend needs to implement.
+48 kHz recording. `frontend/web/` now contains the Next.js app, recording and
+upload flows, development guest bridge, and browser tests. The live pipeline
+runner performs reservation, upload, and polling calls separately from the app.
+The browser's live-mode tests intercept API and S3 requests; authenticated
+browser-to-backend validation in the deployed stack remains open.
 
 The deployed `speakup-dev` stack enables Bedrock Mantle feedback. A recording
 proceeds through upload, audio preparation, Amazon Transcribe, deterministic
@@ -462,7 +463,8 @@ frontend code:
 | `account-limits.json` | Current upload and active-workflow limits. |
 | `active-workflow-limit-error.json` | HTTP 429 response when workflow capacity is exhausted. |
 
-`frontend/README.md` explains how those payloads map to proposed screens.
+`frontend/README.md` explains how the app uses those sample payloads in its
+local fixture preview.
 
 ## Local, testing, and operational scripts
 

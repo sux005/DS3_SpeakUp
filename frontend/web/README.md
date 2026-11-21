@@ -23,7 +23,7 @@ AWS_PROFILE=speakup SPEAKUP_DEV_GUEST_MODE=1 NEXT_PUBLIC_SPEAKUP_API_URL=/api/sp
 
 The browser creates projects, reserves an upload, sends the original file to the signed S3 URL, polls the recording, then loads the transcript, analysis metrics, optional coaching, and a signed playback URL. The backend performs noise cancellation, transcription, scoring, and optional Bedrock generation. Set the stack parameter `EnableBedrockFeedback=true` to generate coaching; otherwise a completed review can return `feedback: null`.
 
-The deployed development API serves `/recordings/{recordingId}/review` with Bedrock categories and anchored moments. The frontend reads the transcript, analysis, and feedback artifacts if that route returns 404; the feedback artifact also includes the structured coaching fields. A local guest session uses a process-local signing secret unless `SPEAKUP_DEV_GUEST_SECRET` is set, so restarting or reloading the development server may start a new guest session.
+The development API contract supports `/recordings/{recordingId}/review` with Bedrock categories and anchored moments when coaching is enabled. The frontend reads the transcript, analysis, and feedback artifacts if that route returns 404; the feedback artifact also includes the structured coaching fields. This response has not been verified through an authenticated browser flow against the deployed stack. A local guest session uses a process-local signing secret unless `SPEAKUP_DEV_GUEST_SECRET` is set, so restarting or reloading the development server may start a new guest session.
 
 ## Tests
 
@@ -98,7 +98,7 @@ The app is set in a prehistoric valley, after the DS3 dinosaur mascot. The produ
 
 - **Layout.** Every page, the nav and the footer share one column (`pageColumn` in `components/PageHeading.tsx`, 1152px). Body text is 16 to 18px, metadata 14px, and monospace is kept for short details such as times.
 - **Colours.** Tokens live at the top of `app/globals.css`: a cream page, lighter paper for content cards, forest green task panels, the mascot's orange for the one primary action on a screen, and its violet for selected states. Dark mode is the same valley at dusk. Each text pairing is at least 4.5:1.
-- **Scenery.** `components/Scenery.tsx` holds original artwork: `ValleyBackdrop` (far mesas, lake and a ground slice with a cut edge), `Perch` (the rock ledge the mascot sits on), ferns and eggs. It is used on the home page and sign-in only. Working screens get a quiet footer with one plant, and transcripts, scores and charts stay on plain surfaces.
+- **Scenery.** `components/Scenery.tsx` holds original artwork: `ValleyBackdrop` (far mesas, lake and a ground slice with a cut edge), `Perch` (the rock ledge the mascot sits on), ferns and eggs. The backdrop and perch are used on the home page; the shared footer uses a quiet plant on working screens. Transcripts, scores and charts stay on plain surfaces.
 - **Motion.** Mist drifts and ferns sway as whole elements, and both stop when the system asks for reduced motion. The mascot is a still image.
 
 ### Mascot

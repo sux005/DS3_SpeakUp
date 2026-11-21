@@ -1,83 +1,72 @@
-# Design Document Guide for DS3 Projects
+# SpeakUp design overview
 
-This document is meant to guide students on what to include when they write their own design document for a data science or machine learning project. It should help future readers understand the problem, the approach, and the implementation plan.
+SpeakUp helps people review public-speaking recordings. It keeps the original
+audio, prepares a separate analysis copy, transcribes speech, measures pace,
+fillers, and pauses, and presents timestamped results and coaching feedback.
+This document describes the current design; API details live in
+[aws-payload-api.md](aws-payload-api.md) and deployment details in
+[../infra/README.md](../infra/README.md).
 
-## Overview
+## Users and goals
 
-Describe the project at a high level. Explain what the project is about, what domain it belongs to, and why it matters. Briefly mention whether it is a data analysis, machine learning, forecasting, NLP, computer vision, or other type of project.
+The intended user is a speaker reviewing a recorded presentation. The core
+workflow is to upload a recording, start processing, inspect transcript-linked
+metrics, and replay audio at a relevant moment. The system must keep one user's
+projects and recordings separate from another user's data. A separate voice
+model has not been specified.
 
-## Customer Identification & Problem Statement
-
-Identify the intended users, stakeholders, or customers of the project. Explain the problem they face and why it is worth solving. This section should answer:
-
-- Who is the customer or target user?
-- What pain point or decision problem are they experiencing?
-- Why is this problem important?
-- What outcome would make the project successful?
-
-## Background Research and Related Work
-
-Summarize the existing research, methods, or similar prior work related to the problem. This section should help readers understand what has already been done and how your project builds on or differs from it. Include any relevant papers, tools, open-source solutions, industry approaches, or prior course projects that informed your thinking.
-
-## Goals
-
-List the main objectives of the project. These should be specific enough that someone can tell whether the project succeeded. Good goals may include improving prediction accuracy, generating useful insights, supporting a decision-making workflow, or automating a repetitive analysis task.
-
-## Non-Goals
-
-Clarify what is intentionally out of scope for this version of the project. This helps prevent scope creep and makes the project easier to evaluate.
-
-## System Architecture
-
-Provide a high-level view of how the system works. Include the main components, how they interact, and how data moves through the workflow. A Mermaid diagram is a good way to communicate this clearly.
+## System architecture
 
 ```mermaid
 flowchart LR
-    User[User or Stakeholder]
-    Data[(Data Sources)]
-    Pipeline[Data Processing / Modeling]
-    Results[Outputs / Insights / Predictions]
-    Config[Configuration and Secrets]
-
-    User --> Pipeline
-    Data --> Pipeline
-    Config --> Pipeline
-    Pipeline --> Results
+    Browser[Next.js browser app] --> API[HTTP API]
+    API --> DDB[(DynamoDB metadata)]
+    API --> S3[(Private S3 audio and artifacts)]
+    S3 --> Event[S3 object event]
+    Event --> SF[Step Functions workflow]
+    SF --> Prep[Audio preparation]
+    SF --> ASR[Amazon Transcribe]
+    SF --> Processor[Metrics and optional coaching]
+    Prep --> S3
+    ASR --> S3
+    Processor --> S3
+    Processor --> DDB
 ```
 
-## Data Sources
+The API issues a signed upload reservation. The S3 object event normally
+confirms the uploaded object and starts processing. The workflow prepares a
+separate audio artifact, obtains a
+timestamped transcript, and writes versioned analysis results. The original
+recording is not overwritten. The browser can use sample data locally or a
+development API bridge. Production sign-in and a deployed browser-to-backend
+smoke test remain open work.
 
-Describe where the data comes from and how it will be used. Include:
+## Data and scoring
 
-- the source of the data
-- whether it is public, private, scraped, collected, or simulated
-- the format and structure of the data
-- any known quality issues, missing values, or labeling concerns
-- how the data will be stored and prepared for analysis
+Private S3 objects hold recordings and large JSON artifacts. DynamoDB holds
+owner-scoped metadata, lifecycle state, compact references, and summary
+metrics. The active rubric CSV at
+[`src/scoring/rubrics/speaking-2026-10-31.csv`](../src/scoring/rubrics/speaking-2026-10-31.csv)
+defines score bands. The processor derives pace, scored filler rate, and
+inside-sentence pause rate from timestamped words and audio-preparation pause
+inputs. [Research notes](research/README.md) explain the evidence and limits
+behind these choices. Coaching feedback is optional and must remain grounded
+in persisted metrics and the matching rubric.
 
-If the project uses external APIs, note how credentials will be handled and how the data will be accessed responsibly.
+## Security and reliability
 
-## Execution Flow
+The API checks ownership on project and recording operations. Uploads and
+playback use short-lived signed URLs; the underlying buckets are private.
+Workflow stages are designed for replay, with bounded polling and terminal
+failure recording. Active workflows cannot be soft-deleted. Deployed IAM,
+storage policy, retention, and end-to-end behavior still require validation.
 
-Explain the step-by-step workflow from start to finish. This section should describe how the project will be run in practice, including:
+## Validation and rollout
 
-- data loading
-- cleaning and preprocessing
-- exploratory analysis
-- model training or analysis steps
-- evaluation and validation
-- output generation or deployment
-
-The goal is to show how a person could reproduce the work from beginning to end.
-
-## Security and Configuration
-
-Explain how the project handles configuration, dependencies, and sensitive information. Include details about environment setup, package management, and secrets. **.env files are generally not shared on GitHub; they are included here only as an example template via .env.example.**
-
-## Risks and Mitigations
-
-Identify likely risks to the project and how they will be addressed. Common risks include poor data quality, insufficient labels, privacy concerns, limited compute resources, unclear requirements, and overfitting. For each risk, mention the mitigation strategy.
-
-## Rollout Plan
-
-Describe how the project will be validated, shared, and extended. This can include steps for testing, documenting the workflow, presenting results, or handing off the project to future contributors.
+Run backend tests with
+`python -m pytest -q --basetemp .test-tmp -p no:cacheprovider`. Run frontend
+checks from `frontend/web/` with `npm run lint` and `npm run test:all`.
+These local checks do not prove a deployed workflow. A development stack
+exists, but the current code still needs an authenticated end-to-end check
+there. Index migration, production sign-in, and a production security review
+remain open.

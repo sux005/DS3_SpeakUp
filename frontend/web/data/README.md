@@ -14,10 +14,11 @@ They contain no real user data, credentials, S3 URLs, or usable presigned URLs.
 | `upload-reservation.json` | `POST /uploads` | Upload progress flow; its URL is intentionally nonfunctional. |
 | `active-workflow-limit-error.json` | Processing HTTP 429 | Retry/error state; production also returns `Retry-After: 60`. |
 
-The Next.js skeleton uses these fixtures until its API client is connected. The live
-client should read the base URL from `SPEAKUP_API_URL`, attach the Cognito JWT as
-`Authorization: Bearer <token>`, and treat statuses as a state machine rather
-than assuming processing finishes in one request.
+The Next.js app uses these fixtures for its local preview. In live mode it reads
+the base URL from `NEXT_PUBLIC_SPEAKUP_API_URL`; the local development guest
+bridge supplies the owner-scoped session. A deployed authenticated client should
+attach its Cognito JWT as `Authorization: Bearer <token>`. Treat statuses as a
+state machine rather than assuming processing finishes in one request.
 
 The browser upload sequence is:
 

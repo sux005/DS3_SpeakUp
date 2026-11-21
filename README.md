@@ -3,9 +3,10 @@
 SpeakUp is a DS3 public-speaking diagnostics platform. Its backend stores
 original recordings without rewriting them during processing, prepares speech
 for analysis, produces timestamped transcripts and speech metrics, and stores
-versioned coaching feedback in private AWS resources. A Next.js frontend
-skeleton lives in [`frontend/web`](frontend/web/README.md) and currently uses
-sample data rather than the live API.
+versioned coaching feedback in private AWS resources. The Next.js frontend
+in [`frontend/web`](frontend/web/README.md) supports sample-data and
+development API modes. Its development guest bridge is unavailable in
+production; deployed sign-in and a browser-to-backend smoke test remain open.
 
 ## AWS payload API
 
@@ -59,7 +60,8 @@ python -m pytest -q --basetemp .test-tmp -p no:cacheprovider
 └── models/
 ```
 
-`frontend/` currently contains only its README. The backend HTTP contract is in
+`frontend/web/` contains the Next.js app, browser tests, and sample payloads.
+The backend HTTP contract is in
 [docs/aws-payload-api.md](docs/aws-payload-api.md); deployment and migration
 instructions are in [infra/README.md](infra/README.md).
 
@@ -85,7 +87,7 @@ instructions are in [infra/README.md](infra/README.md).
    is deployed, so development resources cannot be used accidentally in production.
 
    Do not place AWS access keys in an env file. For local AWS CLI access, use the
-   short-lived `speakup-dev` profile documented in `infra/README.md`.
+   short-lived `speakup` profile documented in `infra/README.md`.
 4. Run the local tests with the command above. Live AWS tests require explicit
    opt-in and credentials; ordinary test runs do not contact AWS.
 

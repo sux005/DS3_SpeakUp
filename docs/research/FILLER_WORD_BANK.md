@@ -1,6 +1,12 @@
 # SpeakUp Filler Word Bank v1.0 (for hand labeling and tool comparison)
 
-## Tier 1: Definite fillers (scored)
+This is a hand-labeling vocabulary, not the runtime scorer's exact vocabulary.
+The runtime scores only exact `um`, `uh`, `er`, `erm`, `ah`, and qualifying
+`you know` tokens. It does not normalize spellings such as `umm`, `uhm`, and
+`uhh`; `mm`, `literally`, and repeated words are not tracked. See
+`src/scoring/rubric.py` for the implemented word sets.
+
+## Tier 1: Definite fillers for hand labeling
 
 Always count these. Write the **standard label** no matter how it's spelled or how long it's held.
 
@@ -100,14 +106,18 @@ Template: `data/annotation_template.csv`. Audacity export can be converted with 
    - **Recall**: share of hand-labeled fillers the tool found
    - **Precision**: share of the tool's fillers that are real
    - **Rate error**: tool's fillers per 100 words vs. the hand count
-4. For pauses (VAD vs. noise-adaptive detector vs. Whisper word gaps): recall and precision of pauses ≥ 0.25 s, and the rate of in-sentence pauses per speaking-minute vs. the hand count.
+4. For pauses (acoustic inputs vs. Transcribe word gaps): recall and precision of pauses ≥ 0.25 s in the hand-labeled research set, and the rate of in-sentence pauses per speaking-minute vs. the hand count. The runtime scorer applies a 0.3 s floor.
 
 | Tool | Expected behavior (from our earlier tests) |
 |---|---|
 | Plain Whisper | Catches only ~13% of um/uh; drops repeats |
 | Verbatim Whisper (`whisper_verbatim.py`) | Catches ~83% of um/uh; keeps repeats; can loop on noisy audio |
-| Amazon Transcribe | Unknown: this test answers it |
+| Amazon Transcribe | Used by the production transcription path; the dated tests below report its research recall |
 | WebRTC VAD | Good on clean audio, fails in noisy rooms |
-| Noise-adaptive detector (`pause_detect.py`) | Best so far; may over-count very short in-sentence pauses |
+| Acoustic pause inputs (`src/audio/pause_detection.py`) | Current implementation; may over-count very short in-sentence pauses |
 
-Code that applies this word bank automatically: `filler_rules.py` (`find_fillers`).
+The runtime filler rules are implemented in `src/scoring/rubric.py` (`_fillers`).
+Only a subset of this hand-labeling bank is tracked as `watch_words`: `like`,
+`so`, `well`, `actually`, `basically`, `right`, `okay`, `hmm`, `I mean`,
+`kind of`, and `sort of`. The historical helper scripts named above belong
+to the separate research workspace and are not part of this repo.

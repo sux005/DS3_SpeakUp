@@ -78,7 +78,7 @@ At about 145 WPM, 5 a minute is about 3.5 per 100 words (the bottom of a 3) and 
 
 Polished speakers score high and hesitant ones score low, which is what we want.
 
-**Model note:** normal Whisper leaves most fillers out of its transcript. It caught only 13% of um/uh. Our "verbatim" Whisper setup caught 83%. The team has since picked Amazon Transcribe, which keeps um/uh. James is checking its filler accuracy.
+**Model note:** normal Whisper leaves most fillers out of its transcript. It caught only 13% of um/uh. Our "verbatim" Whisper setup caught 83%. The production path uses Amazon Transcribe, which preserves the filler tokens needed by the scorer. The exact recall figures above are historical research measurements, not a current accuracy guarantee.
 
 ---
 
@@ -115,22 +115,24 @@ Polished speakers score high and hesitant ones score low, which is what we want.
 
 With the Kahng bands, TED averaged only 2.3.
 
-**Rules we decided on:**
+**Runtime rules:**
 - Two silences less than 0.3 s apart with no word between them count as one pause
 - A pause right after "um" counts as inside the sentence. The speaker gets marked for the filler and for the pause. That's on purpose
 - A pause between a period and "um" counts as between sentences
-- A new thought starting with "and" counts as a new sentence
+- Sentence boundaries follow Transcribe's `.`, `?`, and `!` punctuation. A new thought starting with "and" without that punctuation remains inside the same sentence.
 
 ---
 
-## 4. Models proposed (tested 11/09, not on main yet)
+## 4. Models and pause implementation (tested 11/09)
 
-This section is a proposal. `main` still finds pauses from Transcribe word gaps. The method below will go up as its own PR.
+The dated comparison below is retained as research evidence. The current implementation uses
+acoustic pause inputs from `src/audio/pause_detection.py` when the audio-prep worker can produce
+them; `src/scoring/rubric.py` falls back to Transcribe word gaps when acoustic inputs are absent.
 
 | Job | Pick | Why |
 |---|---|---|
 | Speech to text | Amazon Transcribe | Team pick. Keeps um and uh, and gives a time for every word |
-| Finding pauses | Volume detector at 0.3 s, plus any spot where Silero hears no talking AND the transcript has a word gap | Caught the most hand pauses on both blind clips |
+| Finding pauses | Acoustic detector keeps candidate quiet spans from 0.25 s; scorer applies a 0.3 s floor and intersects acoustic spans with transcript word gaps | Current acoustic path; falls back to Transcribe gaps when unavailable |
 | Inside vs between | Transcribe's own punctuation (a period right before the pause means "between") | Beat the extra punctuation model on Links 13, 14 and 16, and needs no extra model |
 | Noise cleanup | DeepFilterNet (already on main, PR #5) | Neither cleaner changed the pause results in these tests |
 

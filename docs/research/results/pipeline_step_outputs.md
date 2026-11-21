@@ -1,6 +1,6 @@
 # What comes out of each step (Link 16 example)
 
-Clip: Link 16, a student class speech (2 minutes). Script: `pipeline_outputs.py` (research repo). The files are not in this repo; this page describes their format.
+Clip: Link 16, a student class speech (2 minutes). Script: `pipeline_outputs.py` (research repo). The files are not in this repo; this page records historical research outputs, not the current runtime artifact schema. The runtime acoustic detector keeps candidates from 0.25 s; the scorer applies a 0.3 s floor.
 
 | Step | File | Format | What it holds |
 |---|---|---|---|
@@ -23,7 +23,7 @@ Times are seconds from the start of the clip. Times in steps 2 to 5 are the clip
 - 3 pauses inside sentences, 18 between (Transcribe word gaps, team code): 1.7 per speaking minute, score 4
 - Final pause list from step 5 (our new method): 21 pauses, 2 inside
 
-## What's wrong with the Bedrock feedback right now
+## Bedrock feedback limitations in this historical run
 
 Model: Amazon Nova Lite (the team default), same prompt as the team code, run twice.
 
@@ -33,4 +33,6 @@ Model: Amazon Nova Lite (the team default), same prompt as the team code, run tw
 - Both runs said to "reduce pauses, especially between sentences". That's wrong: her pause score is 4, and we never count pauses between sentences against anyone
 - Both runs added a random section called "Polite Response to Roast Queries" that has nothing to do with the speech
 
-Next step: rewrite the prompt so it explains what each metric means and how it's scored, and ask for JSON with fixed fields.
+The current processor uses a structured prompt and validates JSON feedback
+before storing it. These free-text examples describe the earlier Nova Lite
+research run, not the current processor behavior.

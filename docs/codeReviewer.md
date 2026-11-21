@@ -26,10 +26,8 @@ in a file, and the assistant automatically pulls them up when it's
 relevant (or you invoke it directly).
 
 Think of it as a reusable prompt / checklist that lives in a file instead
-of your head. Claude Code calls these "Skills." Cursor and Codex don't
-have an identical feature, but they support the same idea under different
-names (Cursor "Rules," Codex "AGENTS.md" instructions) — instructions below
-for each.
+of your head. Claude Code and Codex support skills; Cursor can use a project
+rule. The instructions below show how to package this checklist.
 
 This particular skill turns any of these tools into a **strict, read-only
 code reviewer** for DS3 project repos. It will not touch your code. It
@@ -84,15 +82,16 @@ markdown too:
    this repo" — it will pull in the rule automatically if you set it to
    "Always Apply," or you can @-mention the rule file directly.
 
-## Option C: Install in Codex (or Codex CLI)
+## Option C: Install as a Codex skill
 
-Codex reads an `AGENTS.md` file in the repo root as standing instructions.
+1. Create `.codex/skills/ds3-code-review/SKILL.md` in the project (or the
+   corresponding directory under your Codex home for a personal skill).
+2. Copy the YAML frontmatter and the content below the "SKILL INSTRUCTIONS"
+   divider into that file. Keep project-wide guidance in `AGENTS.md`.
+3. Ask Codex to run `$ds3-code-review` on this repo.
 
-1. If the repo doesn't already have an `AGENTS.md`, create one at the repo
-   root. If it does, append this skill's content to it under a new
-   heading (e.g. `## DS3 Code Review Task`).
-2. Paste in everything below the "SKILL INSTRUCTIONS" divider.
-3. Ask Codex: "Run the DS3 code review task from AGENTS.md on this repo."
+If your Codex setup has a general `$code-review` workflow, you can use it
+without installing this DS3-specific checklist.
 
 ## Tips
 

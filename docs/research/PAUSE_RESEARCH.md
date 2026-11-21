@@ -1,11 +1,15 @@
-# SpeakUp Pause Metric (Draft v3, for review)
+# SpeakUp pause metric: research and current implementation
+
+The studies and hand-labeling comparisons below are historical research. The
+current scorer uses a 0.3 s floor and determines sentence boundaries from
+Transcribe punctuation (`.`, `?`, and `!`).
 
 ## What we measure
 
 Every silence in the recording is sorted by **length** (using the research below) and by **location** (inside a sentence vs. between sentences or phrases).
 
 - **Scored:** pauses inside a sentence (hesitations), per minute of speaking time.
-- **Reported, not scored:** pauses between sentences or ideas (shown as a positive), long pauses (1 s or more) with timestamps, and total time spent pausing.
+- **Reported, not scored:** pauses between sentences or ideas and total time spent pausing. The `long_pauses` list flags inside-sentence pauses from 1 s and pauses anywhere from 3 s.
 
 Examples:
 - "We trained the ‖ model on…": pause inside a sentence, **counted**
@@ -55,20 +59,23 @@ Examples:
 |---|---|---|---|
 | Under 0.25 s | Articulation, not a pause (Goldman-Eisler); can't be separated from consonants (Campione & Véronis); irrelevant to fluency (De Jong & Bosker) | Not counted | Not counted |
 | 0.25–1 s (medium) | The normal pause length (Campione & Véronis) | Normal, shown as a positive | **Counted as a hesitation** |
-| 1–3 s (long) | Only in unscripted speech (Campione & Véronis); stands out to listeners (Jefferson) | Allowed (deliberate pause for emphasis); reported | **Counted and flagged** with a timestamp |
-| Over 3 s | Far beyond the normal maximum (Jefferson) | Flagged with a timestamp ("lost your place?") | Flagged with a timestamp |
+| 1 to under 3 s (long) | Only in unscripted speech (Campione & Véronis); stands out to listeners (Jefferson) | Allowed (deliberate pause for emphasis); reported but not flagged as long | **Counted and flagged** with a timestamp |
+| 3 s or more | Far beyond the normal maximum (Jefferson) | Flagged with a timestamp ("lost your place?") | Flagged with a timestamp |
 
 ## Rubric
 
-**Scored:** pauses inside sentences (0.25 s or longer), per minute of speaking time.
+**Research threshold:** the hand-labeling studies below used pauses of 0.25 s or longer.
+The runtime scorer applies a 0.3 s minimum (`MINIMUM_PAUSE_SECONDS` in
+`src/scoring/rubric.py`) and uses the finalized bands in
+`src/scoring/rubrics/speaking-2026-10-31.csv`.
 
 | Score | Pauses inside sentences, per speaking-minute | Based on |
 |---|---|---|
-| 4 Advanced | under 6.6 | Below the fluent-speaker average (Kahng) |
-| 3 Proficient | 6.6 to under 8.8 | Typical range for fluent speakers |
-| 2 Basic | 8.8 to under 11.0 | Upper end of the fluent range |
-| 1 Minimal | 11.0 to under 13.8 | Approaching the less-fluent average |
-| 0 Deficient | 13.8 or more | At or above the less-fluent average |
+| 4 Advanced | under 9 | Current runtime rubric |
+| 3 Proficient | 9 to under 12 | Current runtime rubric |
+| 2 Basic | 12 to under 15 | Current runtime rubric |
+| 1 Minimal | 15 to under 18 | Current runtime rubric |
+| 0 Deficient | 18 or more | Current runtime rubric |
 
 Why per speaking-minute: pauses slow down WPM directly. Per 100 words, the pause count was strongly tied to WPM (r = −0.52), which would double-count speed; per speaking-minute it wasn't (r = −0.09).
 
@@ -89,15 +96,15 @@ Most measures match the research. The count of pauses inside sentences runs high
 - **Whisper word timestamps** miss about half of real pauses over 0.5 s; don't use them alone.
 - **WebRTC VAD** (speech/silence detector) works on clean audio but failed in a noisy room.
 - **Noise-adaptive silence detection** agreed with VAD 75–95% on clean audio and handled the noisy room. Recommended starting point.
-- **Location:** Whisper adds punctuation wherever it hears a pause, so a separate text-only model decides where sentences and phrases end.
+- **Historical location experiment:** Whisper adds punctuation wherever it hears a pause, so the research compared a separate text-only model. The runtime uses Transcribe punctuation alone.
 
 ## Next steps
 
-1. In the Week 2 evaluation clips, hand-mark pauses (start, end, inside or between sentences) and tune the detector (0.25 vs. 0.4 s cutoff) so its counts match.
-2. Decide whether pauses get a 0–4 score in the MVP or are reported only until calibrated.
+1. Extend hand-marked evaluation beyond the dated clips and compare the runtime acoustic path with the Transcribe-gap fallback.
+2. Revisit the 0.3 s runtime floor if new labeled data shows systematic over- or under-counting.
 3. Check that student presentations follow the same patterns as these studies.
 
-## Files
-- `pause_detect.py`: noise-adaptive silence detection
-- `pause_location.py`: labels each pause by location → `data/acl_pauses_located.csv`
-- `data/acl_pause_kahng_units.csv`: per-talk results
+## Current implementation files
+- `src/audio/pause_detection.py`: energy and optional Silero pause inputs
+- `src/scoring/pauses.py`: acoustic and transcript-gap interval combination
+- `src/scoring/rubric.py`: 0.3 s floor, inside/between classification, and score application

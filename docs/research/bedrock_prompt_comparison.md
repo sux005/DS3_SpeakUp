@@ -1,6 +1,10 @@
 # Bedrock prompt: old (team) vs new, Links 13-16
 
-Proposal, not on `main`. This compares the prompt that was on `main` on 11/09 with a new structured prompt. Bedrock feedback is currently off on `main`, and Jay is also working on the feedback format, so treat this as input for that work.
+This is a historical comparison of the prompt that was on `main` on 11/09 with a structured
+prompt proposal. The current processor path is in `infra/lambda/processor/index.py`: it sends
+feedback when enabled by deployment configuration and validates the returned JSON shape before
+storing the feedback artifact. The runs and scorecard below remain research evidence from that
+earlier prompt comparison.
 
 Model us.amazon.nova-lite-v1:0, temperature 0.2, 2 runs per prompt per clip. Input = team rubric metrics + Transcribe text.
 

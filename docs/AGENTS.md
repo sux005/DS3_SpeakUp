@@ -80,31 +80,14 @@ These are two different things and both matter:
 A good mental model: AGENTS.md is "everything you need to know to work in
 this repo," a skill is "here's exactly how to do this one thing well."
 
-## How to fill this out (do this now)
+## Where this guidance applies
 
-This file is a **template**. Go through every `[bracketed placeholder]`
-below and replace it with real info about your specific project — nobody
-else can fill this in for you, since every DS3 project is different. Keep
-the sections short and factual; don't write paragraphs the agent doesn't
-need. If a command doesn't work, the agent will trust it and waste time —
-so actually run each command yourself before writing it down.
-
-Where this file goes: **the repo root**, named exactly `AGENTS.md`. If
-your project ever splits into clearly separate sub-projects (e.g. a
-`frontend/` and a `models/` pipeline that are basically unrelated), you
-can also drop an additional `AGENTS.md` inside a subfolder — the agent
-uses the one closest to the file it's working on.
-
-Nothing tool-specific to install — Claude Code, Cursor, and Codex all
-read `AGENTS.md` at the repo root automatically, no setup needed. (Claude
-Code will also read a `CLAUDE.md` if present, and Cursor also honors
-`.cursor/rules/` — but for a shared team repo, put the real content here
-so it works everywhere, and keep the others as thin pointers to this file
-if you need tool-specific extras.)
+The project-specific instructions below apply to work under `docs/`.
+Keep commands and architecture claims synchronized with the repository.
+The frontend has additional guidance in `frontend/web/AGENTS.md`.
 
 <!-- ============================================================
-     TEMPLATE STARTS HERE — this is what the agent actually reads.
-     Replace every [bracketed] placeholder below.
+     PROJECT INSTRUCTIONS START HERE.
      ============================================================ -->
 
 # AGENTS.md
@@ -130,7 +113,7 @@ rather than redefining logic inline.
 ```
 .
 ├── README.md
-├── .env.example
+├── .env.development.example
 ├── requirements.txt
 ├── notebooks/        # exploration, EDA, prototyping — not the source of truth for pipeline logic
 ├── src/               # the actual reusable code — import this from notebooks
@@ -160,14 +143,14 @@ PyTorch or native model wheels.
 
 For the local frontend demo, use Node.js 20.9 or newer and run `npm ci` in
 `frontend/web/`. The frontend uses Next.js, Vitest, React Testing Library, and
-Playwright; it does not call the AWS backend. The integrated frontend retains
-the MVP rubric/demo-login routes and unused API helpers. Transcript review uses
+Playwright. It supports sample data and a development API bridge; the bridge
+requires guest mode and is disabled in production. Transcript review uses
 timed words with filler highlighting, filters, and click-to-seek playback.
 
 Use `.env.production.example` as the production schema after the production
 CloudFormation stack is deployed. Never commit `.env.development` or
 `.env.production`, and never put AWS access keys in either file; local AWS CLI
-access uses the short-lived `speakup-dev` profile.
+access uses the short-lived `speakup` profile.
 
 ## Running things
 
@@ -260,8 +243,8 @@ access uses the short-lived `speakup-dev` profile.
   `main`.
 - Open a PR when ready; **only mentors/PMs approve and merge to `main`**
   — do not merge your own PR even if checks pass.
-- Before opening a PR, it's worth running the `ds3-code-review` skill on
-  your branch to catch structure/style/testing issues yourself first.
+- Before opening a PR, run a code review workflow if available, or use the
+  DS3 checklist in `docs/codeReviewer.md` to catch issues on your branch.
 
 ## Keeping this file up to date
 
@@ -302,6 +285,7 @@ See `docs/aws-payload-api.md` for the storage contract and staged GSI migration,
 `docs/aws-payload-package-reference.md` for the complete function-level Python
 reference, `docs/aws-api-file-flowchart.md` for the editable AWS API file and
 runtime dependency map, `src/aws_payload/README.md` for a concise API overview, and
-`infra/README.md` for packaging, deployment, cost, and cleanup. `docs/research/README.md` indexes the
-research behind the rubric cutoffs, the proposed pause method, and the Bedrock prompt. Amazon
-Transcribe is currently blocked while the AWS project remains on the Free plan.
+`infra/README.md` for packaging, deployment, cost, and cleanup.
+`docs/research/README.md` indexes the research behind the rubric cutoffs,
+implemented acoustic pause method, and Bedrock prompt. Live Transcribe behavior
+still needs an authenticated end-to-end check in the development stack.
