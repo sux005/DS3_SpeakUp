@@ -40,7 +40,9 @@ With accounts on:
 - Every API call sends the person's Cognito access token as `Authorization: Bearer`. The API's JWT authorizer checks it, and the backend stores projects and recordings under the token's `sub`. This is what keeps each person's history for progress charts.
 - The guest bridge is not used.
 
-Without the Cognito values, nothing changes: the guest bridge or the local preview works as before, and no sign-in button shows. Passwords go straight from the browser to Cognito (SRP). MFA, password reset and the production stack are not handled yet. Code: `lib/auth.tsx`, `components/AccountButton.tsx`, `components/SignInDialog.tsx`.
+Add `NEXT_PUBLIC_COGNITO_DOMAIN` (the stack output `CognitoDomain`) to show **Continue with Google** in the popup. It sends people through Cognito to Google and back to `/auth/callback`, which finishes sign-in and returns them to the page they started from. Google sign-in leaves the page, so the popup warns when something unsaved, like a recording, would be lost. Signing out a Google user also ends their Cognito session. Setting up the Google side is in `infra/README.md`.
+
+Without the Cognito values, nothing changes: the guest bridge or the local preview works as before, and no sign-in button shows. Passwords go straight from the browser to Cognito (SRP). MFA, password reset and the production stack are not handled yet. Code: `lib/auth.tsx`, `lib/google-sign-in.ts`, `components/AccountButton.tsx`, `components/SignInDialog.tsx`, `app/auth/callback/page.tsx`.
 
 ### Recording and submission boundary
 

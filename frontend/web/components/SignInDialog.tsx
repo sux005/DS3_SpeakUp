@@ -13,7 +13,7 @@ const textButton = "cursor-pointer font-semibold text-mint underline underline-o
 // The sign-in popup: sign in, create an account, or enter the emailed code.
 // Opened from the account button in the nav, or by any action that needs an account.
 export function SignInDialog() {
-  const { signIn, signUp, confirmSignUp, resendCode, closeSignIn } = useAuth();
+  const { signIn, signUp, confirmSignUp, resendCode, closeSignIn, googleEnabled, startGoogleSignIn, signInHasPendingAction } = useAuth();
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -111,6 +111,21 @@ export function SignInDialog() {
             {mode === "confirm" ? "Check your inbox for a 6-digit code." : "An account keeps your recordings and scores so you can track your progress."}
           </p>
         </div>
+
+        {googleEnabled && mode !== "confirm" && (
+          <div className="flex flex-col gap-4">
+            <button type="button" disabled={busy} className={`${buttonClass("secondary")} disabled:opacity-60`}
+              onClick={() => void run(() => startGoogleSignIn(`${window.location.pathname}${window.location.search}`))}>
+              Continue with Google
+            </button>
+            {signInHasPendingAction && (
+              <p className="text-sm text-peach">Google sign-in leaves this page, so anything not saved yet, like a recording, is lost. Use your email to keep it.</p>
+            )}
+            <p className="flex items-center gap-3 text-sm text-cream/70" aria-hidden="true">
+              <span className="h-px flex-1 bg-night-line" />or use your email<span className="h-px flex-1 bg-night-line" />
+            </p>
+          </div>
+        )}
 
         <form onSubmit={submit} className="flex flex-col gap-4">
           <label className={fieldLabel}>

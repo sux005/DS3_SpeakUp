@@ -41,6 +41,27 @@ uses Cognito Essentials with refresh-token rotation, requires TOTP MFA, enables
 Cognito deletion protection, and enables DynamoDB point-in-time recovery. Set the
 real production frontend origin before deploying a production stack.
 
+### Google sign-in (optional, off by default)
+
+Google sign-in is off until `GoogleClientId` is set. To turn it on for a development stack:
+
+1. In Google Cloud Console, create an OAuth client of type "Web application". Add this
+   authorized redirect URI: `https://<stack-name>-<account-id>.auth.<region>.amazoncognito.com/oauth2/idpresponse`
+   (for `speakup-dev`: `https://speakup-dev-<account-id>.auth.us-east-2.amazoncognito.com/oauth2/idpresponse`).
+2. Store the client secret in Secrets Manager as JSON with the key `client_secret`,
+   for example in a secret named `speakup/dev/google-oauth`. It never goes in a parameter or the repo.
+3. Deploy with `GoogleClientId=<id>.apps.googleusercontent.com` and
+   `GoogleClientSecretName=speakup/dev/google-oauth`.
+4. Copy the `CognitoDomain` output to the frontend as `NEXT_PUBLIC_COGNITO_DOMAIN`.
+
+This adds a Cognito hosted sign-in domain, a Google identity provider, and the
+authorization code flow (with PKCE in the browser) on the existing app client. The
+callback is `<CorsAllowedOrigin>/auth/callback`. Cognito creates a separate user the
+first time someone signs in with Google, so a Google account and an email-password
+account with the same address are two different SpeakUp users. A production stack
+refuses `GoogleClientId` for now: Google users skip the TOTP MFA that production
+requires, so the team needs to decide how MFA applies to them first.
+
 ## API routes
 
 `GET /health` is public. All other routes require a Cognito JWT:

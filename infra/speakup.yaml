@@ -103,17 +103,35 @@ Parameters:
     Type: String
     Default: 'false'
     AllowedValues: ['true', 'false']
+  GoogleClientId:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com$'
+    Description: Google OAuth web client ID. Leave empty to turn Google sign-in off.
+  GoogleClientSecretName:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^[A-Za-z0-9/_+=.@-]+$'
+    Description: 'Secrets Manager secret holding the Google OAuth client secret under the JSON key client_secret. The secret value never goes in parameters or the repo.'
 
 Conditions:
   IsProduction: !Equals [!Ref Environment, prod]
   HasAlarmTopic: !Not [!Equals [!Ref AlarmTopicArn, '']]
+  HasGoogleSignIn: !Not [!Equals [!Ref GoogleClientId, '']]
 
 Rules:
+  GoogleSignInParameters:
+    RuleCondition: !Not [!Equals [!Ref GoogleClientId, '']]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref GoogleClientSecretName, '']]
+        AssertDescription: Google sign-in needs GoogleClientSecretName, the Secrets Manager secret that holds the client secret.
   ProductionParameters:
     RuleCondition: !Equals [!Ref Environment, prod]
     Assertions:
       - Assert: !Not [!Equals [!Ref CorsAllowedOrigin, http://localhost:3000]]
         AssertDescription: Production CORS origins must use HTTPS.
+      - Assert: !Equals [!Ref GoogleClientId, '']
+        AssertDescription: Google sign-in skips Cognito's required TOTP MFA, so production keeps it off until the team decides how MFA applies to Google accounts.
       - Assert: !Not [!Equals [!Ref DataBucketName, speakup-dev-private-110359221190-us-east-2]]
         AssertDescription: Production must not use the development data bucket.
       - Assert: !Not [!Equals [!Ref AlarmTopicArn, '']]
@@ -378,6 +396,46 @@ Resources:
       IdTokenValidity: 1
       RefreshTokenValidity: !If [IsProduction, 30, 7]
       TokenValidityUnits: {AccessToken: hours, IdToken: hours, RefreshToken: days}
+      # Google sign-in goes through Cognito's hosted pages with the authorization code
+      # flow and PKCE. Without a Google client ID, none of this is set and only SRP works.
+      AllowedOAuthFlowsUserPoolClient: !If [HasGoogleSignIn, true, !Ref AWS::NoValue]
+      AllowedOAuthFlows: !If [HasGoogleSignIn, [code], !Ref AWS::NoValue]
+      AllowedOAuthScopes: !If [HasGoogleSignIn, [openid, email, profile], !Ref AWS::NoValue]
+      CallbackURLs: !If [HasGoogleSignIn, [!Sub '${CorsAllowedOrigin}/auth/callback'], !Ref AWS::NoValue]
+      LogoutURLs: !If [HasGoogleSignIn, [!Sub '${CorsAllowedOrigin}/'], !Ref AWS::NoValue]
+      # !Ref on the provider makes the client wait for it to exist.
+      SupportedIdentityProviders: !If [HasGoogleSignIn, [COGNITO, !Ref GoogleIdentityProvider], [COGNITO]]
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Condition: HasGoogleSignIn
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Cognito-hosted sign-in pages that redirect to Google and back
+        must: [Prefix stays lowercase and must not contain aws, amazon or cognito]
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain: !Sub '${AWS::StackName}-${AWS::AccountId}'
+      ManagedLoginVersion: 1
+
+  GoogleIdentityProvider:
+    Type: AWS::Cognito::UserPoolIdentityProvider
+    Condition: HasGoogleSignIn
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: lets people sign in with a Google account; Cognito creates a matching user on first sign-in
+        must: [Client secret comes from Secrets Manager, never a plain parameter]
+    Properties:
+      UserPoolId: !Ref UserPool
+      ProviderName: Google
+      ProviderType: Google
+      ProviderDetails:
+        client_id: !Ref GoogleClientId
+        client_secret: !Sub '{{resolve:secretsmanager:${GoogleClientSecretName}:SecretString:client_secret}}'
+        authorize_scopes: openid email profile
+      AttributeMapping:
+        email: email
+        email_verified: email_verified
 
   ApiLogGroup:
     Type: AWS::Logs::LogGroup
@@ -1337,6 +1395,10 @@ Outputs:
   CognitoIssuer:
     Description: JWT issuer accepted by the HTTP API authorizer.
     Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}'
+  CognitoDomain:
+    Condition: HasGoogleSignIn
+    Description: Hosted sign-in domain for Google sign-in (NEXT_PUBLIC_COGNITO_DOMAIN).
+    Value: !Sub '${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com'
   ProcessingStateMachineArn:
     Description: Standard workflow coordinating recording diagnostics.
     Value: !Ref ProcessingStateMachine

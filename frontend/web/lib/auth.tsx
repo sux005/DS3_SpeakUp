@@ -10,20 +10,26 @@
 //   NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxx
 // Without them the app runs as a guest, and the sign-in page says accounts are not set up.
 //
-// Passwords and codes go straight from the browser to Cognito (SRP, the only flow the
-// app client allows). Nothing here sends them to the SpeakUp API or stores them.
+// Passwords and codes go straight from the browser to Cognito (SRP). Nothing here sends
+// them to the SpeakUp API or stores them. Google sign-in (lib/google-sign-in.ts) turns on
+// when NEXT_PUBLIC_COGNITO_DOMAIN is also set.
 // MFA is not handled yet: development leaves it optional, production requires it.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AuthenticationDetails,
+  CognitoAccessToken,
+  CognitoIdToken,
+  CognitoRefreshToken,
   CognitoUser,
   CognitoUserAttribute,
   CognitoUserPool,
-  type CognitoUserSession,
+  CognitoUserSession,
 } from "amazon-cognito-identity-js";
+import { cognitoDomain, exchangeGoogleCode, goTo, googleAuthorizeUrl, hostedSignOutUrl } from "@/lib/google-sign-in";
 
-export type AuthUser = { sub: string; email: string };
+/** `google` is true for people who signed in with Google instead of a password. */
+export type AuthUser = { sub: string; email: string; google: boolean };
 
 type AuthContextValue = {
   /** False when the Cognito env vars are missing: everyone is a guest. */
@@ -35,10 +41,18 @@ type AuthContextValue = {
   resendCode: (email: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** True when the "Continue with Google" button should show. */
+  googleEnabled: boolean;
+  /** Leave for Google's sign-in page. `next` is where to come back to afterwards. */
+  startGoogleSignIn: (next: string) => Promise<void>;
+  /** On /auth/callback: finish Google sign-in and return the same-site path to go to. */
+  finishGoogleSignIn: (code: string, state: string) => Promise<string>;
   /** Current access token for "Authorization: Bearer", refreshed when needed. Null for guests. */
   getAccessToken: () => Promise<string | null>;
   /** Whether the sign-in popup is showing. */
   signInOpen: boolean;
+  /** True when the popup was opened by an action that runs after sign-in (for example saving a take). */
+  signInHasPendingAction: boolean;
   /** Show the sign-in popup. `after` runs once the person is signed in. */
   openSignIn: (after?: () => void) => void;
   closeSignIn: () => void;
@@ -97,7 +111,12 @@ function createPool(): CognitoUserPool | null {
 
 function userFromSession(session: CognitoUserSession): AuthUser {
   const claims = session.getIdToken().decodePayload();
-  return { sub: String(claims.sub), email: String(claims.email ?? "") };
+  const identities = Array.isArray(claims.identities) ? (claims.identities as Array<{ providerName?: string }>) : [];
+  return {
+    sub: String(claims.sub),
+    email: String(claims.email ?? ""),
+    google: identities.some((identity) => identity.providerName === "Google"),
+  };
 }
 
 function currentSession(user: CognitoUser) {
@@ -116,6 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [ready, setReady] = useState(!pool);
   const [signInOpen, setSignInOpen] = useState(false);
+  const [signInHasPendingAction, setSignInHasPendingAction] = useState(false);
   const afterSignIn = useRef<(() => void) | undefined>(undefined);
 
   // Restore a saved session on load. getSession refreshes an expired access token.
@@ -203,7 +223,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Revokes the refresh token (the app client has token revocation on) and clears local tokens.
       await new Promise<void>((resolve) => saved.signOut(() => resolve()));
     }
+    const wasGoogle = user?.google;
     setUser(null);
+    // Google sign-in also leaves a session on Cognito's hosted pages. Ending it there means
+    // the next "Continue with Google" asks again instead of signing the same person straight in.
+    if (wasGoogle && cognitoDomain()) goTo(hostedSignOutUrl(clientId));
+  }, [pool, user]);
+
+  const startGoogleSignIn = useCallback(async (next: string) => {
+    if (!pool || !cognitoDomain()) throw new Error("Accounts are not set up");
+    goTo(await googleAuthorizeUrl(clientId, next));
+  }, [pool]);
+
+  const finishGoogleSignIn = useCallback(async (code: string, state: string) => {
+    if (!pool) throw new Error("Accounts are not set up");
+    const { tokens, next } = await exchangeGoogleCode(clientId, code, state);
+    const session = new CognitoUserSession({
+      IdToken: new CognitoIdToken({ IdToken: tokens.id_token }),
+      AccessToken: new CognitoAccessToken({ AccessToken: tokens.access_token }),
+      RefreshToken: new CognitoRefreshToken({ RefreshToken: tokens.refresh_token }),
+    });
+    // Saving the session through the library keeps one place for tokens, so restoring,
+    // refreshing and signing out work the same as for password sign-in.
+    const username = String(session.getIdToken().decodePayload()["cognito:username"] ?? "");
+    new CognitoUser({ Username: username, Pool: pool }).setSignInUserSession(session);
+    setUser(userFromSession(session));
+    setSignInOpen(false);
+    afterSignIn.current = undefined;
+    return next;
   }, [pool]);
 
   const getAccessToken = useCallback(async () => {
@@ -219,6 +266,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const openSignIn = useCallback((after?: () => void) => {
     afterSignIn.current = after;
+    setSignInHasPendingAction(Boolean(after));
     setSignInOpen(true);
   }, []);
 
@@ -228,8 +276,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ configured: Boolean(pool), ready, user, signUp, confirmSignUp, resendCode, signIn, signOut, getAccessToken, signInOpen, openSignIn, closeSignIn }),
-    [pool, ready, user, signUp, confirmSignUp, resendCode, signIn, signOut, getAccessToken, signInOpen, openSignIn, closeSignIn],
+    () => ({
+      configured: Boolean(pool), ready, user, signUp, confirmSignUp, resendCode, signIn, signOut, getAccessToken,
+      signInOpen, signInHasPendingAction, openSignIn, closeSignIn, googleEnabled: Boolean(pool && cognitoDomain()), startGoogleSignIn, finishGoogleSignIn,
+    }),
+    [pool, ready, user, signUp, confirmSignUp, resendCode, signIn, signOut, getAccessToken, signInOpen, signInHasPendingAction, openSignIn, closeSignIn, startGoogleSignIn, finishGoogleSignIn],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -249,8 +300,12 @@ const guest: AuthContextValue = {
   signOut: async () => undefined,
   getAccessToken: async () => null,
   signInOpen: false,
+  signInHasPendingAction: false,
   openSignIn: () => undefined,
   closeSignIn: () => undefined,
+  googleEnabled: false,
+  startGoogleSignIn: notConfigured,
+  finishGoogleSignIn: notConfigured,
 };
 
 /**

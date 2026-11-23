@@ -18,8 +18,15 @@ const cognito = vi.hoisted(() => {
     poolThrows: false,
     calls: [] as Array<[string, ...unknown[]]>,
   };
-  return { state, session };
+  const google = { goTo: vi.fn(), exchange: vi.fn() };
+  return { state, session, google };
 });
+
+vi.mock("@/lib/google-sign-in", async (importActual) => ({
+  ...(await importActual<typeof import("@/lib/google-sign-in")>()),
+  goTo: cognito.google.goTo,
+  exchangeGoogleCode: cognito.google.exchange,
+}));
 
 vi.mock("amazon-cognito-identity-js", () => {
   const { state, session } = cognito;
@@ -44,6 +51,10 @@ vi.mock("amazon-cognito-identity-js", () => {
     confirmRegistration(code: string, _force: boolean, cb: (error: unknown) => void) {
       state.calls.push(["confirm", this.username, code]);
       cb(state.confirmError);
+    }
+    setSignInUserSession(session: unknown) {
+      state.calls.push(["store", this.username]);
+      state.saved = { getSession: (cb) => cb(null, session), signOut: (cb) => cb() };
     }
     resendConfirmationCode(cb: (error: unknown) => void) {
       state.calls.push(["resend", this.username]);
@@ -70,13 +81,41 @@ vi.mock("amazon-cognito-identity-js", () => {
       this.Value = Value;
     }
   }
-  return { CognitoUserPool, CognitoUser, AuthenticationDetails, CognitoUserAttribute };
+  class CognitoIdToken {
+    constructor(private value: { IdToken: string }) {}
+    decodePayload() {
+      return JSON.parse(this.value.IdToken);
+    }
+  }
+  class CognitoAccessToken {
+    constructor(private value: { AccessToken: string }) {}
+    getJwtToken() {
+      return this.value.AccessToken;
+    }
+  }
+  class CognitoRefreshToken {
+    constructor(public value: { RefreshToken: string }) {}
+  }
+  class CognitoUserSession {
+    constructor(private value: { IdToken: CognitoIdToken; AccessToken: CognitoAccessToken }) {}
+    isValid() {
+      return true;
+    }
+    getIdToken() {
+      return this.value.IdToken;
+    }
+    getAccessToken() {
+      return this.value.AccessToken;
+    }
+  }
+  return { CognitoUserPool, CognitoUser, AuthenticationDetails, CognitoUserAttribute, CognitoIdToken, CognitoAccessToken, CognitoRefreshToken, CognitoUserSession };
 });
 
 type AuthModule = typeof import("@/lib/auth");
 
-async function loadAuth(configured = true): Promise<AuthModule> {
+async function loadAuth(configured = true, googleDomain = ""): Promise<AuthModule> {
   vi.resetModules();
+  vi.stubEnv("NEXT_PUBLIC_COGNITO_DOMAIN", googleDomain);
   vi.stubEnv("NEXT_PUBLIC_COGNITO_USER_POOL_ID", configured ? "us-west-2_abc123" : "");
   vi.stubEnv("NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID", configured ? "client123" : "");
   return import("@/lib/auth");
@@ -94,6 +133,8 @@ async function renderAuth(auth: AuthModule) {
 }
 
 beforeEach(() => {
+  cognito.google.goTo.mockReset();
+  cognito.google.exchange.mockReset();
   Object.assign(cognito.state, { saved: null, signUpError: null, confirmError: null, resendError: null, authOutcome: "success", authError: null, poolThrows: false, calls: [] });
 });
 afterEach(() => {
@@ -256,5 +297,52 @@ describe("AuthProvider", () => {
     latest.openSignIn();
     latest.closeSignIn();
     expect(latest.signInOpen).toBe(false);
+  });
+
+  it("signs in with Google, keeps the session like a password sign-in, and signs out at Cognito too", async () => {
+    sessionStorage.clear();
+    const auth = await loadAuth(true, "speakup-dev-1.auth.us-east-2.amazoncognito.com");
+    await renderAuth(auth);
+    expect(latest.googleEnabled).toBe(true);
+    await act(() => latest.startGoogleSignIn("/practice"));
+    expect(String(cognito.google.goTo.mock.calls[0][0])).toMatch(/^https:\/\/speakup-dev-1\.auth\.us-east-2\.amazoncognito\.com\/oauth2\/authorize\?identity_provider=Google/);
+
+    const claims = { sub: "g-1", email: "pat@gmail.com", "cognito:username": "google_123", identities: [{ providerName: "Google" }] };
+    cognito.google.exchange.mockResolvedValue({ tokens: { id_token: JSON.stringify(claims), access_token: "access-g", refresh_token: "refresh-g" }, next: "/practice" });
+    let next = "";
+    await act(async () => { next = await latest.finishGoogleSignIn("code-1", "state-1"); });
+    expect(next).toBe("/practice");
+    expect(cognito.google.exchange).toHaveBeenCalledWith("client123", "code-1", "state-1");
+    expect(cognito.state.calls).toContainEqual(["store", "google_123"]);
+    expect(latest.user).toEqual({ sub: "g-1", email: "pat@gmail.com", google: true });
+    expect(await latest.getAccessToken()).toBe("access-g");
+
+    await act(() => latest.signOut());
+    expect(latest.user).toBeNull();
+    expect(String(cognito.google.goTo.mock.calls[1][0])).toMatch(/\/logout\?client_id=client123/);
+  });
+
+  it("keeps Google off without the Cognito domain, and doesn't visit Cognito when a password user signs out", async () => {
+    cognito.state.saved = { getSession: (cb) => cb(null, cognito.session("user-9", "sam@example.com")), signOut: (cb) => cb() };
+    const auth = await loadAuth();
+    await renderAuth(auth);
+    expect(latest.googleEnabled).toBe(false);
+    await expect(latest.startGoogleSignIn("/")).rejects.toThrow("Accounts are not set up");
+    await act(() => latest.signOut());
+    expect(cognito.google.goTo).not.toHaveBeenCalled();
+    cleanup();
+
+    const guest = await loadAuth(false);
+    await renderAuth(guest);
+    await expect(latest.finishGoogleSignIn("c", "s")).rejects.toThrow("Accounts are not set up");
+  });
+
+  it("marks the popup as having a pending action only when one was passed", async () => {
+    const auth = await loadAuth();
+    await renderAuth(auth);
+    act(() => latest.openSignIn());
+    expect(latest.signInHasPendingAction).toBe(false);
+    act(() => latest.openSignIn(() => undefined));
+    expect(latest.signInHasPendingAction).toBe(true);
   });
 });

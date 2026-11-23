@@ -9,6 +9,10 @@ const auth = vi.hoisted(() => ({
     ready: true,
     user: null as null | { sub: string; email: string },
     signInOpen: false,
+    signInHasPendingAction: false,
+    googleEnabled: false,
+    startGoogleSignIn: vi.fn(),
+    finishGoogleSignIn: vi.fn(),
     signUp: vi.fn(),
     confirmSignUp: vi.fn(),
     resendCode: vi.fn(),
@@ -42,7 +46,7 @@ vi.mock("@/lib/api", () => ({
   ApiError: class ApiError extends Error { constructor(public status: number, public code: string | undefined, message: string) { super(message); } },
   ...api,
 }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }), useSearchParams: () => new URLSearchParams() }));
 vi.mock("next/image", () => ({ default: (props: Record<string, unknown>) => createElement("img", { ...props, alt: String(props.alt ?? "") }) }));
 vi.mock("next/link", () => ({ default: ({ href, children, ...props }: { href: string; children: React.ReactNode }) => <a href={href} {...props}>{children}</a> }));
 
@@ -50,7 +54,9 @@ beforeEach(() => {
   vi.resetModules();
   vi.stubEnv("NEXT_PUBLIC_SPEAKUP_API_URL", "https://api.example.test");
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 200 })));
-  Object.assign(auth.value, { configured: true, ready: true, user: null, signInOpen: false });
+  Object.assign(auth.value, { configured: true, ready: true, user: null, signInOpen: false, signInHasPendingAction: false, googleEnabled: false });
+  auth.value.startGoogleSignIn.mockReset();
+  auth.value.finishGoogleSignIn.mockReset();
   for (const fn of [...Object.values(api), auth.value.signUp, auth.value.confirmSignUp, auth.value.resendCode, auth.value.signIn, auth.value.signOut, auth.value.getAccessToken, auth.value.openSignIn, auth.value.closeSignIn]) fn.mockReset();
   api.getProjects.mockResolvedValue({ items: [{ project_id: "p1", project_title: "Mine", description: "", created_at: "2025-01-01T00:00:00Z" }] });
   api.getExamples.mockResolvedValue(null);
@@ -236,6 +242,28 @@ describe("account button and sign-in popup", () => {
     expect(await screen.findByRole("dialog", { name: "Confirm your email" })).toBeTruthy();
   });
 
+  it("offers Google when it's set up, and warns that unsaved work is lost", async () => {
+    auth.value.signInOpen = true;
+    const view = await renderButton();
+    expect(screen.queryByRole("button", { name: "Continue with Google" })).toBeNull();
+    view.unmount();
+
+    auth.value.googleEnabled = true;
+    auth.value.startGoogleSignIn.mockResolvedValue(undefined);
+    const second = await renderButton();
+    expect(screen.queryByText(/Google sign-in leaves this page/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Continue with Google" }));
+    await waitFor(() => expect(auth.value.startGoogleSignIn).toHaveBeenCalledWith("/"));
+    second.unmount();
+
+    auth.value.signInHasPendingAction = true;
+    auth.value.startGoogleSignIn.mockRejectedValue(new Error("Accounts are not set up"));
+    await renderButton();
+    expect(screen.getByText(/Google sign-in leaves this page/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Continue with Google" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("Something went wrong. Try again.");
+  });
+
   it("closes on Escape, the close button and a click outside", async () => {
     auth.value.signInOpen = true;
     await renderButton();
@@ -247,6 +275,50 @@ describe("account button and sign-in popup", () => {
     expect(auth.value.closeSignIn).toHaveBeenCalledTimes(2);
     fireEvent.mouseDown(screen.getByRole("dialog").parentElement!);
     expect(auth.value.closeSignIn).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("Google callback page", () => {
+  async function renderCallback(query: string) {
+    const navigation = await import("next/navigation");
+    vi.spyOn(navigation, "useSearchParams").mockReturnValue(new URLSearchParams(query) as never);
+    const replace = vi.fn();
+    vi.spyOn(navigation, "useRouter").mockReturnValue({ replace, push: vi.fn() } as never);
+    const { default: Callback } = await import("@/app/auth/callback/page");
+    render(<Callback />);
+    return replace;
+  }
+
+  it("finishes sign-in and returns to the page it started from", async () => {
+    auth.value.finishGoogleSignIn.mockResolvedValue("/practice");
+    const replace = await renderCallback("code=abc&state=xyz");
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/practice"));
+    expect(auth.value.finishGoogleSignIn).toHaveBeenCalledTimes(1);
+    expect(auth.value.finishGoogleSignIn).toHaveBeenCalledWith("abc", "xyz");
+  });
+
+  it("explains a cancelled, broken or failed sign-in", async () => {
+    await renderCallback("error=access_denied");
+    expect(await screen.findByText("Google sign-in was cancelled.")).toBeTruthy();
+    cleanup();
+    await renderCallback("");
+    expect(await screen.findByText(/missing its code/)).toBeTruthy();
+    cleanup();
+    auth.value.finishGoogleSignIn.mockRejectedValue(new Error("This sign-in link has expired. Try signing in again."));
+    await renderCallback("code=abc&state=old");
+    expect(await screen.findByText(/has expired/)).toBeTruthy();
+    cleanup();
+    auth.value.finishGoogleSignIn.mockRejectedValue("network down");
+    await renderCallback("code=abc&state=xyz");
+    expect(await screen.findByText(/didn’t finish/)).toBeTruthy();
+  });
+
+  it("waits for the saved session check before finishing", async () => {
+    auth.value.ready = false;
+    await renderCallback("code=abc&state=xyz");
+    await act(async () => undefined);
+    expect(auth.value.finishGoogleSignIn).not.toHaveBeenCalled();
+    expect(screen.getByText("Finishing sign-in…")).toBeTruthy();
   });
 });
 
