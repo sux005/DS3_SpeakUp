@@ -110,7 +110,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     }
     queueMicrotask(() => {
       if (!active) return;
-      // A different person may have signed in: drop the last person's cached reviews and audio links.
+      // A different person may have signed in: drop everything cached for the last person.
+      setProjects([]);
+      setRecordings([]);
       setReviews({});
       setAudioUrls({});
       setReady(false);

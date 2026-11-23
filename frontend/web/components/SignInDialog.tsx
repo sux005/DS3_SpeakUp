@@ -66,9 +66,16 @@ export function SignInDialog() {
       void run(() => signIn(email, password));
     } else if (mode === "signup") {
       void run(async () => {
-        await signUp(email, password);
+        try {
+          await signUp(email, password);
+        } catch (caught) {
+          // Say the same thing whether or not the email already has an account, so the
+          // popup can't be used to find out who has signed up.
+          if ((caught as { code?: string; name?: string } | null)?.code !== "UsernameExistsException"
+            && (caught as { name?: string } | null)?.name !== "UsernameExistsException") throw caught;
+        }
         setMode("confirm");
-        setNotice(`We sent a code to ${email.trim()}. Enter it below to finish.`);
+        setNotice(`If ${email.trim()} can be used, we sent it a code. Enter it below to finish. Already have an account? Close this and sign in.`);
       });
     } else {
       void run(async () => {

@@ -106,7 +106,7 @@ describe("auth helpers", () => {
     const { friendlyAuthError, AuthMessageError, NeedsConfirmationError, PASSWORD_RULES } = await loadAuth();
     expect(friendlyAuthError({ code: "NotAuthorizedException" })).toBe("Email or password is incorrect.");
     expect(friendlyAuthError({ name: "UserNotFoundException" })).toBe("Email or password is incorrect.");
-    expect(friendlyAuthError({ code: "UsernameExistsException" })).toMatch(/already exists/);
+    expect(friendlyAuthError({ code: "UsernameExistsException" })).toBe("Something went wrong. Try again.");
     expect(friendlyAuthError({ code: "InvalidPasswordException" })).toContain(PASSWORD_RULES);
     expect(friendlyAuthError({ code: "CodeMismatchException" })).toMatch(/code is not right/);
     expect(friendlyAuthError({ code: "ExpiredCodeException" })).toMatch(/expired/);

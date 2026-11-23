@@ -65,8 +65,6 @@ export function friendlyAuthError(error: unknown): string {
     case "NotAuthorizedException":
     case "UserNotFoundException":
       return "Email or password is incorrect.";
-    case "UsernameExistsException":
-      return "An account with this email already exists. Sign in instead.";
     case "InvalidPasswordException":
       return `That password is too weak. ${PASSWORD_RULES}`;
     case "CodeMismatchException":

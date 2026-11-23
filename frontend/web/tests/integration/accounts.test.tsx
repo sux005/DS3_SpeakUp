@@ -93,6 +93,22 @@ describe("live store with accounts", () => {
     await waitFor(() => expect(screen.getByTestId("state").textContent).toBe("true::Sign in to load your presentations."));
   });
 
+  it("drops the last person's data as soon as someone else signs in", async () => {
+    auth.value.user = { sub: "user-1", email: "pat@example.com" };
+    auth.value.getAccessToken.mockResolvedValue("access-1");
+    const view = await renderStore();
+    await waitFor(() => expect(screen.getByTestId("state").textContent).toBe("true:Mine:"));
+    api.getProjects.mockReturnValue(new Promise(() => undefined));
+    auth.value.user = { sub: "user-2", email: "sam@example.com" };
+    const { LiveProvider, useAppStore } = await import("@/lib/live-store");
+    function Probe() {
+      const store = useAppStore();
+      return <output data-testid="state">{`${store.ready}:${store.projects.map((p) => p.project_title).join(",")}:${store.error ?? ""}`}</output>;
+    }
+    view.rerender(<LiveProvider><Probe /></LiveProvider>);
+    await waitFor(() => expect(screen.getByTestId("state").textContent).toBe("false::"));
+  });
+
   it("waits for a saved session to be restored before loading", async () => {
     auth.value.ready = false;
     await renderStore();
@@ -161,6 +177,30 @@ describe("account button and sign-in popup", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(auth.value.signIn).toHaveBeenCalledWith("pat@example.com", "Secret-Password-1"));
     expect(auth.value.confirmSignUp).toHaveBeenCalledWith("pat@example.com", "123456");
+  });
+
+  it("answers the same way when the email already has an account", async () => {
+    auth.value.signInOpen = true;
+    auth.value.signUp.mockRejectedValueOnce({ code: "UsernameExistsException" }).mockRejectedValueOnce({ code: "InvalidPasswordException" });
+    await renderButton();
+    fireEvent.click(screen.getByRole("button", { name: "New here? Create an account" }));
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "pat@example.com" } });
+    fireEvent.change(screen.getByLabelText(/Password/), { target: { value: "Secret-Password-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+    expect(await screen.findByRole("dialog", { name: "Confirm your email" })).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toMatch(/^If pat@example.com can be used, we sent it a code/);
+    expect(screen.queryByText(/already exists/)).toBeNull();
+  });
+
+  it("still shows other sign-up errors", async () => {
+    auth.value.signInOpen = true;
+    auth.value.signUp.mockRejectedValueOnce({ name: "InvalidPasswordException" });
+    await renderButton();
+    fireEvent.click(screen.getByRole("button", { name: "New here? Create an account" }));
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "pat@example.com" } });
+    fireEvent.change(screen.getByLabelText(/Password/), { target: { value: "short" } });
+    fireEvent.submit(screen.getByRole("button", { name: "Create account" }).closest("form")!);
+    expect((await screen.findByRole("alert")).textContent).toMatch(/too weak/);
   });
 
   it("moves to the code step when the account was never confirmed", async () => {
