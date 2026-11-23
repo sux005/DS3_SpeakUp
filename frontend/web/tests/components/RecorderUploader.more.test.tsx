@@ -69,11 +69,11 @@ describe("RecorderUploader edge cases", () => {
     }
     Object.defineProperty(window, "AudioContext", { configurable: true, value: FakeAudioContext });
     const { container } = render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={10} onSubmit={vi.fn()} />);
-    const bars = () => [...container.querySelectorAll<HTMLElement>('[aria-hidden="true"] > span')];
+    const bars = () => [...container.querySelectorAll<HTMLElement>('[data-testid="microphone-level-meter"] > span')];
 
     await beginRecording();
     expect(connect).toHaveBeenCalledOnce();
-    expect(screen.getByText("Live level from your microphone.")).toBeTruthy();
+    expect(screen.queryByText("Live level from your microphone.")).toBeNull();
     await act(async () => { vi.advanceTimersByTime(170); });
     // Two readings so far: the newest bars carry the measured level, older ones stay flat.
     expect(bars().at(-1)!.style.height).toBe("100%");
@@ -89,7 +89,7 @@ describe("RecorderUploader edge cases", () => {
     });
     expect(close).toHaveBeenCalledOnce();
     expect(bars().every((bar) => bar.style.height === "0%")).toBe(true);
-    expect(screen.getByText("The level meter moves while you record.")).toBeTruthy();
+    expect(screen.queryByText("The level meter moves while you record.")).toBeNull();
     Reflect.deleteProperty(window, "AudioContext");
   });
 
@@ -98,7 +98,7 @@ describe("RecorderUploader edge cases", () => {
     render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={10} onSubmit={vi.fn()} />);
     await beginRecording();
     expect(screen.getByText("RECORDING 00:00 / 00:10")).toBeTruthy();
-    expect(screen.getByText("The level meter moves while you record.")).toBeTruthy();
+    expect(screen.queryByText("The level meter moves while you record.")).toBeNull();
     Reflect.deleteProperty(window, "AudioContext");
   });
 
@@ -126,6 +126,32 @@ describe("RecorderUploader edge cases", () => {
 
     await beginRecording();
     expect(FakeRecorder.instances[0].mimeType).toBe("audio/mp4");
+  });
+
+  it("retries with the browser default format when the selected format fails at start", async () => {
+    render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={10} onSubmit={vi.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "● Record audio" })); });
+    FakeRecorder.instances[0].start.mockImplementationOnce(() => {
+      throw new DOMException("format unavailable", "NotSupportedError");
+    });
+    await act(async () => { vi.advanceTimersByTime(3000); });
+
+    expect(FakeRecorder.instances).toHaveLength(2);
+    expect(FakeRecorder.instances[1].start).toHaveBeenCalledOnce();
+    expect(screen.getByRole("button", { name: "■ Stop recording" })).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("explains when the microphone becomes unavailable before recording starts", async () => {
+    render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={10} onSubmit={vi.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "● Record audio" })); });
+    FakeRecorder.instances[0].start.mockImplementationOnce(() => {
+      throw new DOMException("device busy", "NotReadableError");
+    });
+    await act(async () => { vi.advanceTimersByTime(3000); });
+
+    expect(screen.getByRole("alert").textContent).toContain("microphone is unavailable or in use");
+    expect(tracks.every((track) => track.stop.mock.calls.length === 1)).toBe(true);
   });
 
   it("can cancel the countdown without saving microphone audio", async () => {

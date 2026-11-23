@@ -210,7 +210,7 @@ describe("home and project routes", () => {
   it("submits a new attempt for the current project and navigates to its status", async () => {
     render(<NewAttemptPage />);
     expect(screen.getByRole("heading", { name: "Record or upload" })).toBeTruthy();
-    expect(screen.getByText(/preview or discard your audio/)).toBeTruthy();
+    expect(screen.getByText(/preview or discard your audio/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Analyze demo recording" }));
     expect(harness.store.createRecording).toHaveBeenCalledWith("project-1", expect.any(Blob), "test.wav");
     await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith("/recordings/created-recording/analyzing"));

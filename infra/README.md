@@ -366,8 +366,8 @@ to inspect the organization's policies, so the effective runtime permission
 remains unverified. A production stack named `speakup-prod` was not present in
 this account and Region. Authenticated tests with two Cognito test users are
 still needed for cross-owner reads, signed upload/download boundaries, URL
-expiry, and live deletion and version purge. See
-[work_notes 3.md](../work_notes%203.md) for the remaining security-review checklist.
+expiry, and live deletion and version purge. The remaining checklist is in the
+local `WORK_NOTES.md` file.
 
 ## Cleanup
 

@@ -19,12 +19,13 @@ recordings identify their project and are listed through
 transcript, compact metrics, and optional feedback from `/review`; fetch the
 owner-checked `analysis` artifact separately for timed filler and pause markers.
 
-Recording, the countdown, preview, and retakes are local UI actions. In live
-mode, **Start presentation with audio** on the home form or New attempt page is
+Recording, the single start/resume countdown, Pause / Resume, preview, and
+retakes are local UI actions. Paused time does not use the active recording
+limit. In live mode, **Start presentation with audio** on the home form or New attempt page is
 the write boundary for project creation and audio upload. The page still reads
 session, project, and limit data on load. Browser speech recognition provides
-provisional live words, filler counts, and pace; a browser vendor may process
-speech for recognition. Only the submitted audio enters SpeakUp's scoring
+provisional live words and pace; the live UI does not show filler counts. A
+browser vendor may process speech for recognition. Only the submitted audio enters SpeakUp's scoring
 pipeline. The retake confirmation's **Don't show again** choice is stored in
 that browser's `localStorage`, not in the user account. See the
 [web app guide](web/README.md#recording-and-submission-boundary) for details.
@@ -49,4 +50,5 @@ same timeline. Selecting a marked phrase seeks to its `start_seconds` and
 shows its `observation` and `next_step`; `kind` distinguishes a strength
 from an improvement. Moment timing is based on Transcribe word positions, and
 not every phrase has feedback. Older feedback artifacts have only a summary
-string, which the review screen still displays.
+string, which the review screen formats in a collapsed detail section when it
+contains multiline headings, lists, or an exercise table.

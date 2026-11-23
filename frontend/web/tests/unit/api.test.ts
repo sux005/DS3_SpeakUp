@@ -21,6 +21,20 @@ describe("preserved AWS API contract helpers", () => {
     expect(fetcher.mock.calls[1][0]).toContain("a%2Fb/recordings");
     expect(fetcher.mock.calls[3][0]).toContain("r%2F1/artifacts/analysis");
   });
+  it("uses the fixed example routes with authenticated, encoded requests", async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({ recordings: [], download_url: "https://download.test" }));
+    vi.stubGlobal("fetch", fetcher);
+    const a = await api();
+    await a.getExamples("jwt");
+    await a.getExampleRecording("jwt", "example/strong");
+    await a.getExampleDownloadUrl("jwt", "example/strong");
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+      "https://example.test/examples",
+      "https://example.test/examples/example%2Fstrong",
+      "https://example.test/examples/example%2Fstrong/download",
+    ]);
+    expect(fetcher.mock.calls.every(([, init]) => init.headers.Authorization === "Bearer jwt")).toBe(true);
+  });
   it("creates projects and normalizes completed reviews", async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(response({ project_id: "p1", project_title: "Talk", description: "", created_at: "2026-01-01" }, 201))

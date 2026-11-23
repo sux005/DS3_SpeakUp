@@ -18,6 +18,7 @@ const bubble: Record<RecorderStatus, string | null> = {
   idle: "Ready to record.",
   countdown: "Get ready to speak.",
   recording: null,
+  paused: null,
   ready: "Have a listen before you start the review.",
 };
 
@@ -54,7 +55,7 @@ function NewAttemptContent() {
         <div className="flex min-w-0 flex-1 flex-col gap-6">
           <div className="flex flex-col gap-1.5">
             <h2 className="font-display text-2xl font-bold text-cream">Add your audio</h2>
-            <p className="max-w-xl text-cream/85">Find a quiet space and speak naturally. You can preview or discard your audio before starting the review.</p>
+            <p className="max-w-xl text-cream/85">Preview or discard your audio before starting the review.</p>
           </div>
           <RecorderUploader
             live={live}

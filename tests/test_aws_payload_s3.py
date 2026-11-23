@@ -85,6 +85,29 @@ def test_upload_presign_cryptographically_binds_content_length():
     assert "content-length" in signed_headers.split(";")
 
 
+def test_original_upload_signs_owner_and_immutable_write_headers():
+    """The browser cannot change the reserved owner scope or overwrite an object."""
+
+    store, _ = make_store()
+    checksum = base64.b64encode(hashlib.sha256(b"audio").digest()).decode("ascii")
+    intent = store.create_upload_intent(
+        "user-1", "project-1", "recording-1", "audio/wav", checksum,
+        expected_content_length=5,
+    )
+
+    headers = dict(intent.required_headers)
+    assert headers["Content-Type"] == "audio/wav"
+    assert headers["If-None-Match"] == "*"
+    assert headers["x-amz-server-side-encryption"] == "AES256"
+    assert headers["x-amz-checksum-sha256"] == checksum
+    assert headers["x-amz-meta-owner-id"] == "user-1"
+    assert headers["x-amz-meta-project-id"] == "project-1"
+    assert headers["x-amz-meta-recording-id"] == "recording-1"
+    assert headers["x-amz-meta-payload-type"] == PayloadType.ORIGINAL_AUDIO.value
+    signed = set(parse_qs(urlparse(intent.upload_url).query)["X-Amz-SignedHeaders"][0].split(";"))
+    assert {name.lower() for name in headers} <= signed
+
+
 def test_original_upload_signs_and_verifies_full_sha256():
     store, _ = make_store()
     checksum = base64.b64encode(hashlib.sha256(b"audio bytes").digest()).decode("ascii")

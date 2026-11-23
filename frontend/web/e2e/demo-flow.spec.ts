@@ -21,6 +21,47 @@ function demoState(recordingId: string, status: "PROCESSING" | "COMPLETE" | "FAI
 }
 
 test.describe("fixture-backed presentation navigation", () => {
+  test("pauses and resumes a microphone take before preview", async ({ page }) => {
+    await page.addInitScript(() => {
+      class TestRecorder {
+        static isTypeSupported() { return true; }
+        state: RecordingState = "inactive";
+        mimeType = "audio/webm";
+        ondataavailable: ((event: BlobEvent) => void) | null = null;
+        onstop: (() => void) | null = null;
+        start() { this.state = "recording"; }
+        pause() { this.state = "paused"; }
+        resume() { this.state = "recording"; }
+        stop() {
+          this.state = "inactive";
+          this.ondataavailable?.({ data: new Blob(["audio"], { type: this.mimeType }) } as BlobEvent);
+          this.onstop?.();
+        }
+      }
+      Object.defineProperty(window, "MediaRecorder", { configurable: true, value: TestRecorder });
+      Object.defineProperty(navigator, "mediaDevices", {
+        configurable: true,
+        value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) },
+      });
+      Object.defineProperty(window, "SpeechRecognition", { configurable: true, value: undefined });
+      Object.defineProperty(window, "webkitSpeechRecognition", { configurable: true, value: undefined });
+    });
+    await startWithCleanDemo(page);
+    await page.getByRole("link", { name: "Open presentation" }).click();
+    await page.getByRole("link", { name: "+ New attempt" }).click();
+    await page.getByRole("button", { name: "● Record audio" }).click();
+    await expect(page.getByText("Recording starts in 3…")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Ⅱ Pause recording" })).toBeVisible({ timeout: 5_000 });
+    await page.getByRole("button", { name: "Ⅱ Pause recording" }).click();
+    await expect(page.getByText(/^PAUSED \d\d:\d\d \/ 10:00$/)).toBeVisible();
+    await page.getByRole("button", { name: "▶ Resume recording" }).click();
+    await expect(page.getByText("Recording resumes in 3…")).toBeVisible();
+    await expect(page.getByText("Recording resumes in 1…")).toBeVisible();
+    await expect(page.getByText(/^RECORDING \d\d:\d\d \/ 10:00$/)).toBeVisible();
+    await page.getByRole("button", { name: "■ Stop recording" }).click();
+    await expect(page.getByLabel("Preview selected audio")).toBeVisible();
+  });
+
   test("opens a seeded presentation and its new-attempt flow", async ({ page }) => {
     await startWithCleanDemo(page);
     await page.getByRole("link", { name: "Open presentation" }).click();
@@ -32,7 +73,7 @@ test.describe("fixture-backed presentation navigation", () => {
     await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/new$`));
     await expect(page.getByRole("heading", { name: "Record or upload" })).toBeVisible();
     await expect(page.getByText("WAV, MP3, M4A or WebM, up to 100 MB.")).toBeVisible();
-    await expect(page.getByText("Uses your microphone. Recording stops after 10 minutes.")).toBeVisible();
+    await expect(page.getByText("Uses your microphone. Recording stops after 10 minutes.")).toHaveCount(0);
   });
 
   test("uploads a local audio file and enters analyzing without an API", async ({ page }) => {

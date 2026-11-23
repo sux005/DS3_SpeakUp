@@ -146,9 +146,11 @@ For the local frontend demo, use Node.js 20.9 or newer and run `npm ci` in
 Playwright. It supports sample data and a development API bridge; the bridge
 requires guest mode and is disabled in production. Transcript review uses
 timed words with filler highlighting, filters, and click-to-seek playback.
-Recording, countdown, preview, retake confirmation, and provisional live speech
-estimates run in the browser. Live-mode page load still reads session, projects,
-and limits; **Start presentation with audio** triggers project creation and audio
+Recording, the single start/resume countdown, Pause / Resume, preview, retake
+confirmation, and provisional live transcript and pace run in the browser. Pause
+freezes active recording time; the live filler estimate is no longer shown.
+Live-mode page load still reads session, projects, and limits;
+**Start presentation with audio** triggers project creation and audio
 upload. Browser speech recognition may use a vendor service. The retake prompt
 preference is browser `localStorage`, not backend account state.
 
@@ -171,10 +173,13 @@ access uses the short-lived `speakup` profile.
 - Launch notebooks: `jupyter lab notebooks/`
 - Validate locally: `python -m pytest -q --basetemp .test-tmp -p no:cacheprovider`
 - Validate the frontend from `frontend/web/`: `npm run lint` and
-  `npm run test:all` (coverage-gated unit/integration tests, production build,
-  and Playwright browser tests). `npm run test:e2e` alone requires a prior
-  `npm run build`. In environments that restrict Turbopack worker ports,
-  use `npx next build --webpack` for the production-build check.
+  `NEXT_PUBLIC_SPEAKUP_API_URL= npm run test:all` (coverage-gated
+  unit/integration tests, demo-mode production build, and Playwright browser
+  tests). `npm run test:e2e` alone requires a prior demo-mode build. If
+  `.env.local` sets the live bridge URL, explicitly clear it for demo browser
+  tests. In environments that restrict Turbopack worker ports, use
+  `npx next build --webpack` for a compilation check; this webpack fallback
+  does not apply the project's Turbopack Tailwind loader for visual checks.
 - Opt-in deployed workflow smoke test: set `SPEAKUP_LIVE_E2E=1`,
   `SPEAKUP_E2E_API_URL`, `SPEAKUP_E2E_JWT`, and `SPEAKUP_E2E_WAV_PATH` to a
   non-private spoken-English WAV, then run

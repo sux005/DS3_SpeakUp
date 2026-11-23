@@ -1,4 +1,4 @@
-// A provisional reading of finalized browser-recognized words. The saved
+// A provisional reading of browser-recognized words, including interim words. The saved
 // rubric uses timed Amazon Transcribe words and remains the source of scores.
 const scoredSingles = new Set(["um", "uh", "er", "erm", "ah"]);
 const youKnowExclusions = new Set(["do", "did", "don't", "if", "as", "would", "to"]);
@@ -31,8 +31,8 @@ export function liveFeedback(text: string, elapsedSeconds: number) {
 
   const spokenWords = words.filter((word) => !marked.has(word.index)).length;
   // Browser recognition has no word timestamps. This uses wall-clock recording
-  // time and waits for a useful sample rather than implying rubric precision.
-  const pace = elapsedSeconds >= 15 && spokenWords >= 5
+  // time and waits for a small sample rather than implying rubric precision.
+  const pace = elapsedSeconds >= 5 && spokenWords >= 5
     ? Math.round((spokenWords * 60) / elapsedSeconds)
     : null;
 

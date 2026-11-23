@@ -15,6 +15,8 @@ class FakeRecorder {
   ondataavailable?: (event: { data: Blob }) => void;
   onstop?: () => void;
   start = vi.fn(() => { this.state = "recording"; });
+  pause = vi.fn(() => { this.state = "paused"; });
+  resume = vi.fn(() => { this.state = "recording"; });
   stop = vi.fn(() => {
     this.state = "inactive";
     this.ondataavailable?.({ data: new Blob(["audio"], { type: this.mimeType }) });
@@ -111,6 +113,7 @@ describe("RecorderUploader live transcript", () => {
 
     await act(async () => { vi.advanceTimersByTime(1000); });
     expect(screen.getByText("Recording starts in 2…")).toBeTruthy();
+    expect(screen.queryByText("STARTING IN 2")).toBeNull();
     await act(async () => { vi.advanceTimersByTime(1000); });
     expect(screen.getByText("Recording starts in 1…")).toBeTruthy();
     await act(async () => { vi.advanceTimersByTime(1000); });
@@ -130,32 +133,58 @@ describe("RecorderUploader live transcript", () => {
     expect(screen.getByText("hello everyone")).toBeTruthy();
   });
 
-  it("tracks interim fillers immediately and does not double-count them when finalized", async () => {
+  it("shows spoken words without highlighting fillers or displaying a filler estimate", async () => {
     render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={10} onSubmit={vi.fn()} />);
     await beginRecording();
     const recognition = FakeRecognition.instances[0];
-
-    await act(async () => recognition.emitResult("um"));
-    expect(screen.getByLabelText("1 estimated filler words")).toBeTruthy();
-    expect(screen.getByText("Includes 1 provisional filler")).toBeTruthy();
 
     await act(async () => recognition.emitResult("um hello"));
-    expect(screen.getByLabelText("1 estimated filler words")).toBeTruthy();
-
     await act(async () => recognition.emitResult("um hello", true));
-    expect(screen.getByLabelText("1 estimated filler words")).toBeTruthy();
-    expect(screen.queryByText("Includes 1 provisional filler")).toBeNull();
+    expect(screen.getByText("um hello")).toBeTruthy();
+    expect(screen.queryByText(/filler words · live estimate/i)).toBeNull();
+    expect(screen.queryByLabelText(/estimated filler words/i)).toBeNull();
+    expect(screen.getByLabelText("Pace estimate unavailable")).toBeTruthy();
   });
 
-  it("revises a provisional filler when recognition changes its guess", async () => {
-    render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={10} onSubmit={vi.fn()} />);
+  it("shows pace against a labeled target band once enough speech is captured", async () => {
+    render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={60} onSubmit={vi.fn()} />);
     await beginRecording();
     const recognition = FakeRecognition.instances[0];
 
-    await act(async () => recognition.emitResult("um"));
-    expect(screen.getByLabelText("1 estimated filler words")).toBeTruthy();
-    await act(async () => recognition.emitResult("I'm"));
-    expect(screen.getByLabelText("0 estimated filler words")).toBeTruthy();
+    await act(async () => recognition.emitResult(Array(35).fill("word").join(" ")));
+    expect(screen.getByLabelText("Pace estimate unavailable")).toBeTruthy();
+    await act(async () => { vi.advanceTimersByTime(15000); });
+    expect(screen.getByLabelText("Estimated pace 140 words per minute")).toBeTruthy();
+    expect(screen.getByText("Within target pace")).toBeTruthy();
+    expect(screen.getByRole("img", { name: /current estimate is 140/ })).toBeTruthy();
+    expect(screen.getByText("Target 135–155 WPM")).toBeTruthy();
+    expect(screen.getByRole("img", { name: /Pace trend from .* to 140 words per minute/ })).toBeTruthy();
+
+    await act(async () => { vi.advanceTimersByTime(1000); });
+    expect(screen.getByRole("img", { name: /Pace trend from .* to 131 words per minute/ })).toBeTruthy();
+    expect(screen.getByText("Pace trend")).toBeTruthy();
+
+    await act(async () => recognition.emitResult(Array(20).fill("word").join(" ")));
+    expect(screen.getByText("Below target pace")).toBeTruthy();
+    await act(async () => recognition.emitResult(Array(45).fill("word").join(" ")));
+    expect(screen.getByText("Above target pace")).toBeTruthy();
+  });
+
+  it("shows an early pace and updates the graph as interim words arrive", async () => {
+    render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={60} onSubmit={vi.fn()} />);
+    await beginRecording();
+    const recognition = FakeRecognition.instances[0];
+
+    await act(async () => recognition.emitResult(Array(12).fill("word").join(" ")));
+    await act(async () => { vi.advanceTimersByTime(5000); });
+    expect(screen.getByLabelText("Estimated pace 144 words per minute")).toBeTruthy();
+    expect(screen.getByText("EARLY ESTIMATE")).toBeTruthy();
+    expect(screen.getByRole("img", { name: /Pace trend started at 144 words per minute/ })).toBeTruthy();
+
+    await act(async () => { vi.advanceTimersByTime(1000); });
+    expect(screen.getByRole("img", { name: /Pace trend from 144 to 120 words per minute/ })).toBeTruthy();
+    await act(async () => recognition.emitResult(Array(14).fill("word").join(" ")));
+    expect(screen.getByRole("img", { name: /Pace trend from 144 to 140 words per minute/ })).toBeTruthy();
   });
 
   it("keeps final words when a later interim result changes", async () => {
@@ -188,6 +217,94 @@ describe("RecorderUploader live transcript", () => {
     expect(screen.getByText(/this is my recording/)).toBeTruthy();
   });
 
+  it("pauses the active timer and resumes the same take with its transcript", async () => {
+    const onStatusChange = vi.fn();
+    render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={10} onSubmit={vi.fn()} onStatusChange={onStatusChange} />);
+    await beginRecording();
+    const firstRecognition = FakeRecognition.instances[0];
+    await act(async () => firstRecognition.emitResult("first thought", true));
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Ⅱ Pause recording" })));
+
+    expect(FakeRecorder.instances[0].pause).toHaveBeenCalledOnce();
+    expect(firstRecognition.stop).toHaveBeenCalledOnce();
+    expect(onStatusChange).toHaveBeenLastCalledWith("paused");
+    expect(screen.getByText("PAUSED 00:02 / 00:10")).toBeTruthy();
+    await act(async () => { vi.advanceTimersByTime(30_000); });
+    expect(screen.getByText("PAUSED 00:02 / 00:10")).toBeTruthy();
+    expect(FakeRecorder.instances[0].stop).not.toHaveBeenCalled();
+
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "▶ Resume recording" })));
+    expect(screen.getByText("Recording resumes in 3…")).toBeTruthy();
+    expect(FakeRecorder.instances[0].resume).not.toHaveBeenCalled();
+    await act(async () => { vi.advanceTimersByTime(1000); });
+    expect(screen.getByText("Recording resumes in 2…")).toBeTruthy();
+    await act(async () => { vi.advanceTimersByTime(1000); });
+    expect(screen.getByText("Recording resumes in 1…")).toBeTruthy();
+    expect(screen.queryByText(/RECORDING 00:/)).toBeNull();
+    await act(async () => { vi.advanceTimersByTime(1000); });
+    expect(FakeRecorder.instances[0].resume).toHaveBeenCalledOnce();
+    expect(FakeRecognition.instances).toHaveLength(2);
+    expect(onStatusChange).toHaveBeenLastCalledWith("recording");
+    await act(async () => FakeRecognition.instances[1].emitResult("second thought", true));
+    expect(screen.getByText(/first thought second thought/)).toBeTruthy();
+    await act(async () => { vi.advanceTimersByTime(8000); });
+    expect(FakeRecorder.instances[0].stop).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText("Preview selected audio")).toBeTruthy();
+  });
+
+  it("can stop while paused and ignore late recognition events", async () => {
+    render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={10} onSubmit={vi.fn()} />);
+    await beginRecording();
+    const recognition = FakeRecognition.instances[0];
+    await act(async () => recognition.emitResult("saved words"));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Ⅱ Pause recording" })));
+    await act(async () => recognition.emitResult("late words", true));
+    expect(screen.queryByText(/late words/)).toBeNull();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "■ Stop recording" })));
+    expect(FakeRecorder.instances[0].stop).toHaveBeenCalledOnce();
+    expect(screen.getByText(/saved words/)).toBeTruthy();
+    expect(screen.getByLabelText("Preview selected audio")).toBeTruthy();
+  });
+
+  it("can cancel or stop during the resume countdown without capturing more audio", async () => {
+    render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={10} onSubmit={vi.fn()} />);
+    await beginRecording();
+    const recorder = FakeRecorder.instances[0];
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Ⅱ Pause recording" })));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "▶ Resume recording" })));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Cancel countdown" })));
+    await act(async () => { vi.advanceTimersByTime(3000); });
+    expect(recorder.resume).not.toHaveBeenCalled();
+    expect(screen.getByText("PAUSED 00:00 / 00:10")).toBeTruthy();
+
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "▶ Resume recording" })));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "■ Stop recording" })));
+    await act(async () => { vi.advanceTimersByTime(3000); });
+    expect(recorder.resume).not.toHaveBeenCalled();
+    expect(recorder.stop).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText("Preview selected audio")).toBeTruthy();
+  });
+
+  it("stays recording if pause fails and keeps the paused take if resume fails", async () => {
+    render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={10} onSubmit={vi.fn()} />);
+    await beginRecording();
+    const recorder = FakeRecorder.instances[0];
+    recorder.pause.mockImplementationOnce(() => { throw new DOMException("busy", "InvalidStateError"); });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Ⅱ Pause recording" })));
+    expect(screen.getByRole("alert").textContent).toContain("could not be paused");
+    expect(screen.getByText("RECORDING 00:00 / 00:10")).toBeTruthy();
+
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Ⅱ Pause recording" })));
+    recorder.resume.mockImplementationOnce(() => { throw new DOMException("busy", "InvalidStateError"); });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "▶ Resume recording" })));
+    await act(async () => { vi.advanceTimersByTime(3000); });
+    expect(screen.getByRole("alert").textContent).toContain("could not resume");
+    expect(screen.getByText("PAUSED 00:00 / 00:10")).toBeTruthy();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "■ Stop recording" })));
+    expect(screen.getByLabelText("Preview selected audio")).toBeTruthy();
+  });
+
   it("offers Record again and clears the previous take when the new one starts", async () => {
     render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={10} onSubmit={vi.fn()} />);
     await beginRecording();
@@ -216,7 +333,7 @@ describe("RecorderUploader live transcript", () => {
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "■ Stop recording" })));
 
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "● Record again" })));
-    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Keep recording" })));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Keep this take" })));
 
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByLabelText("Preview selected audio")).toBeTruthy();
@@ -246,7 +363,7 @@ describe("RecorderUploader live transcript", () => {
 
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "● Record again" })));
     fireEvent.click(screen.getByRole("checkbox", { name: "Don’t show again" }));
-    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Keep recording" })));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Keep this take" })));
 
     expect(window.localStorage.getItem("speakup-skip-record-again-confirmation")).toBeNull();
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "● Record again" })));
