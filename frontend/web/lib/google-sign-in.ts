@@ -4,7 +4,7 @@
 // There is no client secret in the browser; PKCE ties the code to this browser tab.
 //
 // Needs NEXT_PUBLIC_COGNITO_DOMAIN, the stack output CognitoDomain
-// (for example speakup-dev-123456789012.auth.us-east-2.amazoncognito.com).
+// (for example speakup-dev-1a2b3c4d.auth.us-east-2.amazoncognito.com).
 
 const STORAGE_KEY = "speakup-google-sign-in";
 

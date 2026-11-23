@@ -412,10 +412,15 @@ Resources:
     Metadata:
       com.aws.cloudformation.Context:
         why: Cognito-hosted sign-in pages that redirect to Google and back
-        must: [Prefix stays lowercase and must not contain aws, amazon or cognito]
+        must: [Prefix stays lowercase and must not contain aws, amazon or cognito, Prefix never includes the account ID]
     Properties:
       UserPoolId: !Ref UserPool
-      Domain: !Sub '${AWS::StackName}-${AWS::AccountId}'
+      # Stack name plus the first block of the stack's own UUID: unique, stable, and it
+      # doesn't put the AWS account ID in a URL every user sees.
+      Domain: !Join
+        - '-'
+        - - !Ref AWS::StackName
+          - !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
       ManagedLoginVersion: 1
 
   GoogleIdentityProvider:

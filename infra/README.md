@@ -45,14 +45,17 @@ real production frontend origin before deploying a production stack.
 
 Google sign-in is off until `GoogleClientId` is set. To turn it on for a development stack:
 
-1. In Google Cloud Console, create an OAuth client of type "Web application". Add this
-   authorized redirect URI: `https://<stack-name>-<account-id>.auth.<region>.amazoncognito.com/oauth2/idpresponse`
-   (for `speakup-dev`: `https://speakup-dev-<account-id>.auth.us-east-2.amazoncognito.com/oauth2/idpresponse`).
+1. In Google Cloud Console, create an OAuth client of type "Web application".
 2. Store the client secret in Secrets Manager as JSON with the key `client_secret`,
    for example in a secret named `speakup/dev/google-oauth`. It never goes in a parameter or the repo.
 3. Deploy with `GoogleClientId=<id>.apps.googleusercontent.com` and
    `GoogleClientSecretName=speakup/dev/google-oauth`.
-4. Copy the `CognitoDomain` output to the frontend as `NEXT_PUBLIC_COGNITO_DOMAIN`.
+4. Read the `CognitoDomain` output. It is the stack name plus a short ID taken from the
+   stack, for example `speakup-dev-1a2b3c4d.auth.us-east-2.amazoncognito.com`, and never
+   contains the account ID.
+5. Back in Google Cloud Console, add `https://<CognitoDomain>/oauth2/idpresponse` as an
+   authorized redirect URI. Google sign-in fails until this matches.
+6. Copy `CognitoDomain` to the frontend as `NEXT_PUBLIC_COGNITO_DOMAIN`.
 
 This adds a Cognito hosted sign-in domain, a Google identity provider, and the
 authorization code flow (with PKCE in the browser) on the existing app client. The
