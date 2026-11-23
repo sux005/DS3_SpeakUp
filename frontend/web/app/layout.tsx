@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { DM_Mono, DM_Sans, Fredoka } from "next/font/google";
 import { SiteFooter } from "@/components/Scenery";
 import { SiteNav } from "@/components/SiteNav";
+import { AuthProvider } from "@/lib/auth";
 import { DemoProvider } from "@/lib/demo-store";
 import { LiveProvider } from "@/lib/live-store";
 import "./globals.css";
@@ -39,13 +40,15 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         <script dangerouslySetInnerHTML={{ __html: "try{document.documentElement.dataset.theme=localStorage.getItem('speakup-theme')==='dark'?'dark':'light'}catch{document.documentElement.dataset.theme='light'}" }} />
-        <DemoProvider>
-          <LiveProvider>
-            <SiteNav />
-            {children}
-            <SiteFooter />
-          </LiveProvider>
-        </DemoProvider>
+        <AuthProvider>
+          <DemoProvider>
+            <LiveProvider>
+              <SiteNav />
+              {children}
+              <SiteFooter />
+            </LiveProvider>
+          </DemoProvider>
+        </AuthProvider>
       </body>
     </html>
   );

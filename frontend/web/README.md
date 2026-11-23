@@ -23,6 +23,25 @@ AWS_PROFILE=speakup SPEAKUP_DEV_GUEST_MODE=1 NEXT_PUBLIC_SPEAKUP_API_URL=/api/sp
 
 The browser creates projects, reserves an upload, sends the original file to the signed S3 URL, polls the recording, then loads the transcript, analysis metrics, optional coaching, and a signed playback URL. The backend performs noise cancellation, transcription, scoring, and optional Bedrock generation. Set the stack parameter `EnableBedrockFeedback=true` to generate coaching; otherwise a completed review can return `feedback: null`.
 
+### Accounts (Cognito sign-in)
+
+Set these two values to turn on accounts. Both are outputs of the stack in `infra/speakup.yaml` (`UserPoolId` and `UserPoolClientId`), and neither is a secret:
+
+```bash
+NEXT_PUBLIC_COGNITO_USER_POOL_ID=us-east-2_xxxxxxxxx
+NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxx
+NEXT_PUBLIC_SPEAKUP_API_URL=https://<api-id>.execute-api.us-east-2.amazonaws.com
+```
+
+With accounts on:
+
+- **SIGN IN** in the top-right corner opens a sign-in popup. People can sign in, create an account, and enter the code Cognito emails them.
+- **+ New presentation** opens the same popup for signed-out visitors, then opens the form once they sign in.
+- Every API call sends the person's Cognito access token as `Authorization: Bearer`. The API's JWT authorizer checks it, and the backend stores projects and recordings under the token's `sub`. This is what keeps each person's history for progress charts.
+- The guest bridge is not used.
+
+Without the Cognito values, nothing changes: the guest bridge or the local preview works as before, and no sign-in button shows. Passwords go straight from the browser to Cognito (SRP). MFA, password reset and the production stack are not handled yet. Code: `lib/auth.tsx`, `components/AccountButton.tsx`, `components/SignInDialog.tsx`.
+
 ### Recording and submission boundary
 
 On **New presentation**, opening the form, recording, the 3–2–1 countdown, previewing, cancelling, and recording again stay in the browser. The form scrolls into view when opened. After a recorded take, **Record again** asks for confirmation; the current take remains available through microphone setup and the countdown, then is replaced when the new recording starts. Confirming with **Don’t show again** stores only `speakup-skip-record-again-confirmation=true` in this browser's `localStorage`. Cancelling does not save that choice. The preference survives reloads on this browser profile, is not account-scoped, and is removed by clearing site data.

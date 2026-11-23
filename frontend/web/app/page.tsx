@@ -9,6 +9,7 @@ import { Mascot } from "@/components/Mascot";
 import { HomeSkeleton } from "@/components/LoadingSkeleton";
 import { FernCluster, Perch, ValleyBackdrop } from "@/components/Scenery";
 import { RecorderUploader } from "@/components/RecorderUploader";
+import { useAuth, useRequireSignIn } from "@/lib/auth";
 import { useAppStore } from "@/lib/live-store";
 import { EXAMPLE_PROJECT_ID } from "@/lib/api";
 import { formatDate, formatTake, getTakes } from "@/lib/recordings";
@@ -28,6 +29,9 @@ function latestAttempt(take: Take) {
 export default function Home() {
   const router = useRouter();
   const { projects, recordings, reviews, createProject, createRecording, limits, ready, error, live } = useAppStore();
+  const { configured: accounts, user } = useAuth();
+  const requireSignIn = useRequireSignIn();
+  const signedOut = accounts && !user;
   const exampleProject = projects.find((project) => project.project_id === EXAMPLE_PROJECT_ID);
   // A finished, scored take to point newcomers at, when one exists.
   const scored = recordings.find((recording) => recording.status === "COMPLETE" && reviews[recording.recording_id]?.analysis);
@@ -80,7 +84,7 @@ export default function Home() {
             <p className="text-[17px] text-ink">
               Record a talk, read it back as a transcript, and see your pace, filler words and pauses, with feedback for your next take.
             </p>
-            <Button variant={recent ? "secondary" : "primary"} disabled={!ready} aria-expanded={creating} aria-controls="new-presentation" onClick={() => setCreating((value) => !value)}>
+            <Button variant={recent ? "secondary" : "primary"} disabled={!ready} aria-expanded={creating} aria-controls="new-presentation" onClick={() => creating ? setCreating(false) : requireSignIn(() => setCreating(true))}>
               {creating ? "Cancel" : "+ New presentation"}
             </Button>
           </div>
@@ -129,8 +133,8 @@ export default function Home() {
           {error && <p className="text-sm text-rust" role="alert">{error}</p>}
           {!ready ? <HomeSkeleton label={live ? "Loading presentations…" : "Loading local presentations…"} /> : !recent ? (
             <div className="flex flex-col gap-1">
-              <p className="text-lg font-semibold text-ink">No presentations yet.</p>
-              <p className="text-muted">Create one to start practicing.</p>
+              <p className="text-lg font-semibold text-ink">{signedOut ? "Sign in to see your presentations." : "No presentations yet."}</p>
+              <p className="text-muted">{signedOut ? "Your recordings and scores are saved to your account, so you can track progress over time." : "Create one to start practicing."}</p>
             </div>
           ) : (
             <>
@@ -192,7 +196,11 @@ export default function Home() {
               .
             </p>
           )}
-          <p className="text-sm text-muted">{live ? "Recordings sync to your SpeakUp account." : "Local demo data stays in this browser. AWS sign-in and sync are not connected."}</p>
+          <p className="text-sm text-muted">
+            {signedOut ? "Sign in to save your recordings and scores to your SpeakUp account."
+              : live ? "Recordings sync to your SpeakUp account."
+              : "Local demo data stays in this browser. AWS sign-in and sync are not connected."}
+          </p>
         </div>
       </div>
     </main>
