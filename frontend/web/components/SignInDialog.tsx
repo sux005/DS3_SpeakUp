@@ -21,6 +21,9 @@ export function SignInDialog() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // True when sign-up hit an email that already has an account. The code step then answers
+  // exactly as it would for a new account, so it can't be used to check who has signed up.
+  const [existing, setExisting] = useState(false);
   const panel = useRef<HTMLDivElement>(null);
 
   // Focus the first field, close on Escape, and give focus back to whatever opened the popup.
@@ -41,6 +44,7 @@ export function SignInDialog() {
     setMode(target);
     setError(null);
     setNotice(null);
+    setExisting(false);
   }
 
   async function run(action: () => Promise<void>) {
@@ -73,12 +77,14 @@ export function SignInDialog() {
           // popup can't be used to find out who has signed up.
           if ((caught as { code?: string; name?: string } | null)?.code !== "UsernameExistsException"
             && (caught as { name?: string } | null)?.name !== "UsernameExistsException") throw caught;
+          setExisting(true);
         }
         setMode("confirm");
         setNotice(`If ${email.trim()} can be used, we sent it a code. Enter it below to finish. Already have an account? Close this and sign in.`);
       });
     } else {
       void run(async () => {
+        if (existing) throw { code: "CodeMismatchException" };
         await confirmSignUp(email, code);
         // The password is still in the form, so sign in right away instead of asking again.
         await signIn(email, password);
@@ -142,7 +148,10 @@ export function SignInDialog() {
             )}
             {mode === "confirm" && (
               <button type="button" disabled={busy} className={textButton}
-                onClick={() => void run(async () => { await resendCode(email); setNotice("We sent a new code."); })}>
+                onClick={() => void run(async () => {
+                  if (!existing) await resendCode(email);
+                  setNotice("We sent a new code.");
+                })}>
                 Send a new code
               </button>
             )}

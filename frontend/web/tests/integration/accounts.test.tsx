@@ -190,6 +190,14 @@ describe("account button and sign-in popup", () => {
     expect(await screen.findByRole("dialog", { name: "Confirm your email" })).toBeTruthy();
     expect(screen.getByRole("status").textContent).toMatch(/^If pat@example.com can be used, we sent it a code/);
     expect(screen.queryByText(/already exists/)).toBeNull();
+    // Resend and confirm answer like a new account would, without asking Cognito.
+    fireEvent.click(screen.getByRole("button", { name: "Send a new code" }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("We sent a new code."));
+    fireEvent.change(screen.getByLabelText("Confirmation code"), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/code is not right/);
+    expect(auth.value.resendCode).not.toHaveBeenCalled();
+    expect(auth.value.confirmSignUp).not.toHaveBeenCalled();
   });
 
   it("still shows other sign-up errors", async () => {
