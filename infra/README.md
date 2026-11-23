@@ -65,6 +65,11 @@ account with the same address are two different SpeakUp users. A production stac
 refuses `GoogleClientId` for now: Google users skip the TOTP MFA that production
 requires, so the team needs to decide how MFA applies to them first.
 
+Before deleting a stack that had Google sign-in on, remove its
+`https://<CognitoDomain>/oauth2/idpresponse` redirect URI from the Google OAuth client
+(or delete the client). Deleting the stack frees its Cognito domain name, and anyone
+could then claim it. While Google still lists it, Google sends sign-ins there.
+
 ## API routes
 
 `GET /health` is public. All other routes require a Cognito JWT:
