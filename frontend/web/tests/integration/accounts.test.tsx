@@ -198,6 +198,18 @@ describe("account button and sign-in popup", () => {
     expect((await screen.findByRole("alert")).textContent).toMatch(/code is not right/);
     expect(auth.value.resendCode).not.toHaveBeenCalled();
     expect(auth.value.confirmSignUp).not.toHaveBeenCalled();
+    // An account that was never confirmed finishes through sign-in, where the code step is real.
+    const { NeedsConfirmationError } = await import("@/lib/auth");
+    auth.value.signIn.mockRejectedValueOnce(new NeedsConfirmationError());
+    auth.value.confirmSignUp.mockResolvedValue(undefined);
+    fireEvent.click(screen.getByRole("button", { name: "Back to sign in" }));
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "pat@example.com" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "Secret-Password-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByRole("dialog", { name: "Confirm your email" })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Confirmation code"), { target: { value: "654321" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(auth.value.confirmSignUp).toHaveBeenCalledWith("pat@example.com", "654321"));
   });
 
   it("still shows other sign-up errors", async () => {

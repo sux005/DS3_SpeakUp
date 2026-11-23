@@ -80,7 +80,7 @@ export function SignInDialog() {
           setExisting(true);
         }
         setMode("confirm");
-        setNotice(`If ${email.trim()} can be used, we sent it a code. Enter it below to finish. Already have an account? Close this and sign in.`);
+        setNotice(`If ${email.trim()} can be used, we sent it a code. Enter it below to finish. Already have an account? Go back and sign in.`);
       });
     } else {
       void run(async () => {
@@ -154,6 +154,10 @@ export function SignInDialog() {
                 })}>
                 Send a new code
               </button>
+            )}
+            {mode === "confirm" && (
+              // An account that was never confirmed gets its real code step through sign-in.
+              <button type="button" className={textButton} onClick={() => switchMode("signin")}>Back to sign in</button>
             )}
           </div>
         </form>
