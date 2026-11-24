@@ -34,6 +34,29 @@ describe("RecorderUploader", () => {
     expect(onSubmit).toHaveBeenCalledWith(file, "pitch.wav");
   });
 
+  it("states each control's real limits beside it and keeps the meter flat until recording", () => {
+    const { container } = render(<RecorderUploader maxAudioBytes={104_857_600} maxAudioDurationSeconds={600} onSubmit={vi.fn()} />);
+    expect(screen.getByText("Uses your microphone. Recording stops after 10 minutes.")).toBeTruthy();
+    expect(screen.getByText("WAV, MP3, M4A or WebM, up to 100 MB.")).toBeTruthy();
+    expect(screen.getByText("The level meter moves while you record.")).toBeTruthy();
+    const bars = [...container.querySelectorAll<HTMLElement>('[aria-hidden="true"] > span')];
+    expect(bars.length).toBeGreaterThan(20);
+    expect(bars.every((bar) => bar.style.height === "0%")).toBe(true);
+  });
+
+  it("reports idle, then ready, as audio is chosen and discarded", async () => {
+    const onStatusChange = vi.fn();
+    render(<RecorderUploader maxAudioBytes={1024} maxAudioDurationSeconds={90} onSubmit={vi.fn()} onStatusChange={onStatusChange} />);
+    expect(onStatusChange).toHaveBeenLastCalledWith("idle");
+
+    choose(new File([new Uint8Array([1])], "pitch.wav", { type: "audio/wav" }));
+    await screen.findByText("READY · pitch.wav");
+    expect(onStatusChange).toHaveBeenLastCalledWith("ready");
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(onStatusChange).toHaveBeenLastCalledWith("idle");
+  });
+
   it.each([
     ["notes.txt", "text/plain"],
     ["voice.aac", "audio/aac"],

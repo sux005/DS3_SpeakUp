@@ -1,8 +1,8 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Project, Recording, RecordingReview } from "@/lib/types";
-import { summaryMetrics } from "../fixtures";
+import { pause, summaryMetrics } from "../fixtures";
 
 const harness = vi.hoisted(() => ({
   params: { projectId: "project-1", recordingId: "recording-1" },
@@ -26,6 +26,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("next/image", () => ({ default: (props: Record<string, unknown>) => createElement("img", { ...props, alt: String(props.alt ?? "") }) }));
 vi.mock("next/link", () => ({ default: ({ href, children, ...props }: { href: string; children: React.ReactNode }) => <a href={href} {...props}>{children}</a> }));
 vi.mock("@/components/PageHeading", () => ({
+  pageColumn: "",
   PageShell: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
   PageHeading: ({ crumb, title, subtitle }: { crumb: string; title: React.ReactNode; subtitle: string }) => <header><span>{crumb}</span><h1>{title}</h1><p>{subtitle}</p></header>,
 }));
@@ -34,7 +35,7 @@ vi.mock("@/components/RecorderUploader", () => ({
 }));
 vi.mock("@/components/ProgressCharts", () => ({ ProgressCharts: ({ takes }: { takes: Recording[] }) => <div data-testid="charts">charts:{takes.length}</div> }));
 vi.mock("@/components/AudioReviewPlayer", () => ({
-  AudioReviewPlayer: ({ moments, onMomentSelect }: { moments: Array<{ label: string; observation?: string; nextStep?: string }>; onMomentSelect?: (moment: { at: number; label: string; observation?: string; nextStep?: string }) => void }) => <div data-testid="player">{moments.map((moment, index) => <button key={index} type="button" onClick={() => onMomentSelect?.({ ...moment, at: index })}>{moment.label}</button>)}</div>,
+  AudioReviewPlayer: ({ moments, onMomentSelect, seekRequest }: { seekRequest?: { seconds: number }; moments: Array<{ label: string; observation?: string; nextStep?: string; playFrom?: number }>; onMomentSelect?: (moment: { at: number; label: string; observation?: string; nextStep?: string }) => void }) => <div data-testid="player" data-seek={seekRequest?.seconds}>{moments.map((moment, index) => <button key={index} type="button" data-play-from={moment.playFrom} onClick={() => onMomentSelect?.({ ...moment, at: index })}>{moment.label}</button>)}</div>,
 }));
 vi.mock("@/lib/demo-store", () => ({ useDemoStore: () => harness.store }));
 
@@ -62,6 +63,43 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("home and project routes", () => {
+  it("features the most recently worked-on presentation and lists the others", () => {
+    harness.store.projects = [project("project-1"), { ...project("project-2"), project_title: "Second talk" }];
+    harness.store.recordings = [recording("recording-1"), { ...recording("recording-2", "PROCESSING", "project-2"), created_at: "2025-02-01T00:00:00.000Z" }];
+    render(<Home />);
+    const featured = screen.getByRole("article");
+    expect(within(featured).getByText("Pick up where you left off")).toBeTruthy();
+    expect(within(featured).getByRole("heading", { name: "Second talk" })).toBeTruthy();
+    expect(within(featured).getByText("Take 01 is processing")).toBeTruthy();
+    expect(within(featured).getByRole("link", { name: "View status" }).getAttribute("href")).toBe("/recordings/recording-2/analyzing");
+    expect(within(featured).getByRole("link", { name: "+ New attempt" }).getAttribute("href")).toBe("/projects/project-2/new");
+    expect(screen.getByRole("heading", { name: "Other presentations" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Demo project" })).toBeTruthy();
+  });
+
+  it.each([
+    ["COMPLETE", "Take 01 is recorded", "Review take 01"],
+    ["FAILED", "Take 01 failed", null],
+    ["DELETED", "Take 01 was removed", null],
+  ] as const)("describes a %s latest attempt honestly", (status, note, action) => {
+    harness.store.recordings = [recording("recording-1", status)];
+    render(<Home />);
+    expect(screen.getByText(note)).toBeTruthy();
+    if (action) expect(screen.getByRole("link", { name: action }).getAttribute("href")).toBe("/recordings/recording-1");
+    else expect(screen.queryByRole("link", { name: /Review|View status/ })).toBeNull();
+  });
+
+  it("counts one attempt in the singular and links to a scored review only when one exists", () => {
+    render(<Home />);
+    expect(screen.getByText("1 attempt")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "See what a finished review looks like" })).toBeNull();
+    cleanup();
+
+    harness.store.reviews = { "recording-1": { analysis: {} } as unknown as RecordingReview };
+    render(<Home />);
+    expect(screen.getByRole("link", { name: "See what a finished review looks like" }).getAttribute("href")).toBe("/recordings/recording-1");
+  });
+
   it("shows loading and empty presentation states", () => {
     harness.store.ready = false;
     render(<Home />);
@@ -115,7 +153,7 @@ describe("home and project routes", () => {
   it("submits a new attempt for the current project and navigates to its status", () => {
     render(<NewAttemptPage />);
     expect(screen.getByRole("heading", { name: "Record or upload" })).toBeTruthy();
-    expect(screen.getByText(/up to 100 MB/)).toBeTruthy();
+    expect(screen.getByText(/preview or discard your audio/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Analyze demo recording" }));
     expect(harness.store.createRecording).toHaveBeenCalledWith("project-1", expect.any(Blob), "test.wav");
     expect(harness.router.push).toHaveBeenCalledWith("/recordings/created-recording/analyzing");
@@ -158,7 +196,7 @@ describe("results route", () => {
     render(<ResultsPage />);
     expect(screen.getByRole("heading", { name: "Your demo recording" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Analysis is not connected" })).toBeTruthy();
-    expect(screen.queryByText("The transcript")).toBeNull();
+    expect(screen.queryByText("Transcript")).toBeNull();
     expect(screen.getByRole("link", { name: "Practice again →" }).getAttribute("href")).toBe("/projects/project-1/new");
   });
 
@@ -177,12 +215,79 @@ describe("results route", () => {
     };
     render(<ResultsPage />);
     expect(screen.getByRole("heading", { name: "Your results" })).toBeTruthy();
-    expect(screen.getAllByText("140 WPM")).toHaveLength(2);
+    const scores = screen.getByRole("region", { name: "Your scores" });
+    expect(within(scores).getAllByRole("article")).toHaveLength(3);
+    expect(within(scores).getByText("140")).toBeTruthy();
+    expect(within(scores).getByText("Good pace")).toBeTruthy();
+    expect(within(scores).getByText(/Pause once/)).toBeTruthy();
     expect(screen.getByText("Hello.")).toBeTruthy();
-    expect(screen.getByText("General speech")).toBeTruthy();
+    // The takeaway comes first and uses the coach's own words.
+    const takeaway = screen.getByRole("region", { name: "Your takeaway" });
+    expect(within(takeaway).getByText("Keep the opening clear.")).toBeTruthy();
+    expect(within(takeaway).getByText("Strong point")).toBeTruthy();
+    expect(within(takeaway).getByText("“Opening”")).toBeTruthy();
+    expect(within(screen.getByRole("region", { name: "Your next practice step" })).getByText("Keep going")).toBeTruthy();
+    // Evidence sits in the review panel beside the player and transcript.
+    const review = screen.getByRole("region", { name: "Listen back" });
+    expect(within(review).getByRole("heading", { name: "Moments to replay" })).toBeTruthy();
+    expect(within(review).getByText("Hello.")).toBeTruthy();
+    // One "Practice again" in the header; the next step has its own wording.
+    expect(screen.getAllByRole("link", { name: "Practice again →" })).toHaveLength(1);
+    expect(screen.getByRole("link", { name: "Record another attempt →" }).getAttribute("href")).toBe("/projects/project-1/new");
     fireEvent.click(screen.getByRole("button", { name: "Strength" }));
-    expect(screen.getByText("Clear")).toBeTruthy();
+    expect(screen.getAllByText("Clear")).toHaveLength(3);
     expect(screen.getByText(/Repeat/)).toBeTruthy();
+  });
+
+  // Regression: a pause chosen in Moments to replay must start at the word
+  // before it, so "I want [pause] food" plays "want", the silence, then "food".
+  it("starts a pause chosen in Moments to replay at the word before it", () => {
+    harness.store.audioUrls = { "recording-1": "blob:audio" };
+    const word = (content: string, start: string, end: string) => ({ type: "pronunciation", start_time: start, end_time: end, alternatives: [{ content }] });
+    harness.store.reviews = {
+      "recording-1": {
+        recording_id: "recording-1",
+        transcript: { text: "I want food.", items: [
+          word("I", "7.0", "7.2"),
+          word("want", "7.4", "8.0"),
+          word("food", "8.8", "9.3"),
+          { type: "punctuation", alternatives: [{ content: "." }] },
+        ] },
+        summary_metrics: summaryMetrics({ duration_seconds: 60 }),
+        analysis: {
+          ...summaryMetrics({ duration_seconds: 60, words_per_minute: 140, fillers_per_100_words: 1, pauses_per_speaking_minute: 2, rubric_scores: { speaking_rate: 4, filler_words: 3, pauses_inside_sentences: 3 } }),
+          filler_occurrences: [{ start_seconds: 30, end_seconds: 30.4, filler: "um" }],
+          pauses: [
+            pause(8.0, 8.8),
+            // Before the first word, so there is no word to start from.
+            pause(0.5, 1.2),
+          ],
+          long_pauses: [],
+        },
+        feedback: null,
+      },
+    };
+    render(<ResultsPage />);
+    const replay = within(screen.getByRole("region", { name: "Listen back" }));
+    const player = screen.getByTestId("player");
+    expect(player.getAttribute("data-seek")).toBeNull();
+
+    fireEvent.click(replay.getByRole("button", { name: "Play from 00:07: Pause inside a sentence, 0.8 s" }));
+    expect(player.getAttribute("data-seek")).toBe("7.4");
+    // The timeline marker for the same pause starts from "want" too.
+    expect(within(player).getByRole("button", { name: "Pause inside sentence, 0.8 s" }).getAttribute("data-play-from")).toBe("7.4");
+
+    // With no word before it, a short lead-in, clamped to zero.
+    fireEvent.click(replay.getByRole("button", { name: "Play from 00:00: Pause inside a sentence, 0.7 s" }));
+    expect(player.getAttribute("data-seek")).toBe("0");
+
+    // A filler is unchanged: it plays from its own time.
+    fireEvent.click(replay.getByRole("button", { name: "Play from 00:30: Filler “um”" }));
+    expect(player.getAttribute("data-seek")).toBe("30");
+
+    // Back to the first pause: it seeks there again.
+    fireEvent.click(replay.getByRole("button", { name: "Play from 00:07: Pause inside a sentence, 0.8 s" }));
+    expect(player.getAttribute("data-seek")).toBe("7.4");
   });
 
   it("guards missing and incomplete recordings", () => {

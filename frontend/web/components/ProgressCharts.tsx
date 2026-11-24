@@ -1,95 +1,139 @@
-import { formatTake } from "@/lib/recordings";
-import type { SummaryMetrics, Take } from "@/lib/types";
+import { formatClock, formatDate, formatTake } from "@/lib/recordings";
+import { compareToTarget, metricDisplay, targetText, trim } from "@/lib/targets";
+import type { Take } from "@/lib/types";
 
-// Target bands come from the Figma design's score-4 ranges.
-const charts: {
-  title: string;
-  unit: string;
-  note: string;
-  band: [number, number];
-  value: (m: SummaryMetrics) => number;
-}[] = [
-  {
-    title: "Speaking rate",
-    unit: "WPM",
-    note: "Target range: 135–155 WPM",
-    band: [135, 155],
-    value: (m) => m.words_per_minute,
-  },
-  {
-    title: "Fillers",
-    unit: "per 100 words",
-    note: "Score 4: fewer than 2 per 100 words",
-    band: [0, 2],
-    value: (m) => m.fillers_per_100_words,
-  },
-  {
-    title: "Pauses inside sentences",
-    unit: "per speaking-minute",
-    note: "Score 4: fewer than 9 per speaking-minute",
-    band: [0, 9],
-    value: (m) => m.pauses_per_speaking_minute,
-  },
+// Chart titles and the target note shown under each trend. Units, values and
+// target numbers are shared with the results page through lib/targets.ts.
+const charts = [
+  { ...metricDisplay("speaking_rate"), title: "Speaking rate", note: "Target range: 135–155 WPM" },
+  { ...metricDisplay("filler_words"), title: "Fillers", note: "Score 4: fewer than 2 per 100 words" },
+  { ...metricDisplay("pauses_inside_sentences"), title: "Pauses inside sentences", note: "Score 4: fewer than 9 per speaking-minute" },
 ];
 
-const width = 420;
-const height = 164;
-const pad = 12;
+/** Where one value sits between the rubric's best and worst thresholds. */
+function RangeBar({ value, band, scale, label }: { value: number; band: [number, number]; scale: [number, number]; label: string }) {
+  const low = Math.min(scale[0], value);
+  const high = Math.max(scale[1], value);
+  const at = (v: number) => ((v - low) / (high - low)) * 100;
+  return (
+    <div role="img" aria-label={label} className="flex flex-col gap-1.5">
+      <div className="relative h-3 rounded-full bg-line">
+        <span className="absolute inset-y-0 rounded-full bg-teal/35" style={{ left: `${at(band[0])}%`, width: `${at(band[1]) - at(band[0])}%` }} />
+        <span className="absolute top-1/2 size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-card bg-ink" style={{ left: `${at(value)}%` }} />
+      </div>
+      <div className="flex justify-between text-xs text-muted" aria-hidden="true">
+        <span>{trim(low)}</span>
+        <span>Shaded: target</span>
+        <span>{trim(high)}</span>
+      </div>
+    </div>
+  );
+}
 
-function Plot({ values, band }: { values: number[]; band: [number, number] }) {
+const width = 360;
+const height = 168;
+const padX = 26;
+const padTop = 26;
+const padBottom = 30;
+
+function Plot({ values, labels, band }: { values: number[]; labels: string[]; band: [number, number] }) {
   const low = Math.min(...values, band[0]);
   const high = Math.max(...values, band[1]);
   const span = high - low || 1;
-  const y = (v: number) => height - pad - ((v - low) / span) * (height - pad * 2);
-  const x = (i: number) =>
-    values.length === 1 ? width / 2 : pad + (i / (values.length - 1)) * (width - pad * 2);
+  const y = (v: number) => height - padBottom - ((v - low) / span) * (height - padTop - padBottom);
+  const x = (i: number) => padX + (i / (values.length - 1)) * (width - padX * 2);
   const points = values.map((v, i) => `${x(i)},${y(v)}`).join(" ");
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full" aria-hidden="true">
-      <line x1={pad} x2={width - pad} y1={pad} y2={pad} className="stroke-line" />
-      <line x1={pad} x2={width - pad} y1={height - pad} y2={height - pad} className="stroke-line" />
-      <rect
-        x={pad}
-        width={width - pad * 2}
-        y={y(band[1])}
-        height={y(band[0]) - y(band[1])}
-        className="fill-pale"
-      />
+      <rect x={0} width={width} y={y(band[1])} height={y(band[0]) - y(band[1])} rx={4} className="fill-teal/15" />
+      <line x1={0} x2={width} y1={height - padBottom} y2={height - padBottom} className="stroke-line" strokeWidth={2} />
       <polyline points={points} fill="none" strokeWidth={2.5} className="stroke-teal" />
       {values.map((v, i) => (
-        <circle key={i} cx={x(i)} cy={y(v)} r={5} className="fill-teal" />
+        <g key={i}>
+          <circle cx={x(i)} cy={y(v)} r={5} className="fill-teal" />
+          <text x={x(i)} y={y(v) - 10} textAnchor="middle" className="fill-ink text-[12px] font-semibold">{v}</text>
+          <text x={x(i)} y={height - 10} textAnchor="middle" className="fill-muted text-[12px]">{labels[i]}</text>
+        </g>
       ))}
     </svg>
   );
 }
 
-export function ProgressCharts({ takes }: { takes: Take[] }) {
+/**
+ * Practice history for a presentation.
+ * - Two or more scored attempts: one trend chart per metric.
+ * - Exactly one: that attempt's value, score and distance from target. A single
+ *   point is not a trend, so no chart is drawn. Pass `single="note"` where the
+ *   values are already on the page and only the explanation is wanted.
+ * - None: nothing.
+ */
+export function ProgressCharts({ takes, single = "summary" }: { takes: Take[]; single?: "summary" | "note" }) {
   const scored = takes.filter((t) => t.summary_metrics);
   if (scored.length === 0) return null;
 
+  if (scored.length === 1) {
+    const [take] = scored;
+    const metrics = take.summary_metrics!;
+    if (single === "note") {
+      return (
+        <section className="flex w-full flex-col gap-1.5">
+          <h2 className="font-display text-2xl font-bold text-ink">Your practice, over time.</h2>
+          <p className="text-muted">This is the only scored attempt so far. Record another one to compare them here.</p>
+        </section>
+      );
+    }
+    return (
+      <section className="flex w-full flex-col gap-5">
+        <div className="flex flex-col gap-1">
+          <h2 className="font-display text-2xl font-bold text-ink">Latest scored attempt</h2>
+          <p className="text-[15px] text-muted">{formatTake(take.take)} · {formatDate(take.created_at)} · {formatClock(metrics.duration_seconds)}</p>
+        </div>
+        <div className="grid w-full gap-x-8 gap-y-7 md:grid-cols-3">
+          {charts.map((chart) => {
+            const value = chart.value(metrics);
+            const score = metrics.rubric_scores[chart.key];
+            return (
+              <div key={chart.key} className="flex flex-col gap-2.5">
+                <h3 className="text-[17px] font-bold text-ink">{chart.title}</h3>
+                <p className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="font-display text-4xl font-bold text-ink">{value}</span>
+                  <span className="text-[15px] text-muted">{chart.unit}</span>
+                </p>
+                <p className="text-[15px] text-ink">
+                  <span className="font-semibold">{score === null ? "Not scored" : `Score ${score} of 4`}</span>
+                  <span className="text-muted"> · Target: {targetText(chart.key)}</span>
+                </p>
+                <RangeBar value={value} band={chart.band} scale={chart.scale} label={`${value} ${chart.unit}. Target: ${targetText(chart.key)}.`} />
+                <p className="text-sm text-muted">{compareToTarget(value, chart.band, score)}</p>
+              </div>
+            );
+          })}
+        </div>
+        <p className="text-[15px] text-muted">Trends appear here after a second scored attempt.</p>
+      </section>
+    );
+  }
+
   return (
     <section className="flex w-full flex-col gap-5">
-      <div className="flex flex-wrap items-baseline justify-between gap-4">
-        <h2 className="font-display text-[29px] font-bold text-ink">Your practice, over time.</h2>
-        <p className="font-mono text-[11px] text-teal">COMPARE WITH: PREVIOUS TAKE</p>
-      </div>
-      <div className="grid w-full gap-7 md:grid-cols-3">
+      <h2 className="font-display text-2xl font-bold text-ink">Your practice, over time.</h2>
+      <div className="grid w-full gap-x-8 gap-y-7 md:grid-cols-3">
         {charts.map((chart) => {
           const values = scored.map((t) => chart.value(t.summary_metrics!));
           return (
-            <div key={chart.title} className="flex flex-col gap-2.5">
-              <h3 className="text-[19px] font-bold text-ink">{chart.title}</h3>
-              <p className="font-mono text-[11px] text-muted">{chart.unit}</p>
-              <Plot values={values} band={chart.band} />
-              <p className="flex flex-wrap gap-x-6 font-mono text-[10px] text-muted">
+            <div key={chart.key} className="flex flex-col gap-2">
+              <h3 className="text-[17px] font-bold text-ink">{chart.title}</h3>
+              <p className="text-sm text-muted">{chart.unit} · shaded band is the target</p>
+              <Plot values={values} labels={scored.map((t) => `T${t.take}`)} band={chart.band} />
+              <p className="flex flex-wrap gap-x-5 text-sm text-ink">
                 {scored.map((t, i) => (
                   <span key={t.recording_id}>
-                    {formatTake(t.take).toUpperCase()} · {values[i]}
+                    {formatTake(t.take)} · {values[i]}
                   </span>
                 ))}
               </p>
-              <p className="text-[11px] text-muted">{chart.note}</p>
+              <p className="text-sm text-muted">{chart.note}</p>
             </div>
           );
         })}

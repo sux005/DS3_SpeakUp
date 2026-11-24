@@ -28,6 +28,16 @@ describe("AudioReviewPlayer edge cases", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("follows the audio element when the browser pauses or resumes it", () => {
+    render(<AudioReviewPlayer audioUrl="blob:audio" durationSeconds={12} moments={[]} />);
+    const audio = document.querySelector("audio")!;
+    // Media keys and headphones pause the element without the Play button.
+    fireEvent(audio, new Event("play"));
+    expect(screen.getByRole("button", { name: "Pause recording" })).toBeTruthy();
+    fireEvent(audio, new Event("pause"));
+    expect(screen.getByRole("button", { name: "Play recording" })).toBeTruthy();
+  });
+
   it("pauses the media element during cleanup", () => {
     const view = render(<AudioReviewPlayer audioUrl="blob:audio" durationSeconds={4} moments={[]} />);
     const audio = document.querySelector("audio")!;

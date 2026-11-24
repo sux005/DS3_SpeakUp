@@ -72,7 +72,9 @@ test.describe("home and project route states", () => {
     ]));
     await page.goto(`/projects/${projectId}`);
     await expect(page.getByRole("heading", { name: "Coverage project" })).toBeVisible();
-    await expect(page.getByText("Your practice, over time.")).toBeVisible();
+    // One scored attempt: its values are summarised, and no one-point trend is drawn.
+    await expect(page.getByRole("heading", { name: "Latest scored attempt" })).toBeVisible();
+    await expect(page.getByText("Trends appear here after a second scored attempt.")).toBeVisible();
     await expect(page.getByText("Fixture processing error")).toBeVisible();
     await expect(page.getByRole("link", { name: "Review →" })).toHaveCount(2);
     await expect(page.getByRole("link", { name: "Status →" })).toHaveCount(1);
@@ -121,9 +123,11 @@ test.describe("analyzing and results route states", () => {
     await setState(page, baseState([recording("review-with-moment", "COMPLETE", "2026-11-02T00:00:00.000Z")], { "review-with-moment": review }));
     await page.goto("/recordings/review-with-moment");
     await expect(page.getByRole("heading", { name: "Your results" })).toBeVisible();
-    await page.getByRole("button", { name: /Strength/ }).click();
-    await expect(page.getByText("Clear start")).toBeVisible();
-    await expect(page.getByText("Keep this energy.")).toBeVisible();
+    await page.getByRole("button", { name: /^00:00 · Strength/ }).click();
+    const listen = page.getByRole("region", { name: "Listen back" });
+    // Once in Moments to replay, and once in the detail opened from the timeline.
+    await expect(listen.getByText("Clear start")).toHaveCount(2);
+    await expect(listen.getByText("Keep this energy.")).toBeVisible();
   });
 });
 
@@ -143,13 +147,13 @@ test.describe("responsive route smoke", () => {
     await page.goto(`/recordings/${processingId}/analyzing`);
     await expect(page.locator(".analyzing-dots")).toBeVisible();
     const dotsAnimation = await page.locator(".analyzing-dots span").first().evaluate((element) => getComputedStyle(element).animationName);
-    const pipAnimation = await page.locator(".pip-motion").evaluate((element) => getComputedStyle(element).animationName);
+    const mascotAnimation = await page.locator(".mascot-float").evaluate((element) => getComputedStyle(element).animationName);
     expect(dotsAnimation).toBe("none");
-    expect(pipAnimation).toBe("none");
+    expect(mascotAnimation).toBe("none");
 
     await page.goto("/");
     await page.keyboard.press("Tab");
-    await expect(page.getByRole("link", { name: "speakup" })).toBeFocused();
+    await expect(page.getByRole("link", { name: "SpeakUp" })).toBeFocused();
     await page.keyboard.press("Tab");
     await expect(page.getByRole("link", { name: "MY PRESENTATIONS" })).toBeFocused();
   });

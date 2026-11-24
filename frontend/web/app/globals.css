@@ -1,32 +1,99 @@
 @import "tailwindcss";
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+/* Inside a forest panel (data-surface="dark"), whatever the theme. */
+@custom-variant on-dark (&:where([data-surface="dark"], [data-surface="dark"] *));
 
+/* Prehistoric valley palette: a cream page, lighter paper for content,
+   forest green task panels, the mascot's orange for primary actions and its
+   violet for selected states. Every text pairing below is at least 4.5:1. */
 :root {
-  --background: #f5f1e8;
-  --foreground: #19333a;
-  --surface-paper: #f5f1e8;
-  --surface-ink: #19333a;
-  --surface-teal: #246c70;
-  --surface-muted: #637579;
-  --surface-line: #d9ddd5;
-  --surface-pale: #e4ede5;
-  --surface-rust: #b5532b;
+  --background: #f2e9d4;
+  --foreground: #1d3327;
+  --surface-paper: #f2e9d4;
+  --surface-ink: #1d3327;
+  --surface-teal: #0f6164;
+  --surface-muted: #526358;
+  --surface-line: #d8cfb4;
+  --surface-pale: #e3ebd2;
+  --surface-rust: #a33f1c;
+  /* Content surfaces (cards) sit lighter than the page. */
+  --surface-card: #fffbf2;
+  /* The mascot PNG has a black outline; buttons and scenery share it. */
+  --surface-outline: #14110d;
+  /* Selected states. Sampled from the mascot's circuits, darkened for text. */
+  --surface-violet: #6a2ee6;
+
+  /* Scenery (components/Scenery.tsx): a turquoise morning over the valley. */
+  --scene-sky-top: #bde8e2;
+  --scene-sky-mid: #e3f3e2;
+  --scene-sky-low: #fdf0cf;
+  --scene-sun: #ffe2a0;
+  --scene-sun-glow: rgb(255 243 207 / 0.7);
+  --scene-mist: rgb(255 255 255 / 0.72);
+  --scene-ridge-far: #a9d6cf;
+  --scene-ridge-mid: #74b8a0;
+  --scene-ridge-mid-line: #4a9079;
+  --scene-hill: #4c9a62;
+  --scene-hill-top: #6bb57c;
+  --scene-hill-line: #2c6b43;
+  --scene-lake: #45c4b6;
+  --scene-lake-line: #1f8a85;
+  --scene-lake-light: #a8ecdf;
+  --scene-ground: #ecdba8;
+  --scene-ground-mark: #d8c184;
+  --scene-rock: #cbc4aa;
+  --scene-rock-mark: #8f8a72;
+  --scene-egg: #fff3d6;
+  --scene-egg-spot: #e9c98b;
+  --scene-fern: #46a05f;
+  --scene-fern-deep: #2f7d4a;
+  --scene-fern-rib: #1f5a36;
+  --scene-firefly: transparent;
+  --scene-outline: #14110d;
 }
 
+/* Dark mode is the same valley at dusk. */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --background: #102b32;
-  --foreground: #fffcf6;
-  --surface-paper: #102b32;
-  --surface-ink: #fffcf6;
-  --surface-teal: #a8d9cb;
-  --surface-muted: #a8d9cb;
-  --surface-line: #345057;
-  --surface-pale: #345057;
-  --surface-rust: #eea777;
+  --background: #0f241b;
+  --foreground: #fffaf0;
+  --surface-paper: #0f241b;
+  --surface-ink: #fffaf0;
+  --surface-teal: #8fdccb;
+  --surface-muted: #a8cbbb;
+  --surface-line: #33604a;
+  --surface-pale: #21422f;
+  --surface-rust: #f2a476;
+  --surface-card: #1f4a38;
+  --surface-outline: #050f0a;
+  --surface-violet: #c9b6ff;
+
+  --scene-sky-top: #0b1d28;
+  --scene-sky-mid: #123a3a;
+  --scene-sky-low: #2a6a5c;
+  --scene-sun: #f6f1d4;
+  --scene-sun-glow: rgb(246 241 212 / 0.14);
+  --scene-mist: rgb(190 233 224 / 0.16);
+  --scene-ridge-far: #1c4b4b;
+  --scene-ridge-mid: #173f3a;
+  --scene-ridge-mid-line: #0f2f2c;
+  --scene-hill: #14382b;
+  --scene-hill-top: #1d4d39;
+  --scene-hill-line: #0a2419;
+  --scene-lake: #1f8f8a;
+  --scene-lake-line: #0e5c5c;
+  --scene-lake-light: #6fe0d0;
+  --scene-ground: #2c4a33;
+  --scene-ground-mark: #223b29;
+  --scene-rock: #40604f;
+  --scene-rock-mark: #25402f;
+  --scene-fern: #23764c;
+  --scene-fern-deep: #185a39;
+  --scene-fern-rib: #0d3a24;
+  --scene-firefly: #ffe58a;
+  --scene-outline: #07140e;
 }
 
-/* Colours and fonts from the SpeakUp Figma file. */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -35,17 +102,39 @@
   --color-teal: var(--surface-teal);
   --color-muted: var(--surface-muted);
   --color-line: var(--surface-line);
-  --color-night: #102b32;
-  --color-night-line: #345057;
-  --color-night-soft: #1b3a42;
-  --color-peach: #eea777;
-  --color-mint: #a8d9cb;
-  --color-cream: #fffcf6;
+  --color-card: var(--surface-card);
+  --color-outline: var(--surface-outline);
+  --color-violet: var(--surface-violet);
+  /* Violet on forest panels, whatever the theme (6.9:1 on night). */
+  --color-violet-soft: #c9b6ff;
+  /* "Night" is the deep forest green used for the dark panels. */
+  --color-night: #163a2b;
+  --color-night-line: #33604a;
+  --color-night-soft: #1f4a38;
+  /* The mascot's orange: primary buttons and labels on forest panels. */
+  --color-peach: #f9a11b;
+  /* Scored filler words on the dark listening panel (6.5:1 on night). */
+  --color-rose: #ff9eb5;
+  --color-mint: #a6e3d2;
+  --color-cream: #fffaf0;
   --color-pale: var(--surface-pale);
   --color-rust: var(--surface-rust);
   --font-sans: var(--font-dm-sans);
-  --font-display: var(--font-space-grotesk);
+  --font-display: var(--font-fredoka);
   --font-mono: var(--font-dm-mono);
+}
+
+/* Motion tokens (animate skill): one curve family for the whole app. */
+:root {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --duration-press: 160ms;
+  --duration-ui: 200ms;
+}
+
+/* Taps act at once and leave no grey flash on phones. */
+a, button, label, summary, [role="switch"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
@@ -54,14 +143,19 @@ body {
   font-family: var(--font-dm-sans), sans-serif;
 }
 
-.pip-signal {
-  top: 33px;
-  right: 5px;
-  width: 35px;
-  height: 35px;
-  border: 2px solid var(--color-mint);
+/* ---- Scenery motion ----
+   Slow, small and decorative. All of it is off under reduced motion.
+   The mascot is a still image and never animates on its own. */
+.fern-sway {
+  transform-origin: 50% 100%;
+}
+.scene-fireflies span {
+  position: absolute;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
-  opacity: 0;
+  background: var(--scene-firefly);
+  opacity: 0.7;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -72,10 +166,40 @@ body {
   .analyzing-dots span:nth-child(2) { animation-delay: 0.2s; }
   .analyzing-dots span:nth-child(3) { animation-delay: 0.4s; }
 
-  .pip-motion { animation: pip-float 3s ease-in-out infinite; }
-  .pip-motion .pip-signal { animation: pip-pulse 2.4s ease-out infinite; }
+  .recording-dot { animation: mascot-pulse 1.4s ease-in-out infinite; }
+  .mascot-float { animation: mascot-float 3s ease-in-out infinite; }
+  .fern-sway { animation: fern-sway 6s ease-in-out infinite alternate; }
+  .scene-mist { animation: mist-drift 34s ease-in-out infinite alternate; }
+  .scene-fireflies span { animation: firefly 3.6s ease-in-out infinite; }
+  .scene-fireflies span:nth-child(2n) { animation-delay: -1.2s; }
+  .scene-fireflies span:nth-child(3n) { animation-delay: -2.3s; }
   .analysis-stage-active { animation: stage-highlight 0.75s ease-out; }
   .analysis-stage-check { display: inline-block; animation: stage-check-in 0.3s ease-out; }
+}
+
+@keyframes mascot-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+@keyframes mascot-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes fern-sway {
+  from { transform: rotate(-1.6deg); }
+  to { transform: rotate(1.6deg); }
+}
+
+@keyframes mist-drift {
+  from { transform: translateX(-26px); }
+  to { transform: translateX(34px); }
+}
+
+@keyframes firefly {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
 }
 
 @keyframes analyzing-dot {
@@ -83,22 +207,230 @@ body {
   20% { opacity: 1; }
 }
 
-@keyframes pip-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-7px); }
-}
-
-@keyframes pip-pulse {
-  0%, 45%, 100% { opacity: 0; transform: scale(0.5); }
-  18% { opacity: 0.55; transform: scale(1); }
-}
-
 @keyframes stage-highlight {
-  from { background-color: rgb(238 167 119 / 14%); transform: translateX(-6px); }
+  from { background-color: rgb(245 162 74 / 14%); transform: translateX(-6px); }
   to { background-color: transparent; transform: translateX(0); }
 }
 
 @keyframes stage-check-in {
   from { opacity: 0; transform: scale(0.75); }
   to { opacity: 1; transform: scale(1); }
+}
+
+/* A number sitting on a dinosaur egg: attempt counts and step numbers. */
+.egg-badge {
+  display: inline-flex;
+  width: 2.75rem;
+  height: 3.4rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding-top: 0.35rem;
+  border: 2px solid var(--scene-outline);
+  border-radius: 50% 50% 50% 50% / 62% 62% 38% 38%;
+  background: var(--scene-egg);
+  color: #1d3327;
+  font-family: var(--font-fredoka), sans-serif;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* What the mascot says. The tail points at the mascot: sideways on phones,
+   down on wider screens where the bubble sits above it. */
+.speech-bubble {
+  position: relative;
+  border: 2px solid var(--scene-outline);
+  border-radius: 1rem;
+  background: var(--scene-egg);
+  color: #1d3327;
+  padding: 0.75rem 1rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.speech-bubble::after {
+  content: "";
+  position: absolute;
+  top: calc(50% - 7px);
+  right: -9px;
+  width: 14px;
+  height: 14px;
+  border-right: 2px solid var(--scene-outline);
+  border-bottom: 2px solid var(--scene-outline);
+  background: inherit;
+  transform: rotate(-45deg);
+}
+@media (min-width: 48rem) {
+  .speech-bubble::after {
+    top: auto;
+    right: auto;
+    bottom: -9px;
+    left: calc(50% - 7px);
+    transform: rotate(45deg);
+  }
+}
+
+/* The mascot PNG has a black outline, which disappears on dark backgrounds.
+   There it gets a thin cream edge, drawn around the image by the browser.
+   The artwork itself is not changed. */
+:root[data-theme="dark"] [data-mascot],
+[data-surface="dark"] [data-mascot] {
+  filter:
+    drop-shadow(1px 0 0 var(--color-cream))
+    drop-shadow(-1px 0 0 var(--color-cream))
+    drop-shadow(0 1px 0 var(--color-cream))
+    drop-shadow(0 -1px 0 var(--color-cream));
+}
+
+/* The bubble sits above the mascot at every width. */
+.speech-bubble-down::after {
+  top: auto;
+  right: auto;
+  bottom: -9px;
+  left: calc(50% - 7px);
+  transform: rotate(45deg);
+}
+
+/* Text links in the nav and breadcrumbs: underline on hover, large enough to tap. */
+.nav-link {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  text-underline-offset: 6px;
+  text-decoration-thickness: 2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .nav-link:hover {
+    text-decoration-line: underline;
+  }
+}
+
+h1, h2, h3 {
+  text-wrap: balance;
+}
+
+/* Dense labels (table headers, chart captions, field names) use the body face
+   at a readable size. Monospace is kept for short details such as times.
+   In the components layer so a colour utility can override it. */
+@layer components {
+  .label {
+    font-family: var(--font-dm-sans), sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+}
+
+/* Keyboard focus: always visible, teal on light surfaces, mint on dark ones. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-teal);
+  outline-offset: 2px;
+}
+[data-surface="dark"] :focus-visible {
+  outline-color: var(--color-mint);
+}
+/* A label styled as a button around a hidden file input: ring the label. */
+label:has(input.sr-only:focus-visible) {
+  outline: 2px solid var(--color-teal);
+  outline-offset: 2px;
+}
+[data-surface="dark"] label:has(input.sr-only:focus-visible) {
+  outline-color: var(--color-mint);
+}
+
+/* ---- Results page motion ----
+   CSS transitions only, so every change can be interrupted mid-way.
+   Named properties only; nothing longer than 200ms. */
+
+/* Any pressable control: a slight press so the interface feels like it heard you. */
+.press {
+  transition: transform var(--duration-press) var(--ease-out);
+}
+.press:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Buttons: a bold outline and a flat shadow that the press pushes into. */
+.btn {
+  box-shadow: 0 3px 0 var(--color-outline);
+  transition: transform var(--duration-press) var(--ease-out), box-shadow var(--duration-press) var(--ease-out),
+    filter var(--duration-press) ease;
+}
+.btn:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--color-outline);
+}
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+@media (hover: hover) and (pointer: fine) {
+  .btn:hover:not(:disabled) {
+    filter: brightness(1.06);
+  }
+}
+
+/* Current transcript sentence: a colour change, not movement. */
+.sentence-row {
+  transition: background-color var(--duration-ui) ease, color var(--duration-ui) ease;
+}
+
+/* Timeline marker bars grow slightly on hover and at the current time. */
+.marker-bar {
+  transition: transform 150ms var(--ease-out), box-shadow 150ms var(--ease-out);
+  transform-origin: bottom;
+}
+.marker-bar[data-now="true"] {
+  transform: scaleY(1.35);
+}
+@media (hover: hover) and (pointer: fine) {
+  .marker:hover .marker-bar {
+    transform: scaleY(1.35);
+  }
+}
+
+/* Full rubric: opens from its own height (grid rows 0fr -> 1fr). */
+.rubric-panel {
+  transition: grid-template-rows var(--duration-ui) var(--ease-out), opacity var(--duration-ui) var(--ease-out);
+}
+.rubric-panel[inert] {
+  opacity: 0;
+}
+.rubric-chevron {
+  display: inline-block;
+  transition: transform var(--duration-ui) var(--ease-out);
+}
+
+/* Elements that appear on demand fade and rise a few pixels. */
+.appear {
+  transition: opacity 150ms var(--ease-out), translate 150ms var(--ease-out);
+  @starting-style {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Keep colour and opacity changes; drop movement and size changes. */
+  .btn:active:not(:disabled),
+  .press:active:not(:disabled),
+  .marker-bar[data-now="true"],
+  .marker:hover .marker-bar {
+    transform: none;
+  }
+  .rubric-panel {
+    transition: opacity var(--duration-ui) ease;
+  }
+  .rubric-chevron {
+    transition: none;
+  }
+  .appear {
+    transition: opacity 150ms ease;
+    @starting-style {
+      translate: none;
+    }
+  }
 }
