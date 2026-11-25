@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TranscriptPlayer } from "@/components/TranscriptPlayer";
 import { RubricScore } from "@/components/RubricScore";
 import RubricPage from "@/app/rubric/page";
-import LoginPage from "@/app/login/page";
 import { AudioReviewPlayer } from "@/components/AudioReviewPlayer";
 vi.mock("next/form", () => ({ default: ({ children }: { children: React.ReactNode }) => <form>{children}</form> }));
 beforeEach(() => {
@@ -11,12 +10,10 @@ beforeEach(() => {
   Object.defineProperty(HTMLMediaElement.prototype, "pause", { configurable: true, value: vi.fn() });
 });
 describe("preserved MVP features", () => {
-  it("keeps rubric bands and demo sign-in accessible", () => {
+  it("keeps rubric bands and review controls accessible", () => {
     render(<RubricPage />);
     expect(screen.getByRole("heading", { name: "The Rubric" })).toBeTruthy();
     expect(screen.getAllByRole("table")).toHaveLength(3);
-    render(<LoginPage />);
-    expect(screen.getByText("DEMO: NOT CONNECTED TO COGNITO YET")).toBeTruthy();
     render(<><RubricScore score={null} /><RubricScore score={3} /></>);
     expect(screen.getByText(/Not scored/)).toBeTruthy();
   });

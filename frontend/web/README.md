@@ -1,6 +1,6 @@
 # SpeakUp frontend
 
-This Next.js frontend is a local, interactive preview of the SpeakUp presentation practice flow. It does not call AWS or generate speech analysis.
+This Next.js frontend supports two modes. Without `NEXT_PUBLIC_SPEAKUP_API_URL`, it runs a local fixture-backed preview. With that variable set and `SPEAKUP_DEV_GUEST_MODE=1`, it connects the local development server to the existing AWS audio-analysis workflow through a server-only guest bridge.
 
 ## Run locally
 
@@ -13,6 +13,26 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000). Run `npm run lint` and `npm run build` to check the app.
 
+### Connect to the backend
+
+Set `NEXT_PUBLIC_SPEAKUP_API_URL=/api/speakup`, `SPEAKUP_DEV_GUEST_MODE=1`, and `AWS_PROFILE=speakup` for local development. The server bridge invokes `speakup-dev-api` with an owner-scoped guest session; browser code receives no AWS credentials or JWT. The bridge refuses requests in production. The AWS CLI and an active profile session are required on the development machine.
+
+```bash
+AWS_PROFILE=speakup SPEAKUP_DEV_GUEST_MODE=1 NEXT_PUBLIC_SPEAKUP_API_URL=/api/speakup npm run dev
+```
+
+The browser creates projects, reserves an upload, sends the original file to the signed S3 URL, polls the recording, then loads the transcript, analysis metrics, optional coaching, and a signed playback URL. The backend performs noise cancellation, transcription, scoring, and optional Bedrock generation. Set the stack parameter `EnableBedrockFeedback=true` to generate coaching; otherwise a completed review can return `feedback: null`.
+
+### Recording and submission boundary
+
+On **New presentation** and **New attempt**, opening the form, microphone setup, the 3–2–1 countdown, recording, pausing, resuming, previewing, cancelling, and recording again stay in the browser. The form scrolls into view when opened. **Pause recording** freezes the active recording timer and level meter and stops the current live speech-recognition session. **Resume recording** shows the same single top 3–2–1 countdown before capture and live recognition continue in the same take; cancelling that countdown keeps the take paused. Stopping during the countdown saves the paused take. The configured duration limit counts active recording time, not time spent paused. After a recorded take, **Record again** asks for confirmation; the current take remains available through microphone setup and the countdown, then is replaced when the new recording starts. Confirming with **Don’t show again** stores only `speakup-skip-record-again-confirmation=true` in this browser's `localStorage`. Cancelling does not save that choice. The preference survives reloads on this browser profile, is not account-scoped, and is removed by clearing site data.
+
+Browser `SpeechRecognition` supplies the live transcript and a provisional speaking-pace estimate after at least five seconds and five recognized words. Interim words can change, so the pace trend is only a guide. Recognition may use a browser vendor's speech service before submission. Browser recognition does not determine rubric scores; the scored review comes from the submitted audio and the backend's timed transcript and analysis. The live UI does not display a filler estimate.
+
+In live mode, the page makes read-only `/session`, `/projects`, `/account/limits`, and existing-recording requests to load account data. Recorder interactions add no SpeakUp API requests. **Start presentation with audio** is the explicit write boundary on both the home form and the live New attempt page: it creates a project when needed, reserves an upload, and PUTs the audio to the signed S3 URL. In demo mode, submission saves to the browser preview rather than AWS.
+
+The development API contract supports `/recordings/{recordingId}/review` with Bedrock categories and anchored moments when coaching is enabled. The frontend reads the transcript, analysis, and feedback artifacts if that route returns 404; the feedback artifact also includes the structured coaching fields. This response has not been verified through an authenticated browser flow against the deployed stack. A local guest session uses a process-local signing secret unless `SPEAKUP_DEV_GUEST_SECRET` is set, so restarting or reloading the development server may start a new guest session.
+
 ## Tests
 
 ```bash
@@ -22,14 +42,29 @@ npm run test:all   # coverage, production build, and browser tests
 ```
 
 The browser suite runs against a local production server on port 3102. It uses the local demo fixtures and browser storage; it does not need the backend or AWS. On macOS it uses installed Google Chrome when available. Microsoft Edge also works: set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to its binary. On other systems install Playwright Chromium with `npx playwright install chromium` or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to a Chromium-compatible browser.
-If Turbopack fails because the environment restricts local worker ports,
-`npx next build --webpack` is an alternative production build.
+Build the demo suite with `NEXT_PUBLIC_SPEAKUP_API_URL` empty, including when `.env.local` sets the live bridge URL: `NEXT_PUBLIC_SPEAKUP_API_URL= npm run test:all`. Otherwise the browser suite runs against live mode and its fixture assertions fail. Use the configured Turbopack build for visual checks; it runs the app's Tailwind loader. The webpack fallback compiles the app but does not run this project's Turbopack Tailwind loader by itself.
 Run `npm run build` first when invoking `npm run test:e2e` by itself; `npm run test:all` includes the build.
 The coverage report measures unit and integration execution of the frontend source. Browser tests are reported separately by Playwright.
 
+### Live API browser QA
+
+The live-mode suite builds the app with `NEXT_PUBLIC_SPEAKUP_API_URL=/api/speakup`, then intercepts the development guest bridge API calls and signed S3 `PUT` in Playwright. It does not contact AWS and does not use the local demo fixtures.
+
+```bash
+npm run test:e2e:live
+```
+
+This command runs a production build first, then `e2e/live-api-flow.spec.ts` on port 3103. The suite checks that recorder selection causes no additional API requests or writes before **Start presentation with audio**. It also covers project creation, signed upload, processing-to-complete transitions, reload during processing, transcript/metrics/feedback rendering (including nullable feedback and the deployed API artifact fallback), failed processing, and a 429 rate-limit response. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` when a compatible Chromium browser is not installed.
+
+The demo browser suite uses a mocked microphone to check the start and resume countdowns, Pause / Resume, and local preview. Unit tests also cover cancelling or stopping during the resume countdown, transcript continuity, the active-time limit, and browser pause/resume errors. These checks do not verify a physical input device, browser speech-service latency, or a deployed upload.
+
+## Loading states
+
+The home page keeps its heading and controls visible while the presentations section shows `HomeSkeleton`. Project, New attempt, Analyzing, and Results routes each have a route `loading.tsx` and an in-page skeleton while account data initializes. Results can show a smaller `ReviewSkeleton` while review details load. The static Rubric page has no skeleton. Fast loads may complete before a skeleton becomes visible.
+
 ## Try the flow
 
-1. On the home page, choose **New presentation** and upload or record audio immediately. A title is optional; the presentation is created when you start the demo review. You can also open the seeded [Demo Day presentation](http://localhost:3000/projects/project-demo-day).
+1. On the home page, choose **New presentation** and upload or record audio. A title is optional; the presentation is created only when you choose **Start presentation with audio** in live mode. You can also open the seeded [Demo Day presentation](http://localhost:3000/projects/project-demo-day).
 2. For another attempt in an existing presentation, choose **New attempt**. Preview or discard the audio before starting the demo processing flow.
 3. Watch the recording move through simulated processing stages, then open its review. The local recording can be played during this browser session.
 4. The seeded [sample review](http://localhost:3000/recordings/8f2d9305-51f8-5ea1-9dbf-d5fc94b87f08) shows a real 2-minute demo talk: its transcript, timeline markers, scores and summary (see [Results page](#results-page)). Those artifacts belong only to that recording. New recordings show no invented scores.
@@ -41,7 +76,7 @@ Presentation and recording state is held in `lib/demo-store.tsx`, seeded from `d
 `/recordings/{recordingId}` is ordered for understanding first and detail second:
 
 1. **Header.** Presentation and take, date and length, and **Practice again**.
-2. **Your takeaway.** One strength and one priority. With coaching they are the coach's first strength and first improvement moment, under the coach's summary. Without coaching they are the highest and lowest rubric scores, each labelled "From your measurements", and a note says coaching isn't available. "Strength" is only used for a score of 3 or 4 (otherwise "Closest to target"). Measures that tie for the top score are named together, and no strength is singled out when every score is level. There is no overall score.
+2. **Your takeaway.** One strength and one priority. With coaching they are the coach's first strength and first improvement moment, under the coach's summary. Older multiline coaching that includes headings, lists, or exercise tables is shown in a collapsed **Read detailed coaching** section with readable formatting instead of raw Markdown. Without coaching they are the highest and lowest rubric scores, each labelled "From your measurements", and a note says coaching isn't available. "Strength" is only used for a score of 3 or 4 (otherwise "Closest to target"). Measures that tie for the top score are named together, and no strength is singled out when every score is level. There is no overall score.
 3. **Your scores.** One concise card each for speaking rate, filler words and pauses inside sentences: measured value and unit, score out of 4, target, and one line of interpretation (the coaching for that metric, or the plain difference from target labelled "Measured"). **About this score** opens the definition, the rubric tip and the full rubric.
 4. **Listen back.** One dark panel, two columns on wide screens: playback, timeline markers and **Moments to replay** on the left, the synced transcript on the right. The `<audio>` element's `currentTime` is the only playback clock; the time display, progress bar, markers and transcript highlight all read it.
    - Markers: scored fillers (rose), pauses inside sentences (orange) and coaching moments (mint). Markers closer than 24 px merge into one with a count; **← Previous / Next →** step through them. Clicking a marker seeks there, plays, and scrolls its sentence into view.
@@ -67,6 +102,18 @@ Not shown because the payloads don't include it: times for watch-list words (onl
 
 Motion uses the tokens in `app/globals.css` (CSS transitions, 200 ms or less). With reduced motion on, colour and opacity changes stay and movement is removed.
 
+### Shared example project
+
+In live mode the home page loads a read-only “Example speeches” project from
+`GET /examples`. Its two reviews use the same results page as personal recordings,
+including audio playback from short-lived S3 URLs, timed transcript, rubric scores,
+filler and pause markers, and available coaching. The examples are kept out of
+“Your presentations” and cannot accept new attempts. The backend source IDs are
+fixed in `infra/lambda/api/index.py`; the browser never chooses an owner or S3 key.
+The development guest bridge supports these reads. The deployed API routes require
+a Cognito JWT; this frontend still needs a production Cognito sign-in client before
+an authenticated production user can reach them.
+
 ### Demo audio
 
 The seeded review's transcript and analysis in `data/demo/` were produced by the backend scorer from `public/demo/sample-take.mp3`, an excerpt of a public ACL 2022 conference talk. The mp3 is not committed (`.gitignore`). Ask a teammate for the file and place it at `public/demo/sample-take.mp3` to hear playback. Without it, the page shows "This recording could not be loaded." and turns off playback and transcript seeking; the transcript, markers, scores and summary still display.
@@ -77,7 +124,7 @@ The app is set in a prehistoric valley, after the DS3 dinosaur mascot. The produ
 
 - **Layout.** Every page, the nav and the footer share one column (`pageColumn` in `components/PageHeading.tsx`, 1152px). Body text is 16 to 18px, metadata 14px, and monospace is kept for short details such as times.
 - **Colours.** Tokens live at the top of `app/globals.css`: a cream page, lighter paper for content cards, forest green task panels, the mascot's orange for the one primary action on a screen, and its violet for selected states. Dark mode is the same valley at dusk. Each text pairing is at least 4.5:1.
-- **Scenery.** `components/Scenery.tsx` holds original artwork: `ValleyBackdrop` (far mesas, lake and a ground slice with a cut edge), `Perch` (the rock ledge the mascot sits on), ferns and eggs. It is used on the home page and sign-in only. Working screens get a quiet footer with one plant, and transcripts, scores and charts stay on plain surfaces.
+- **Scenery.** `components/Scenery.tsx` holds original artwork: `ValleyBackdrop` (far mesas, lake and a ground slice with a cut edge), `Perch` (the rock ledge the mascot sits on), ferns and eggs. The backdrop and perch are used on the home page; the shared footer uses a quiet plant on working screens. Transcripts, scores and charts stay on plain surfaces.
 - **Motion.** Mist drifts and ferns sway as whole elements, and both stop when the system asks for reduced motion. The mascot is a still image.
 
 ### Mascot
@@ -97,9 +144,12 @@ The mascot is the approved artwork in `public/mascot/`: three transparent PNGs, 
 | Path | Purpose |
 | --- | --- |
 | `app/` | Presentation, recording, status, and review routes |
-| `lib/demo-store.tsx` | Single client-side source for presentations, recordings, reviews, and status progression |
+| `lib/live-store.tsx` | API state, uploads, status, review, and playback URLs |
+| `lib/demo-store.tsx` | Local preview state and simulated status progression |
+| `app/api/speakup/` | Development-only server bridge to the protected API |
+| `lib/api.ts` | HTTP API and signed upload client |
 | `lib/recordings.ts` | Pure selectors and display formatting |
-| `components/RecorderUploader.tsx` | Microphone capture with a live level meter, file selection, and local preview |
+| `components/RecorderUploader.tsx` | Microphone capture with one start/resume countdown, Pause / Resume, live transcript and pace, level meter, file selection, and local preview |
 | `components/Mascot.tsx`, `MascotCoach.tsx`, `MascotState.tsx` | The approved mascot PNGs, the speech bubble, and loading, empty and error panels |
 | `components/Scenery.tsx` | Valley backdrop, rock ledge, ferns, eggs and the footer |
 | `components/ProgressCharts.tsx` | Single-attempt summary with target comparison, or trend charts once two attempts are scored |
@@ -114,13 +164,14 @@ The mascot is the approved artwork in `public/mascot/`: three transparent PNGs, 
 
 `frontend/sample-payloads/` contains the original example API payloads. The runtime reads only `frontend/web/data/`; when refreshing demo examples, update that set deliberately and keep recording IDs consistent across transcript, analysis, and review. The seeded review comes from `data/review.json` (the `GET /recordings/{recordingId}/review` response) plus `data/analysis.json` for the filler and pause markers.
 
-The AWS API contract is documented in [docs/aws-payload-api.md](../../docs/aws-payload-api.md). Authentication, upload, processing, and generated analysis still require backend integration.
+The AWS API contract is documented in [docs/aws-payload-api.md](../../docs/aws-payload-api.md).
 
 ## Integrated MVP features
 
-The interactive demo also retains `/rubric`, `/login` (demo only), and the
-unused AWS helpers in `lib/api.ts`. New local recordings do not receive sample
-analysis.
+The interactive demo also retains `/rubric`. The review transcript preserves punctuation,
+filler highlighting, and clickable timestamps with a 0.5-second lead-in when audio is
+available. Seed feedback stays attached to its original recording; new local recordings
+do not receive sample analysis.
 
 The seeded review uses `data/demo/` (see [Demo audio](#demo-audio)).
 `data/transcript.json`, `data/analysis.json` and `data/feedback.json` remain as short

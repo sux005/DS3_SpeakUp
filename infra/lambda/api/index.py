@@ -45,6 +45,28 @@ _ORIGINAL_OBJECT_KEY = re.compile(
     r"original\.(?:wav|mp3|m4a|ogg|webm)$"
 )
 
+# Curated, read-only recordings shown to every authenticated user.  These IDs
+# are deliberately kept in an allowlist: the normal recording routes remain
+# owner-scoped and no caller can turn this catalog into an arbitrary cross-user
+# lookup.
+EXAMPLE_PROJECT_ID = "example-project"
+EXAMPLES: dict[str, dict[str, str]] = {
+    "example-strong": {
+        "title": "Strong delivery",
+        "description": "A sample with clean filler-word control and intentional pauses.",
+        "owner_id": "guest-bda20b7a-8575-4679-9c98-5bbd9c12d549",
+        "project_id": "20091882-25d9-4745-8fcf-c1e139f6c662",
+        "recording_id": "629505a8-bf05-5593-89e0-22e687e508df",
+    },
+    "example-improve": {
+        "title": "A presentation to improve",
+        "description": "A clear argument where filler words and inside-sentence pauses are visible.",
+        "owner_id": "guest-89c0eb2e-f724-4bb4-9a7b-35c58675d80f",
+        "project_id": "764f7385-f56a-4035-aab4-2b0a4dd23afd",
+        "recording_id": "6c9ec900-7a79-5802-84b7-f6f5a763e148",
+    },
+}
+
 @lru_cache(maxsize=1)
 def payloads() -> SpeakUpPayloadStore:
     """Reuse the service and its clients across warm invocations."""
@@ -212,6 +234,19 @@ def _recording_body(recording: Recording) -> dict[str, Any]:
     return body
 
 
+def _public_feedback(data: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep the structured coaching contract while redacting private metadata."""
+
+    feedback = data.get("feedback")
+    if not isinstance(feedback, str):
+        raise PayloadIntegrityError("stored feedback is invalid")
+    public = {"feedback": feedback}
+    for field in ("schema_version", "categories", "moments", "metrics"):
+        if field in data:
+            public[field] = data[field]
+    return public
+
+
 def _artifact_body(
     store: SpeakUpPayloadStore,
     user_id: str,
@@ -247,10 +282,7 @@ def _artifact_body(
             raise PayloadIntegrityError("stored analysis is invalid")
         public_data = {"metrics": dict(metrics)}
     else:
-        feedback = data.get("feedback")
-        if not isinstance(feedback, str):
-            raise PayloadIntegrityError("stored feedback is invalid")
-        public_data = {"feedback": feedback}
+        public_data = _public_feedback(data)
 
     return {
         "recording_id": recording_id,
@@ -498,6 +530,73 @@ def _dispatch(event: dict[str, Any]) -> dict[str, Any]:
         raise PayloadValidationError("Request body must be a JSON object")
     store = payloads()
 
+    if route == "GET /examples":
+        recordings = []
+        for example_id, metadata in EXAMPLES.items():
+            try:
+                recording = store.get_recording(metadata["owner_id"], metadata["recording_id"])
+            except (PayloadNotFoundError, OwnershipViolationError):
+                continue
+            if recording.status is not RecordingStatus.COMPLETE:
+                continue
+            body = _recording_body(recording)
+            body.pop("user_id", None)
+            body.update({"recording_id": example_id, "project_id": EXAMPLE_PROJECT_ID, "example_id": example_id})
+            recordings.append(body)
+        return reply(200, {"project": {
+            "project_id": EXAMPLE_PROJECT_ID,
+            "project_title": "Example speeches",
+            "description": "Listen to one strong delivery and one speech with clear improvement opportunities.",
+            "created_at": "2026-11-17T00:00:00Z",
+        }, "recordings": recordings})
+
+    example_id = str((event.get("pathParameters") or {}).get("exampleId") or "")
+    if route in {
+        "GET /examples/{exampleId}",
+        "GET /examples/{exampleId}/review",
+        "GET /examples/{exampleId}/analysis",
+        "GET /examples/{exampleId}/download",
+    }:
+        metadata = EXAMPLES.get(example_id)
+        if metadata is None:
+            return reply(404, {"message": "Resource not found"})
+        recording = store.get_recording(metadata["owner_id"], metadata["recording_id"])
+        if recording.status is not RecordingStatus.COMPLETE:
+            raise InvalidTransitionError("Example review is not available until processing is complete")
+        public_recording = _recording_body(recording)
+        public_recording.pop("user_id", None)
+        public_recording.update({"recording_id": example_id, "project_id": EXAMPLE_PROJECT_ID, "example_id": example_id})
+        if route == "GET /examples/{exampleId}":
+            return reply(200, public_recording)
+        if route == "GET /examples/{exampleId}/analysis":
+            artifact = _artifact_body(store, metadata["owner_id"], metadata["recording_id"], "analysis")
+            artifact["recording_id"] = example_id
+            artifact["project_id"] = EXAMPLE_PROJECT_ID
+            return reply(200, artifact)
+        if route == "GET /examples/{exampleId}/download":
+            return reply(200, {
+                "recording_id": example_id,
+                "download_url": store.create_original_download_url(metadata["owner_id"], metadata["recording_id"]),
+                "expires_in": store.config.upload_url_ttl_seconds,
+            })
+        transcript = _artifact_body(store, metadata["owner_id"], metadata["recording_id"], "transcript")["data"]
+        try:
+            feedback_document = store.get_json_artifact(metadata["owner_id"], metadata["recording_id"], PayloadType.FEEDBACK)
+        except PayloadNotFoundError:
+            feedback = None
+        else:
+            feedback_data = feedback_document.get("data")
+            if not isinstance(feedback_data, Mapping):
+                raise PayloadIntegrityError("stored feedback is invalid")
+            feedback = _public_feedback(feedback_data)
+        return reply(200, {
+            "recording_id": example_id,
+            "project_id": EXAMPLE_PROJECT_ID,
+            "transcript": transcript,
+            "feedback": feedback,
+            "summary_metrics": dict(recording.summary_metrics),
+        })
+
     if route == "GET /account/limits":
         limits = _workflow_limits(store, user_id)
         return reply(
@@ -626,12 +725,9 @@ def _dispatch(event: dict[str, Any]) -> dict[str, Any]:
             feedback = None
         else:
             feedback_data = feedback_document.get("data")
-            if not isinstance(feedback_data, Mapping) or not isinstance(feedback_data.get("feedback"), str):
+            if not isinstance(feedback_data, Mapping):
                 raise PayloadIntegrityError("stored feedback is invalid")
-            feedback = {"feedback": feedback_data["feedback"]}
-            for field in ("schema_version", "categories", "moments", "metrics"):
-                if field in feedback_data:
-                    feedback[field] = feedback_data[field]
+            feedback = _public_feedback(feedback_data)
         return reply(
             200,
             {

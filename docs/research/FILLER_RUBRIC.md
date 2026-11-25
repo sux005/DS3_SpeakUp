@@ -1,4 +1,9 @@
-# SpeakUp: Filler-Word Rubric, Draft v3
+# SpeakUp filler rubric: research and implemented score
+
+This document retains the research options and annotation vocabulary. The
+implemented scorer uses Option A and the CSV bands in
+`src/scoring/rubrics/speaking-2026-10-31.csv`. Its exact word sets are defined
+in `src/scoring/rubric.py`; the broader words below are research candidates.
 
 Changes from v2: two rubric options (per 100 words, recommended, and per minute); more detail on the presentation studies.
 
@@ -57,9 +62,16 @@ A series of 7 studies (reviewed by Luiselli 2022) treated university students' f
 
 ## 2. What counts
 
-**Definite fillers (scored, red):** um (umm, uhm), uh (uhh), er, erm, ah, and "you know" (except "do/did/don't/if/as/would/to you know").
+**Runtime scored fillers:** exact transcript tokens `um`, `uh`, `er`, `erm`,
+`ah`, and qualifying `you know` (excluding contexts such as `do you know`).
+Spellings such as `umm`, `uhm`, and `uhh` are normalized in hand labels below,
+but the runtime scorer does not normalize them.
 
-**Investigate list (counted and shown, not scored):** filler "like", "I mean", so, well, actually, basically, right/okay, kind of/sort of, literally, hmm/mm, repeated words. Evidence for each is in section 5.
+**Runtime watch words (counted and shown, not scored):** `like`, `so`, `well`,
+`actually`, `basically`, `right`, `okay`, `hmm`, `I mean`, `kind of`, and
+`sort of`. `Literally`, `mm`, and repeated words remain research candidates;
+the runtime scorer does not track them. Evidence for the broader list is in
+section 5.
 
 ## 3. Option A (recommended): definite fillers per 100 words
 
@@ -129,7 +141,7 @@ A series of 7 studies (reviewed by Luiselli 2022) treated university students' f
 
 ## 6. Measurement notes
 
-- **Transcriber must keep fillers:** on 436 human-labeled um/uh, plain Whisper caught 13%, verbatim Whisper 83%. Test Amazon Transcribe the same way.
+- **Transcriber must keep fillers:** on 436 human-labeled um/uh, plain Whisper caught 13%, verbatim Whisper 83%. Amazon Transcribe is the implemented transcription path; its filler recall still needs hand-labeled validation.
 - Verbatim Whisper misses ~17% of fillers, so scores run slightly generous; acceptable for a practice tool, recheck with hand-labeled clips.
 - Benchmarks come from lecturers, managers, researchers and listener experiments, not UCSD students; collect student baselines from the team's consented recordings.
 

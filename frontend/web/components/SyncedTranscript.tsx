@@ -168,7 +168,7 @@ export function SyncedTranscript({ sentences, pauses, moments = [], currentTime,
                         <Fragment key={wordIndex}>
                           <span
                             data-start={word.start}
-                            className={`rounded-sm ${word.filler ? "bg-rose/15 px-0.5 font-semibold text-rose" : ""} ${
+                            className={`rounded-sm ${word.filler ? "font-semibold text-rose" : ""} ${
                               marked ? "underline decoration-mint decoration-2 underline-offset-4" : ""
                             }`}
                           >

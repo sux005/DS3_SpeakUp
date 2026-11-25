@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Project, Recording, RecordingReview } from "@/lib/types";
@@ -31,7 +31,13 @@ vi.mock("@/components/PageHeading", () => ({
   PageHeading: ({ crumb, title, subtitle }: { crumb: string; title: React.ReactNode; subtitle: string }) => <header><span>{crumb}</span><h1>{title}</h1><p>{subtitle}</p></header>,
 }));
 vi.mock("@/components/RecorderUploader", () => ({
-  RecorderUploader: ({ onSubmit, submitLabel = "Analyze demo recording" }: { onSubmit: (blob: Blob, name: string) => void; submitLabel?: string }) => <button type="button" onClick={() => onSubmit(new Blob(["audio"], { type: "audio/wav" }), "test.wav")}>{submitLabel}</button>,
+  RecorderUploader: (() => {
+    const audio = new Blob(["audio"], { type: "audio/wav" });
+    function RecorderUploaderMock({ onSubmit, submitLabel = "Analyze demo recording" }: { onSubmit: (blob: Blob, name: string) => void | Promise<void>; submitLabel?: string }) {
+      return <button type="button" onClick={() => { void Promise.resolve(onSubmit(audio, "test.wav")).catch(() => undefined); }}>{submitLabel}</button>;
+    }
+    return RecorderUploaderMock;
+  })(),
 }));
 vi.mock("@/components/ProgressCharts", () => ({ ProgressCharts: ({ takes }: { takes: Recording[] }) => <div data-testid="charts">charts:{takes.length}</div> }));
 vi.mock("@/components/AudioReviewPlayer", () => ({
@@ -63,6 +69,26 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("home and project routes", () => {
+  it("shows the shared examples separately and keeps their project read-only", () => {
+    harness.store.projects = [project(), { ...project("example-project"), project_title: "Example speeches" }];
+    harness.store.recordings = [recording("recording-1"), recording("example-strong", "COMPLETE", "example-project"), recording("example-improve", "COMPLETE", "example-project")];
+    render(<Home />);
+    expect(screen.getByRole("link", { name: /Explore the example project/ }).getAttribute("href")).toBe("/projects/example-project");
+    expect(screen.queryByRole("heading", { name: "Other presentations" })).toBeNull();
+    cleanup();
+
+    harness.params.projectId = "example-project";
+    render(<ProjectPage />);
+    expect(screen.getByRole("heading", { level: 1, name: "Example speeches" })).toBeTruthy();
+    expect(screen.getByText("Stronger delivery")).toBeTruthy();
+    expect(screen.getByText("Room to improve")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "+ New attempt" })).toBeNull();
+    cleanup();
+
+    render(<NewAttemptPage />);
+    expect(screen.getByText("Example speeches are read-only.")).toBeTruthy();
+    expect(harness.store.createRecording).not.toHaveBeenCalled();
+  });
   it("features the most recently worked-on presentation and lists the others", () => {
     harness.store.projects = [project("project-1"), { ...project("project-2"), project_title: "Second talk" }];
     harness.store.recordings = [recording("recording-1"), { ...recording("recording-2", "PROCESSING", "project-2"), created_at: "2025-02-01T00:00:00.000Z" }];
@@ -103,7 +129,7 @@ describe("home and project routes", () => {
   it("shows loading and empty presentation states", () => {
     harness.store.ready = false;
     render(<Home />);
-    expect(screen.getByText("Loading local presentations…")).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Loading local presentations…" })).toBeTruthy();
     expect((screen.getByRole("button", { name: "+ New presentation" }) as HTMLButtonElement).disabled).toBe(true);
     cleanup();
     harness.store.ready = true;
@@ -112,16 +138,48 @@ describe("home and project routes", () => {
     expect(screen.getByText(/No presentations yet/)).toBeTruthy();
   });
 
-  it("toggles the home form and submits a custom titled presentation", () => {
+  it("toggles the home form and submits a custom titled presentation", async () => {
     render(<Home />);
     fireEvent.click(screen.getByRole("button", { name: "+ New presentation" }));
     fireEvent.change(screen.getByPlaceholderText("We’ll use today’s date if you skip this"), { target: { value: "  Talk  " } });
+    expect(harness.store.createProject).not.toHaveBeenCalled();
+    expect(harness.store.createRecording).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Start presentation with audio" }));
     expect(harness.store.createProject).toHaveBeenCalledWith("Talk", "");
-    expect(harness.store.createRecording).toHaveBeenCalled();
-    expect(harness.router.push).toHaveBeenCalledWith("/recordings/created-recording/analyzing");
+    await waitFor(() => expect(harness.store.createRecording).toHaveBeenCalled());
+    await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith("/recordings/created-recording/analyzing"));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByText("Start with your audio")).toBeNull();
+  });
+
+  it("centers the new presentation form when it opens", () => {
+    const previous = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollIntoView");
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
+    try {
+      render(<Home />);
+      fireEvent.click(screen.getByRole("button", { name: "+ New presentation" }));
+      expect(scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ block: "center" }));
+    } finally {
+      if (previous) Object.defineProperty(HTMLElement.prototype, "scrollIntoView", previous);
+      else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+    }
+  });
+
+  it("reuses the created project when recording upload is retried", async () => {
+    harness.store.createRecording
+      .mockImplementationOnce(() => { throw new Error("upload failed"); })
+      .mockReturnValue("retry-recording");
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "+ New presentation" }));
+    const submit = screen.getByRole("button", { name: "Start presentation with audio" });
+    fireEvent.click(submit);
+    await waitFor(() => expect(harness.store.createRecording).toHaveBeenCalledTimes(1));
+    fireEvent.click(submit);
+    await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith("/recordings/retry-recording/analyzing"));
+    expect(harness.store.createProject).toHaveBeenCalledTimes(1);
+    expect(harness.store.createRecording).toHaveBeenCalledTimes(2);
+    expect((harness.store.createRecording.mock.calls[0] as unknown[])[0]).toBe((harness.store.createRecording.mock.calls[1] as unknown[])[0]);
   });
 
   it("renders project status rows and action links for complete, failed, and processing takes", () => {
@@ -150,13 +208,13 @@ describe("home and project routes", () => {
     expect(screen.getAllByText("Presentation not found.")).toHaveLength(2);
   });
 
-  it("submits a new attempt for the current project and navigates to its status", () => {
+  it("submits a new attempt for the current project and navigates to its status", async () => {
     render(<NewAttemptPage />);
     expect(screen.getByRole("heading", { name: "Record or upload" })).toBeTruthy();
-    expect(screen.getByText(/preview or discard your audio/)).toBeTruthy();
+    expect(screen.getByText(/preview or discard your audio/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Analyze demo recording" }));
     expect(harness.store.createRecording).toHaveBeenCalledWith("project-1", expect.any(Blob), "test.wav");
-    expect(harness.router.push).toHaveBeenCalledWith("/recordings/created-recording/analyzing");
+    await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith("/recordings/created-recording/analyzing"));
   });
 });
 
@@ -192,6 +250,15 @@ describe("analyzing route", () => {
 });
 
 describe("results route", () => {
+  it("labels an example review and omits personal practice actions", () => {
+    harness.params.recordingId = "example-strong";
+    harness.store.projects = [{ ...project("example-project"), project_title: "Example speeches" }];
+    harness.store.recordings = [recording("example-strong", "COMPLETE", "example-project")];
+    render(<ResultsPage />);
+    expect(screen.getByRole("heading", { name: "Example review" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Practice again →" })).toBeNull();
+    expect(screen.queryByTestId("charts")).toBeNull();
+  });
   it("shows no-analysis messaging for a complete local recording", () => {
     render(<ResultsPage />);
     expect(screen.getByRole("heading", { name: "Your demo recording" })).toBeTruthy();

@@ -53,6 +53,20 @@ describe("Takeaway", () => {
     expect(onSeek).toHaveBeenCalledWith(12.5);
   });
 
+  it("keeps legacy Markdown coaching readable without flooding the takeaway", () => {
+    const legacy: RecordingReview = {
+      ...coached,
+      feedback: { feedback: "**Strengths**\n- **No filler words** – clean delivery.\n\n**Priorities**\n1. **Slow down** – make each point clear.\n\n**Concrete Exercises**\n\n| # | Exercise | How to Do It | What to Measure |\n|---|---|---|---|\n| 1 | **Pacing drill** | Speak with a metronome. | Words per minute. |" },
+    };
+    render(<Takeaway review={legacy} metrics={metrics} canSeek={false} onSeek={vi.fn()} />);
+    const region = screen.getByRole("region", { name: "Your takeaway" });
+    fireEvent.click(within(region).getByText("Read detailed coaching"));
+    expect(within(region).getByRole("heading", { name: "Strengths" })).toBeTruthy();
+    expect(within(region).getByRole("heading", { name: "Pacing drill" })).toBeTruthy();
+    expect(region.textContent).not.toContain("**");
+    expect(region.textContent).not.toContain("|---|");
+  });
+
   it("turns off playing a moment when there is no audio", () => {
     render(<Takeaway review={coached} metrics={metrics} canSeek={false} onSeek={vi.fn()} />);
     expect((screen.getByRole("button", { name: /Play from 00:12/ }) as HTMLButtonElement).disabled).toBe(true);

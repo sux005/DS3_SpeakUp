@@ -21,7 +21,7 @@ the stack does not delete recordings, users, or DynamoDB data.
 
 ## Deployment defaults
 
-- AWS CLI profile: `speakup-dev`
+- AWS CLI profile on this workstation: `speakup` (other developers may use a different local profile name)
 - selected Region: `us-east-2`
 - stack name: `speakup-dev`
 - frontend origin: `http://localhost:3000`
@@ -47,10 +47,13 @@ real production frontend origin before deploying a production stack.
 
 - `POST /projects`
 - `GET /account/limits`
+- `GET /examples` and `GET /examples/{exampleId}`
+- `GET /examples/{exampleId}/review`, `/analysis`, and `/download`
 - `GET /projects`
 - `POST /uploads`
 - `GET /projects/{projectId}/recordings`
 - `GET /recordings/{recordingId}`
+- `GET /recordings/{recordingId}/artifacts/{artifactType}`
 - `GET /recordings/{recordingId}/review`
 - `POST /recordings/{recordingId}/confirm-upload`
 - `GET /recordings/{recordingId}/download`
@@ -105,9 +108,10 @@ deletion requires the exact recording ID as confirmation.
 
 ### Frontend input and original-download contract
 
-The frontend should offer **Record audio** and **Upload audio file** as two
-ways to create an original recording. This is a planned interface contract;
-`frontend/` does not yet contain an app.
+The frontend offers **Record audio** and **Upload audio file** as two
+ways to create an original recording. The local development frontend can use
+the server-only guest bridge with `SPEAKUP_DEV_GUEST_MODE=1`; deployed API routes
+remain JWT-protected and should not be made public.
 
 - **Record audio:** A user clicks Record, grants microphone permission, sees an
   active recording indicator and elapsed time, and can Stop or Cancel. Stop
@@ -140,11 +144,11 @@ ways to create an original recording. This is a planned interface contract;
   Download original action. A bare S3 key does not grant access. Do not log or
   persist the signed URL; someone holding it can use it until it expires.
 
-Add frontend tests for both input paths, the selected browser formats, invalid or
-oversized audio, denied microphone permission, cancelled recordings, original
-download, and cross-owner download denial. The browser recording controls are
-future work; signed upload, browser-audio MIME support, and
-original-download backend routes already exist.
+Frontend tests cover both input paths, selected browser formats, invalid or
+oversized audio, denied microphone permission, cancelled recordings, and the
+signed upload and review flow. Backend tests cover owner-scoped download; the
+live browser QA suite mocks AWS and the development guest bridge is intended for
+local verification only.
 
 ## Current upload and processing workflow
 
@@ -168,8 +172,9 @@ when Bedrock coaching runs.
 Speech analysis applies the finalized 2026-10-31 rubric. It scores speaking
 rate, scored fillers per 100 spoken words, and inside-sentence pauses per
 speaking minute from 0 to 4 when estimated speech lasts at least 60 seconds.
-The processor derives pauses from Transcribe word gaps and reports that method
-in the metrics. Scores and detailed fields are documented in
+The processor uses valid acoustic pause inputs from audio preparation when
+available, otherwise it falls back to Transcribe word gaps. The metrics report
+which method ran. Scores and detailed fields are documented in
 `docs/aws-payload-api.md`. Processor ZIPs include `src/scoring`; historical
 analysis artifacts remain available on workflow replay.
 
@@ -220,13 +225,13 @@ python scripts/backfill_maintenance_index.py `
   --recordings-table speakup-dev-recordings `
   --admissions-table speakup-dev-workflow-admissions `
   --cursor-table speakup-dev-workflow-reconcile-cursors `
-  --profile speakup-dev --region us-east-2
+  --profile speakup --region us-east-2
 
 python scripts/backfill_maintenance_index.py `
   --recordings-table speakup-dev-recordings `
   --admissions-table speakup-dev-workflow-admissions `
   --cursor-table speakup-dev-workflow-reconcile-cursors `
-  --profile speakup-dev --region us-east-2 --apply
+  --profile speakup --region us-east-2 --apply
 ```
 
 The dry run does not advance the cursor. Inspect its full-table totals and any
@@ -244,7 +249,7 @@ the owner-scoped keys. Backfill legacy rows in dry-run mode first:
 
 ```powershell
 python scripts/backfill_recording_owner_index.py `
-  --table speakup-dev-recordings --profile speakup-dev --region us-east-2
+  --table speakup-dev-recordings --profile speakup --region us-east-2
 ```
 
 After reviewing totals and confirming the new index is ACTIVE, repeat with
@@ -264,7 +269,7 @@ Bootstrap the retained ECR repository once:
 
 ```powershell
 aws cloudformation deploy --template-file infra/audio-prep-image.yaml `
-  --stack-name speakup-audio-images --profile speakup-dev --region us-east-2
+  --stack-name speakup-audio-images --profile speakup --region us-east-2
 ```
 
 Build and push an x86-64 image with an immutable version tag. The image build downloads
@@ -274,9 +279,9 @@ model weights:
 
 ```powershell
 $repositoryUri = aws cloudformation describe-stacks `
-  --stack-name speakup-audio-images --profile speakup-dev --region us-east-2 `
+  --stack-name speakup-audio-images --profile speakup --region us-east-2 `
   --query "Stacks[0].Outputs[?OutputKey=='RepositoryUri'].OutputValue" --output text
-aws ecr get-login-password --profile speakup-dev --region us-east-2 |
+aws ecr get-login-password --profile speakup --region us-east-2 |
   docker login --username AWS --password-stdin ($repositoryUri -split '/')[0]
 docker buildx build --platform linux/amd64 --provenance=false `
   -f infra/lambda/audio_prep/Dockerfile `
@@ -318,11 +323,11 @@ test before processing recordings in a deployed environment.
 
 ## Validation
 
-Run from the repository root:
-
-```powershell
-aws cloudformation validate-template --template-body file://infra/speakup.yaml --profile speakup-dev --region us-east-2
-```
+The template currently exceeds CloudFormation's 51,200-byte inline
+`TemplateBody` limit. Running `validate-template` with `--template-body`
+and `file://infra/speakup.yaml` therefore fails before validating the template.
+Validate a staged copy through `--template-url`, or validate through a
+CloudFormation change set. Use `cfn-lint` locally when installed.
 
 After deployment, run the opt-in API checkpoints with `SPEAKUP_LIVE_API=1`,
 `SPEAKUP_E2E_API_URL`, and `SPEAKUP_E2E_JWT` set. The checkpoint test in
@@ -332,8 +337,37 @@ the original. The separate `SPEAKUP_LIVE_E2E=1` workflow test needs
 `SPEAKUP_E2E_WAV_PATH` with non-private speech and working Transcribe access.
 
 CloudFormation service validation also runs when the stack change set is created.
-Use `cfn-lint` locally. `cfn-guard` remains a recommended CI addition; until it
-is installed, local security/compliance policy evaluation is not claimed.
+`cfn-guard` remains a recommended CI addition; until it is installed, local
+security/compliance policy evaluation is not claimed.
+
+### Development security check (2026-11-20)
+
+Read-only AWS checks used account `110359221190`, Region `us-east-2`, and local
+profile `speakup`. The `speakup-dev` stack was `UPDATE_COMPLETE`. The deployed
+bucket had all four public-access blocks enabled, reported `IsPublic=false`,
+used bucket-owner-enforced ownership, AES256 default encryption, and versioning,
+and denied insecure transport through its bucket policy. CORS allowed the
+development origin `http://localhost:3000`. Lifecycle aborted incomplete
+multipart uploads after 7 days and expired noncurrent object versions after 30
+days; it does not expire current versions.
+
+All six stack Lambda functions were active and used their expected IAM roles.
+Each role had its expected inline policy and no attached managed policies. S3
+object permissions in those policies were limited to this bucket's `users/*`
+prefix; the processor and audio-prep roles also had bucket-list permission.
+Lambda environment variable names did not include access-key or secret-key
+fields. `GET /health` returned 200 and an unsigned `GET /projects` returned 401.
+The targeted S3, API, and retention suite passed all 35 tests, including the
+Moto test for permanent version purge.
+
+IAM simulation reported an Organizations explicit deny for API-role S3 and
+DynamoDB actions that its inline policy allows. This identity was denied access
+to inspect the organization's policies, so the effective runtime permission
+remains unverified. A production stack named `speakup-prod` was not present in
+this account and Region. Authenticated tests with two Cognito test users are
+still needed for cross-owner reads, signed upload/download boundaries, URL
+expiry, and live deletion and version purge. The remaining checklist is in the
+local `WORK_NOTES.md` file.
 
 ## Cleanup
 

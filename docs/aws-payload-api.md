@@ -24,6 +24,11 @@ select an AWS project, Region, bucket, table, index, or raw object path.
 | Route | Result |
 | --- | --- |
 | `GET /account/limits` | Returns the owner's active workflow count and current upload limits. |
+| `GET /examples` | Lists one shared read-only example project with two completed recordings. |
+| `GET /examples/{exampleId}` | Reads one curated example recording. |
+| `GET /examples/{exampleId}/review` | Returns its timed transcript, metrics, and available coaching. |
+| `GET /examples/{exampleId}/analysis` | Returns its detailed analysis artifact. |
+| `GET /examples/{exampleId}/download` | Returns a short-lived signed URL for its original audio. |
 | `POST /projects` | Creates owner-scoped metadata. |
 | `GET /projects` | Lists projects with an opaque cursor. |
 | `POST /uploads` | Reserves a recording and returns a conditional pre-signed PUT. |
@@ -37,6 +42,16 @@ select an AWS project, Region, bucket, table, index, or raw object path.
 | `DELETE /recordings/{recordingId}` | Soft-deletes with a 30-day recovery window. |
 | `POST /recordings/{recordingId}/restore` | Restores a recoverable recording. |
 | `DELETE /recordings/{recordingId}/permanent` | Purges all object versions after exact-ID confirmation. |
+
+The example routes use a fixed server-side allowlist of two completed QA recordings.
+They expose `example-strong` and `example-improve` under the synthetic
+`example-project` ID. The source recordings and S3 objects remain private;
+the download route issues a short-lived URL after authentication. No example
+route accepts an owner ID or writes data. Normal project and recording routes
+remain scoped to the JWT owner. The strong example scored 4/4 for fillers and
+pauses but 2/4 for speaking rate; the improvement example scored 2/4 for fillers,
+3/4 for pauses, and 4/4 for speaking rate. These labels describe the selected
+delivery traits, not an overall pass/fail grade.
 
 `POST /uploads` requires `project_id`, `content_type`, Base64 `sha256`, and
 positive `content_length` within the configured upload limit. The returned
@@ -80,6 +95,9 @@ is `transcript`, `analysis`, or `feedback`. The API strongly reads the
 authenticated owner's recording before reading S3 and returns
 `recording_id`, `artifact_type`, and `data`. It does not expose S3 references,
 producer metadata, or the Bedrock model ID.
+The feedback artifact exposes the public `feedback` summary and, when present,
+`schema_version`, `categories`, `moments`, and `metrics`, matching the coaching
+fields in `/review`. Older feedback artifacts may contain only the summary.
 
 `GET /recordings/{recordingId}/review` returns HTTP 409 until processing is
 `COMPLETE`. Its `transcript` object contains `text` and timed Transcribe `items`.
@@ -198,10 +216,10 @@ and remove GSIs in the same production change.
 
 ```powershell
 python scripts/backfill_recording_owner_index.py `
-  --table speakup-dev-recordings --profile speakup-dev --region us-east-2
+  --table speakup-dev-recordings --profile speakup --region us-east-2
 
 python scripts/backfill_recording_owner_index.py `
-  --table speakup-dev-recordings --profile speakup-dev --region us-east-2 --apply
+  --table speakup-dev-recordings --profile speakup --region us-east-2 --apply
 ```
 
 The script scans because legacy rows lack the new partition key. It is the only

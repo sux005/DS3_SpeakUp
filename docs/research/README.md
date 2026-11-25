@@ -4,9 +4,11 @@ Research behind the speaking rubric, the pause method and the Bedrock coaching p
 Docs only. The scripts named in these files live in Allen's private research repo, because they
 need local audio and hand labels that are not in this repo.
 
-The cutoffs described here are the ones in `src/scoring/rubrics/speaking-2026-10-31.csv`. The
-acoustic pause method and the new Bedrock prompt are proposals, not on `main`. They are tested
-here and will go up as separate PRs for the team to review.
+The cutoffs described here are the ones in `src/scoring/rubrics/speaking-2026-10-31.csv`.
+The acoustic pause inputs are implemented in `src/audio/pause_detection.py` and are passed to
+the scorer when available; the scorer falls back to Transcribe word gaps when they are absent.
+The Bedrock prompt comparison below is historical research. The processor implementation validates
+structured feedback in `infra/lambda/processor/index.py`.
 
 ## Start here
 

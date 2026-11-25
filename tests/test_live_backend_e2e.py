@@ -27,6 +27,15 @@ WORKFLOW_REQUIRED_ENV = (
     "SPEAKUP_E2E_JWT",
     "SPEAKUP_E2E_WAV_PATH",
 )
+TWO_USER_REQUIRED_ENV = (
+    "SPEAKUP_E2E_API_URL",
+    "SPEAKUP_E2E_JWT_A",
+    "SPEAKUP_E2E_JWT_B",
+    "SPEAKUP_E2E_WAV_PATH_A",
+    "SPEAKUP_E2E_WAV_PATH_B",
+    "SPEAKUP_E2E_EXPECTED_TEXT_A",
+    "SPEAKUP_E2E_EXPECTED_TEXT_B",
+)
 def _synthetic_wav() -> bytes:
     """Return a small non-private PCM fixture for deployed storage checks."""
 
@@ -190,3 +199,113 @@ def test_deployed_upload_to_feedback_and_original_download():
     download = _request("GET", f"{base}/recordings/{recording_id}/download", token=token)
     with urlopen(download["download_url"], timeout=30) as response:
         assert hashlib.sha256(response.read()).digest() == digest
+
+
+@pytest.mark.skipif(
+    os.environ.get("SPEAKUP_LIVE_TWO_USER_E2E") != "1"
+    or any(not os.environ.get(name) for name in TWO_USER_REQUIRED_ENV),
+    reason="two-user live E2E requires opt-in, API URL, two JWTs, two WAVs, and expected speech",
+)
+def test_two_users_upload_and_process_via_s3_event_without_manual_trigger():
+    """Verify owner isolation and automatic processing after signed S3 PUTs."""
+
+    base = os.environ["SPEAKUP_E2E_API_URL"].rstrip("/")
+    tokens = (os.environ["SPEAKUP_E2E_JWT_A"], os.environ["SPEAKUP_E2E_JWT_B"])
+    sources = (
+        Path(os.environ["SPEAKUP_E2E_WAV_PATH_A"]),
+        Path(os.environ["SPEAKUP_E2E_WAV_PATH_B"]),
+    )
+    audios = tuple(source.read_bytes() for source in sources)
+    expected_text = (
+        os.environ["SPEAKUP_E2E_EXPECTED_TEXT_A"],
+        os.environ["SPEAKUP_E2E_EXPECTED_TEXT_B"],
+    )
+    assert sources[0] != sources[1]
+    assert all(source.suffix.lower() == ".wav" for source in sources)
+    assert all(0 < len(audio) <= 100 * 1024 * 1024 for audio in audios)
+    assert audios[0] != audios[1], "test users need different audio to detect swapped uploads"
+
+    recordings: list[dict[str, str | float | bytes]] = []
+    for token, audio, phrase in zip(tokens, audios, expected_text):
+        digest = hashlib.sha256(audio).digest()
+        checksum = base64.b64encode(digest).decode("ascii")
+        reserve_started = time.perf_counter()
+        project = _request(
+            "POST", f"{base}/projects", token=token,
+            body=json.dumps({"project_title": f"Two-user QA {uuid.uuid4().hex[:8]}"}).encode(),
+        )
+        project_id = project["project_id"]
+        reserved = _request(
+            "POST", f"{base}/uploads", token=token,
+            body=json.dumps({
+                "project_id": project_id, "content_type": "audio/wav",
+                "sha256": checksum, "content_length": len(audio),
+                "idempotency_key": str(uuid.uuid4()),
+            }).encode(),
+        )
+        reserve_elapsed = time.perf_counter() - reserve_started
+        put_started = time.perf_counter()
+        _request("PUT", reserved["upload_url"], body=audio, headers=reserved["required_headers"])
+        put_completed = time.perf_counter()
+        recordings.append({
+            "token": token, "project_id": project_id, "recording_id": reserved["recording_id"],
+            "put_completed": put_completed, "reserve_elapsed": reserve_elapsed,
+            "put_elapsed": put_completed - put_started, "digest": digest,
+            "expected_text": phrase,
+        })
+
+    # Deliberately omit confirm-upload and process: the S3 Object Created rule
+    # must confirm the object and start the workflow automatically.
+    observed: dict[str, dict[str, object]] = {}
+    deadline = time.monotonic() + 30 * 60
+    while time.monotonic() < deadline and len(observed) < len(recordings):
+        for item in recordings:
+            recording_id = str(item["recording_id"])
+            if recording_id in observed:
+                continue
+            recording = _request("GET", f"{base}/recordings/{recording_id}", token=str(item["token"]))
+            if recording["status"] == "FAILED":
+                pytest.fail(f"recording {recording_id} failed: {recording.get('error_message')}")
+            if recording["status"] in {"PROCESSING", "TRANSCRIBING", "ANALYZED", "COMPLETE"}:
+                item.setdefault("active_observed_elapsed", time.perf_counter() - float(item["put_completed"]))
+            if recording["status"] == "COMPLETE":
+                item["complete_elapsed"] = time.perf_counter() - float(item["put_completed"])
+                observed[recording_id] = recording
+        if len(observed) < len(recordings):
+            time.sleep(10)
+    assert len(observed) == len(recordings), "S3-triggered recordings did not complete in time"
+
+    for item in recordings:
+        token = str(item["token"])
+        project_id = str(item["project_id"])
+        recording_id = str(item["recording_id"])
+        recording = observed[recording_id]
+        print({
+            "recording_id": recording_id,
+            "reserve_seconds": round(float(item["reserve_elapsed"]), 3),
+            "put_seconds": round(float(item["put_elapsed"]), 3),
+            "put_to_first_active_status_seconds": round(float(item["active_observed_elapsed"]), 3),
+            "put_to_complete_seconds": round(float(item["complete_elapsed"]), 3),
+        })
+        assert recording["summary_metrics"]["word_count"] > 0
+        transcript = _request("GET", f"{base}/recordings/{recording_id}/artifacts/transcript", token=token)
+        analysis = _request("GET", f"{base}/recordings/{recording_id}/artifacts/analysis", token=token)
+        assert transcript["data"]
+        assert str(item["expected_text"]).casefold() in transcript["data"]["text"].casefold()
+        assert analysis["data"]["metrics"]["word_count"] == recording["summary_metrics"]["word_count"]
+        listed = _request("GET", f"{base}/projects/{project_id}/recordings", token=token)
+        assert any(entry["recording_id"] == recording_id for entry in listed["items"])
+        download = _request("GET", f"{base}/recordings/{recording_id}/download", token=token)
+        with urlopen(download["download_url"], timeout=30) as response:
+            assert hashlib.sha256(response.read()).digest() == item["digest"]
+
+    def assert_denied(status: int, label: str) -> None:
+        assert status in {401, 403, 404}, f"cross-user {label} unexpectedly returned HTTP {status}"
+
+    token_a, project_a, recording_a = (str(recordings[0][key]) for key in ("token", "project_id", "recording_id"))
+    token_b, project_b, recording_b = (str(recordings[1][key]) for key in ("token", "project_id", "recording_id"))
+    for token, project_id, recording_id in ((token_a, project_b, recording_b), (token_b, project_a, recording_a)):
+        assert_denied(_request_status("GET", f"{base}/projects/{project_id}/recordings", token=token)[0], "project listing")
+        assert_denied(_request_status("GET", f"{base}/recordings/{recording_id}", token=token)[0], "recording")
+        assert_denied(_request_status("GET", f"{base}/recordings/{recording_id}/artifacts/transcript", token=token)[0], "artifact")
+        assert_denied(_request_status("GET", f"{base}/recordings/{recording_id}/download", token=token)[0], "download")

@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useCallback, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { ButtonLink } from "@/components/Button";
+import { Button, ButtonLink } from "@/components/Button";
+import { ResultsSkeleton, ReviewSkeleton } from "@/components/LoadingSkeleton";
 import { MascotState } from "@/components/MascotState";
 import { PageHeading, PageShell } from "@/components/PageHeading";
 import { ProgressCharts } from "@/components/ProgressCharts";
@@ -12,25 +13,60 @@ import { ScoreCards } from "@/components/ScoreCards";
 import { EvidenceList, NextStep, Takeaway } from "@/components/ResultsSummary";
 import { SyncedTranscript } from "@/components/SyncedTranscript";
 import { momentsFromAnalysis, momentsFromFeedback } from "@/lib/markers";
-import { useDemoStore } from "@/lib/demo-store";
+import { useAppStore } from "@/lib/live-store";
+import { EXAMPLE_PROJECT_ID } from "@/lib/api";
 import { formatClock, formatDate, formatTake, getProject, getTake, getTakes } from "@/lib/recordings";
 import { toSentences, wordTimes } from "@/lib/transcript";
 import type { FeedbackMoment } from "@/lib/types";
 
 export default function ResultsPage() {
-  return <Suspense fallback={<PageShell><MascotState busy message="Loading recording…" /></PageShell>}><ResultsContent /></Suspense>;
+  return <Suspense fallback={<PageShell><ResultsSkeleton /></PageShell>}><ResultsContent /></Suspense>;
 }
 
 function ResultsContent() {
   const { recordingId } = useParams<{ recordingId: string }>();
-  const { projects, recordings, reviews, audioUrls, ready } = useDemoStore();
+  const { projects, recordings, reviews, audioUrls, ready, live, error, refreshRecording, loadReview, loadAudio } = useAppStore();
   const [seekRequest, setSeekRequest] = useState<{ seconds: number }>();
   const [currentTime, setCurrentTime] = useState(0);
   const [selectedMoment, setSelectedMoment] = useState<FeedbackMoment | undefined>();
   const [revealRequest, setRevealRequest] = useState<{ seconds: number }>();
   const [audioFailed, setAudioFailed] = useState(false);
+  const [reviewLoadFailed, setReviewLoadFailed] = useState(false);
   const handleAudioError = useCallback(() => setAudioFailed(true), []);
-  if (!ready) return <PageShell><MascotState busy message="Loading recording…" /></PageShell>;
+  const recording = recordings.find((item) => item.recording_id === recordingId);
+  const retryReview = useCallback(() => {
+    setReviewLoadFailed(false);
+    void loadReview(recordingId).catch(() => setReviewLoadFailed(true));
+  }, [loadReview, recordingId]);
+
+  useEffect(() => {
+    if (!live || !recordingId) return;
+    let cancelled = false;
+    const refresh = async () => {
+      if (!cancelled) {
+        try {
+          await refreshRecording(recordingId);
+        } catch {
+          // The store records provider errors for the page to display.
+        }
+      }
+    };
+    void refresh();
+    return () => { cancelled = true; };
+  }, [live, recordingId, refreshRecording]);
+
+  useEffect(() => {
+    if (!live || recording?.status !== "COMPLETE") return;
+    void loadReview(recordingId).catch(() => setReviewLoadFailed(true));
+  }, [live, recording?.status, recordingId, loadReview]);
+
+  useEffect(() => {
+    if (!live || recording?.status !== "COMPLETE") return;
+    void loadAudio(recordingId).catch(() => undefined);
+  }, [live, recording?.status, recordingId, loadAudio]);
+
+  if (!ready) return <PageShell><ResultsSkeleton /></PageShell>;
+  if (error && !recording) return <PageShell><p role="alert">{error}</p><ButtonLink href="/">All presentations</ButtonLink></PageShell>;
   const take = getTake(recordings, recordingId);
   if (!take) return <PageShell><MascotState message="Recording not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
   if (take.status !== "COMPLETE") return <PageShell><MascotState tone="loading" message="This recording is not ready yet." detail="It is still being processed."><ButtonLink href={`/recordings/${recordingId}/analyzing`}>View status</ButtonLink></MascotState></PageShell>;
@@ -38,13 +74,14 @@ function ResultsContent() {
   if (!project) return <PageShell><MascotState message="Presentation not found." detail="Nothing saved in this browser matches this link."><ButtonLink href="/">All presentations</ButtonLink></MascotState></PageShell>;
 
   const review = reviews[recordingId];
+  const example = take.project_id === EXAMPLE_PROJECT_ID;
   const metrics = review?.analysis;
   const sentences = metrics && review ? toSentences(review.transcript.items, metrics) : [];
   const feedbackMoments = review?.feedback?.moments ?? [];
   const words = review ? wordTimes(review.transcript.items) : [];
   const moments = [...momentsFromAnalysis(metrics, words), ...momentsFromFeedback(feedbackMoments)].sort((a, b) => a.at - b.at);
   const categories = review?.feedback?.categories;
-  const takeLabel = formatTake(take.take).toUpperCase();
+  const takeLabel = example ? (recordingId === "example-strong" ? "STRONGER DELIVERY" : "ROOM TO IMPROVE") : formatTake(take.take).toUpperCase();
 
   const canSeek = Boolean(audioUrls[recordingId]) && !audioFailed;
   const practiceHref = `/projects/${take.project_id}/new`;
@@ -62,16 +99,18 @@ function ResultsContent() {
         <PageHeading
           crumb={`${project.project_title.toUpperCase()} / ${takeLabel}`}
           crumbHref={`/projects/${take.project_id}`}
-          title={metrics ? "Your results" : "Your demo recording"}
-          subtitle={`${formatDate(take.created_at)}${metrics ? ` · ${formatClock(metrics.duration_seconds)}` : ""} · Local preview`}
+          title={example ? "Example review" : live || metrics ? "Your results" : "Your demo recording"}
+          subtitle={`${formatDate(take.created_at)}${metrics ? ` · ${formatClock(metrics.duration_seconds)}` : ""}${live ? "" : " · Local preview"}`}
         />
-        <ButtonLink variant={review ? "secondary" : "primary"} href={practiceHref}>Practice again →</ButtonLink>
+        {!example && <ButtonLink variant={review ? "secondary" : "primary"} href={practiceHref}>Practice again →</ButtonLink>}
       </div>
 
-      {!metrics && (
+      {!metrics && live && !reviewLoadFailed && <ReviewSkeleton />}
+      {!metrics && (!live || reviewLoadFailed) && (
         <div className="w-full rounded-2xl border-2 border-line bg-pale p-6">
-          <h2 className="font-display text-2xl font-bold text-ink">Analysis is not connected</h2>
-          <p className="mt-2 text-muted">This recording belongs to this presentation and is available for playback during this browser session. The local demo does not generate transcript, scores, or coaching.</p>
+          <h2 className="font-display text-2xl font-bold text-ink">{live ? "Review could not load" : "Analysis is not connected"}</h2>
+          <p className="mt-2 text-muted">{live ? "Your recording is complete, but its transcript and feedback could not be loaded." : "This recording belongs to this presentation and is available for playback during this browser session. The local demo does not generate transcript, scores, or coaching."}</p>
+          {live && <Button variant="secondary" onClick={retryReview}>Retry loading review</Button>}
         </div>
       )}
 
@@ -90,10 +129,10 @@ function ResultsContent() {
       )}
 
       {/* 4. Review: listen, replay moments and read along in one place */}
-      <section aria-labelledby="listen-heading" data-surface="dark" className="flex w-full flex-col gap-6 rounded-3xl border-2 border-outline bg-night p-4 sm:p-7">
-        <h2 id="listen-heading" className="font-display text-2xl font-bold text-cream">Listen back</h2>
+      <section aria-labelledby="listen-heading" data-surface="dark" className="w-full rounded-3xl border-2 border-outline bg-night p-4 sm:p-7">
         <div className={`grid gap-x-8 gap-y-7 ${review ? "lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]" : ""}`}>
-          <div className="flex min-w-0 flex-col gap-6">
+          <div className="flex min-w-0 flex-col gap-5">
+            <h2 id="listen-heading" className="font-display text-2xl font-bold text-cream">Listen back</h2>
             <AudioReviewPlayer audioUrl={audioUrls[recordingId]} durationSeconds={metrics?.duration_seconds} seekRequest={seekRequest}
               moments={moments} onTimeChange={setCurrentTime} onLoadError={handleAudioError} onMomentSelect={(moment) => {
                 setRevealRequest({ seconds: moment.at });
@@ -117,17 +156,19 @@ function ResultsContent() {
             {review && <EvidenceList review={review} metrics={metrics} canSeek={canSeek} onSeek={playFrom} />}
           </div>
           {review && (sentences.length > 0 ? (
-            <SyncedTranscript
-              sentences={sentences}
-              pauses={metrics?.pauses ?? []}
-              moments={feedbackMoments}
-              currentTime={currentTime}
-              canSeek={canSeek}
-              onSeek={(seconds) => setSeekRequest({ seconds })}
-              revealRequest={revealRequest}
-            />
+            <div className="min-w-0 lg:pt-14">
+              <SyncedTranscript
+                sentences={sentences}
+                pauses={metrics?.pauses ?? []}
+                moments={feedbackMoments}
+                currentTime={currentTime}
+                canSeek={canSeek}
+                onSeek={(seconds) => setSeekRequest({ seconds })}
+                revealRequest={revealRequest}
+              />
+            </div>
           ) : (
-            <div className="flex min-w-0 flex-col gap-2">
+            <div className="flex min-w-0 flex-col gap-2 lg:pt-14">
               <h3 className="font-display text-xl font-bold text-cream">Transcript</h3>
               <p className="text-mint">{review.transcript.text || "No transcript available."}</p>
             </div>
@@ -136,11 +177,12 @@ function ResultsContent() {
       </section>
 
       {/* 5. One thing to do next */}
-      {review && <NextStep review={review} metrics={metrics} practiceHref={practiceHref} />}
+      {review && !example && <NextStep review={review} metrics={metrics} practiceHref={practiceHref} />}
 
       {/* 6. History, once there is something to compare */}
-      <ProgressCharts takes={getTakes(recordings, take.project_id)} single="note" />
-      <p className="text-sm text-muted">Demo sample scores are shown only for the seeded recording. New local recordings have no calculated scores.</p>
+      {!example && <ProgressCharts takes={getTakes(recordings, take.project_id)} single="note" />}
+      {!live && <p className="text-xs text-muted">Demo sample scores are shown only for the seeded recording. New local recordings have no calculated scores.</p>}
+      {error && !reviewLoadFailed && <p className="text-sm text-peach" role="alert">{error}</p>}
     </PageShell>
   );
 }

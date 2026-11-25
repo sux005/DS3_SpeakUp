@@ -108,17 +108,17 @@ export type FeedbackMoment = {
 export type RecordingReview = {
   recording_id: string;
   transcript: { text: string; items: TranscriptItem[] };
-  summary_metrics: SummaryMetrics;
-  // Not part of the /review response. The demo adds the analysis artifact
-  // (GET /recordings/{id}/artifacts/analysis) here for filler and pause markers.
+  // Review responses expose compact metrics at the top level. Keep this
+  // optional so persisted demo reviews and older payloads remain valid.
+  summary_metrics?: SummaryMetrics;
   analysis?: AnalysisMetrics;
-  // null when Bedrock coaching is turned off or unavailable. Feedback made
-  // before schema_version 2 has only the `feedback` summary string.
-  feedback: {
-    feedback: string;
-    schema_version?: number;
-    categories?: Partial<Record<"general" | "pace" | "fillers" | "pauses", FeedbackCategory>>;
-    moments?: FeedbackMoment[];
-    metrics?: SummaryMetrics;
-  } | null;
+  feedback: RecordingFeedback | null;
+};
+
+export type RecordingFeedback = {
+  feedback: string;
+  schema_version?: number;
+  categories?: Partial<Record<"general" | "pace" | "fillers" | "pauses", FeedbackCategory>>;
+  moments?: FeedbackMoment[];
+  metrics?: SummaryMetrics;
 };

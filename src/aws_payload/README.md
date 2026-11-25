@@ -30,8 +30,10 @@ recording, upload = payloads.reserve_upload(
 )
 ```
 
-The browser sends `upload.required_headers` with its PUT. The backend then calls
-`confirm_upload` before processing. To play audio, an authenticated route calls
+The browser sends `upload.required_headers` with its PUT. In the normal deployed
+flow, the S3 object event confirms the upload and starts processing; backend
+callers can use `confirm_upload` as an idempotent recovery operation before
+processing. To play audio, an authenticated route calls
 `create_original_download_url`; the S3 adapter must not be exposed directly.
 
 ## Modules

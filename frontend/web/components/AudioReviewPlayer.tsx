@@ -225,7 +225,7 @@ export function AudioReviewPlayer({
               <button
                 type="button"
                 key={`${first.id ?? first.label}-${first.at}`}
-                style={{ left: `${cluster.percent}%` }}
+                style={{ left: cluster.percent < 5 ? "12px" : cluster.percent > 95 ? "calc(100% - 12px)" : `${cluster.percent}%` }}
                 className="marker absolute bottom-0 flex h-8 w-6 -translate-x-1/2 cursor-pointer items-end justify-center rounded-sm disabled:cursor-not-allowed disabled:opacity-50"
                 onClick={() => selectMoment(first)}
                 disabled={unavailable && !cluster.moments.some((moment) => moment.observation)}

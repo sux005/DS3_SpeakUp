@@ -341,9 +341,31 @@ label:has(input.sr-only:focus-visible) {
   outline-color: var(--color-mint);
 }
 
-/* ---- Results page motion ----
-   CSS transitions only, so every change can be interrupted mid-way.
-   Named properties only; nothing longer than 200ms. */
+/* Short, reversible feedback for links, toggles, and compact controls. */
+:where(a:not(.btn), button:not(.btn), label:has(input[type="file"])) {
+  transition-property: transform, color, background-color, border-color;
+  transition-duration: var(--duration-press);
+  transition-timing-function: var(--ease-out);
+}
+:where(a:not(.btn), button:not(.btn), label:has(input[type="file"])):active {
+  transform: scale(0.96);
+}
+
+/* CSS transitions keep press and release interruptible. */
+
+.skeleton {
+  display: block;
+  background: linear-gradient(100deg, var(--surface-line) 15%, var(--surface-pale) 45%, var(--surface-line) 75%);
+  background-size: 220% 100%;
+  animation: skeleton-sweep 1.5s ease-in-out infinite;
+}
+[data-surface="dark"] .skeleton {
+  background: linear-gradient(100deg, var(--color-night-soft) 15%, var(--color-night-line) 45%, var(--color-night-soft) 75%);
+  background-size: 220% 100%;
+}
+@keyframes skeleton-sweep {
+  to { background-position-x: -220%; }
+}
 
 /* Any pressable control: a slight press so the interface feels like it heard you. */
 .press {
@@ -359,10 +381,6 @@ label:has(input.sr-only:focus-visible) {
   transition: transform var(--duration-press) var(--ease-out), box-shadow var(--duration-press) var(--ease-out),
     filter var(--duration-press) ease;
 }
-.btn:active:not(:disabled) {
-  transform: translateY(2px);
-  box-shadow: 0 1px 0 var(--color-outline);
-}
 .btn:disabled {
   cursor: not-allowed;
   opacity: 0.55;
@@ -370,7 +388,14 @@ label:has(input.sr-only:focus-visible) {
 @media (hover: hover) and (pointer: fine) {
   .btn:hover:not(:disabled) {
     filter: brightness(1.06);
+    transform: translateY(-2px);
+    box-shadow: 0 5px 0 var(--color-outline);
   }
+}
+.btn:active:not(:disabled),
+.btn:hover:active:not(:disabled) {
+  transform: translateY(2px) scale(0.98);
+  box-shadow: 0 1px 0 var(--color-outline);
 }
 
 /* Current transcript sentence: a colour change, not movement. */
@@ -415,11 +440,18 @@ label:has(input.sr-only:focus-visible) {
 
 @media (prefers-reduced-motion: reduce) {
   /* Keep colour and opacity changes; drop movement and size changes. */
+  .skeleton { animation: none; }
+  :where(a:not(.btn), button:not(.btn), label:has(input[type="file"])):active,
   .btn:active:not(:disabled),
+  .btn:hover:not(:disabled),
+  .btn:hover:active:not(:disabled),
   .press:active:not(:disabled),
   .marker-bar[data-now="true"],
   .marker:hover .marker-bar {
     transform: none;
+  }
+  .btn:hover:not(:disabled) {
+    box-shadow: 0 3px 0 var(--color-outline);
   }
   .rubric-panel {
     transition: opacity var(--duration-ui) ease;

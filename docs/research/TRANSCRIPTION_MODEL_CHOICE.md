@@ -103,7 +103,7 @@ One way to find pauses is to look for gaps of 0.25 s or more between the words i
 | Amazon Transcribe, word gaps | 51.7% | 44.8% |
 | VAD mode 2 | 55.2% | 70.3% |
 
-Whisper small's gaps found the most pauses, but every transcriber's gaps were wrong more often than right. The VAD was right 7 times in 10. That's why we will find pauses with a separate detector instead of the transcript.
+Whisper small's gaps found the most pauses, but every transcriber's gaps were wrong more often than right. The VAD was right 7 times in 10. The current pipeline uses acoustic pause inputs with transcript word-gap constraints, and falls back to Transcribe gaps if those inputs are unavailable.
 
 ### Privacy: Whisper keeps audio in-house, so Transcribe needs extra steps
 
@@ -120,7 +120,7 @@ Whisper small's gaps found the most pauses, but every transcriber's gaps were wr
 | 2. Word counts (WPM) | Whisper, slightly | No, the gap is too small to change a score |
 | Cost at our volume | **Transcribe** | Yes |
 | Effort to run | **Transcribe** | Yes |
-| Pauses from word gaps | Whisper small | No, none was accurate enough. We plan a separate detector |
+| Pauses from word gaps | Whisper small | No; the current pipeline uses acoustic pause inputs with a Transcribe-gap fallback |
 | Privacy | Whisper | No, we will just have to implement the opt-out and the notice. |
 
 ## Limits

@@ -136,9 +136,9 @@ without also changing and validating the Lambda architecture in CloudFormation.
 Use the same short-lived AWS profile as other platforms:
 
 ```bash
-aws login --profile speakup-dev
-aws sts get-caller-identity --profile speakup-dev
-aws configure get region --profile speakup-dev
+aws login --profile speakup
+aws sts get-caller-identity --profile speakup
+aws configure get region --profile speakup
 ```
 
 The selected Region must be `us-east-2`. Never put AWS access keys in an env
