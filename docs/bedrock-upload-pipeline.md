@@ -43,8 +43,8 @@ Authenticate with the short-lived development profile, verify the model exists
 in `us-east-2`, then make one small bounded request:
 
 ```powershell
-aws login --profile speakup
-aws bedrock list-foundation-models --profile speakup --region us-east-2 `
+aws login --profile speakup-dev
+aws bedrock list-foundation-models --profile speakup-dev --region us-east-2 `
   --by-provider amazon
 python scripts/smoke_test_bedrock.py
 ```

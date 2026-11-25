@@ -10,7 +10,8 @@ They contain no real user data, credentials, S3 URLs, or usable presigned URLs.
 | `project-recordings.json` | `GET /projects/{projectId}/recordings` | Complete, processing, and failed recording cards plus score display. |
 | `transcript.json` | `GET /recordings/{recordingId}/artifacts/transcript` | Timestamp-synced transcript. |
 | `analysis.json` | `GET /recordings/{recordingId}/artifacts/analysis` | Filler and pause markers plus full rubric metrics. |
-| `feedback.json` | `GET /recordings/{recordingId}/artifacts/feedback` | Generated coaching copy. |
+| `feedback.json` | `GET /recordings/{recordingId}/artifacts/feedback` | Coaching summary string only. |
+| `review.json` | `GET /recordings/{recordingId}/review` | Results screen: timed transcript, summary metrics, and structured feedback (overview, four category cards, timed moments). `feedback` is `null` when Bedrock coaching is off. |
 | `upload-reservation.json` | `POST /uploads` | Upload progress flow; its URL is intentionally nonfunctional. |
 | `active-workflow-limit-error.json` | Processing HTTP 429 | Retry/error state; production also returns `Retry-After: 60`. |
 

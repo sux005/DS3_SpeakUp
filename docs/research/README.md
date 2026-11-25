@@ -16,6 +16,7 @@ structured feedback in `infra/lambda/processor/index.py`.
 |---|---|
 | `RUBRIC_README.md` | The rubric in plain language: every cutoff, where it came from, and the models we picked |
 | `bedrock_prompt_comparison.md` | Old vs new Bedrock prompt on Links 13 to 16 |
+| `noise_cancellation_ab.md` | Reproducible raw/enhanced ASR comparison and verified SPEAKUP 2 Whisper result |
 
 ## Background
 
@@ -31,17 +32,17 @@ structured feedback in `infra/lambda/processor/index.py`.
 |---|---|
 | `results/link15_blind_test.md`, `results/link16_blind_test.md` | Pause detectors, noise cleanup and inside/between, on two clips marked by hand without seeing any model output |
 | `results/links13_14_*.md` | Punctuation model and Transcribe tests on Links 13 and 14 |
+| `results/comma_pause_rule.md` | Period vs comma rule for deciding which pauses count, on 220 hand-labeled pauses |
 | `results/rubric_validation.md` | The rubric run on TED talks, conference talks and hesitant speakers |
 | `results/section_flags.md` | Whether "this section was faster / had more fillers" flags are real or chance |
 | `results/pipeline_step_outputs.md` | The raw output format of every pipeline step |
 
-## Historical acoustic pause comparison
+## Acoustic pause method: word-gap clipping (fixed 11/17)
 
-On Link 15 (TED talk) energy + Silero finds 31 pauses where the hand count has 21, and the pause
-score drops from 4 to 3. About half the extra inside-sentence pauses are short quiet moments the
-hand count skipped. The other half are real between-sentence pauses that Transcribe's punctuation
-puts inside a sentence. In that research setup, only counting energy pauses that
-lined up with a transcript word gap fixed Link 15 but missed Link 14 pauses
-where Transcribe stretched words over real silences. The current runtime
-intersects acoustic candidates with transcript word gaps and applies a 0.3 s
-scoring floor; these dated counts are not a runtime accuracy guarantee.
+The first version cut every energy silence down to the Transcribe word gaps. Transcribe often
+stretches a word's timing over a real silence, so most pauses vanished on some clips (Link 14:
+42 energy pauses of 0.3 s or more, 16 kept). Now an energy silence is kept whole when it overlaps
+a word gap or a word starts or ends inside it, and a pause is placed after the last word whose
+midpoint comes before it. On 220 hand-marked pauses (Links 13 to 19) the method now finds 205
+instead of 144. It also finds 39 pauses the hand count skipped (mostly short quiet moments on
+Links 15 and 17), which have not hurt any clip score so far. See `results/comma_pause_rule.md`.

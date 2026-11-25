@@ -138,7 +138,7 @@ AWS error text is not returned to clients.
   "schema_version": 1,
   "payload_type": "speech-analysis.v1",
   "producer": "speakup-speech-analysis",
-  "producer_version": "4.0.0",
+  "producer_version": "5.0.0",
   "created_at": "2026-10-27T12:00:00.000Z",
   "data": {
     "metrics": {
@@ -192,7 +192,10 @@ analysis artifact adds every scored filler occurrence and detected pause with
 timestamps, including the long-pause subset. Pause detection uses acoustic
 energy silences within word gaps, optionally combined with Silero non-speech;
 missing acoustic inputs fall back to Transcribe word gaps. The
-`pause_detection_method` field names the method used. Older recordings retain their
+`pause_detection_method` field names the method used. A pause counts as
+inside a sentence unless it follows a period, question mark, exclamation mark or
+comma; pauses right after um/uh, and comma pauses where the next words repeat the
+words before, still count (see `docs/research/results/comma_pause_rule.md`). Older recordings retain their
 original versioned analysis on replay.
 
 When Bedrock feedback is enabled, its prompt includes the persisted summary

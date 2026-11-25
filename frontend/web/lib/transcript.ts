@@ -22,6 +22,22 @@ export type Sentence = {
 // analysis rounds to 2 decimals; the transcript keeps 3.
 const SAME_MOMENT = 0.02;
 
+// A spoken word's start and end, or undefined for punctuation and items
+// without usable times.
+function timesOf(item: TranscriptItem): { start: number; end: number } | undefined {
+  const content = item.alternatives[0]?.content ?? "";
+  if (item.type !== "pronunciation" || !content.trim()) return undefined;
+  if (item.start_time === undefined || item.end_time === undefined) return undefined;
+  const start = Number(item.start_time);
+  const end = Number(item.end_time);
+  return Number.isFinite(start) && Number.isFinite(end) ? { start, end } : undefined;
+}
+
+/** Every spoken word's start and end, in transcript order. */
+export function wordTimes(items: TranscriptItem[]) {
+  return items.map(timesOf).filter((times) => times !== undefined);
+}
+
 // Joins Transcribe's word-by-word items into sentences, marks each filler
 // word found by the analysis, and tags each sentence with the first filler
 // or pause inside it. Pauses the analysis marks as between sentences don't count.
@@ -35,14 +51,9 @@ export function toSentences(items: TranscriptItem[], metrics: AnalysisMetrics) {
   for (const item of items) {
     const content = item.alternatives[0]?.content ?? "";
     if (item.type === "pronunciation") {
-      if (!content.trim() || item.start_time === undefined || item.end_time === undefined) continue;
-      if (!Number.isFinite(Number(item.start_time)) || !Number.isFinite(Number(item.end_time))) continue;
-      const word: Word = {
-        start: Number(item.start_time),
-        end: Number(item.end_time),
-        text: content,
-        filler: isFiller(Number(item.start_time)),
-      };
+      const times = timesOf(item);
+      if (!times) continue;
+      const word: Word = { ...times, text: content, filler: isFiller(times.start) };
       if (!current) current = { id: sentences.length, start: word.start, end: word.end, words: [], text: "" };
       current.text += `${current.words.length ? " " : ""}${content}`;
       current.words.push(word);

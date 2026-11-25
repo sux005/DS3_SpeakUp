@@ -37,6 +37,7 @@ const seedAnalysis = demoAnalysisJson.data.metrics as AnalysisMetrics;
 const seedReview: RecordingReview = {
   recording_id: seedRecordingId,
   transcript: demoTranscriptJson.data,
+  summary_metrics: summaryOf(seedAnalysis),
   analysis: seedAnalysis,
   feedback: null,
 };

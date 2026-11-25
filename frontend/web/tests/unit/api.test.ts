@@ -17,9 +17,11 @@ describe("preserved AWS API contract helpers", () => {
     await a.getArtifact("jwt", "r/1", "analysis");
     await a.getDownloadUrl("jwt", "r/1");
     await a.getAccountLimits("jwt");
+    await a.getReview("jwt", "r/1");
     expect(fetcher.mock.calls[0][1].headers.Authorization).toBe("Bearer jwt");
     expect(fetcher.mock.calls[1][0]).toContain("a%2Fb/recordings");
     expect(fetcher.mock.calls[3][0]).toContain("r%2F1/artifacts/analysis");
+    expect(fetcher.mock.calls[6][0]).toBe("https://example.test/recordings/r%2F1/review");
   });
   it("uses the fixed example routes with authenticated, encoded requests", async () => {
     const fetcher = vi.fn().mockResolvedValue(response({ recordings: [], download_url: "https://download.test" }));
