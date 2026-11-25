@@ -34,11 +34,10 @@ describe("RecorderUploader", () => {
     expect(onSubmit).toHaveBeenCalledWith(file, "pitch.wav");
   });
 
-  it("states each control's real limits beside it and keeps the meter flat until recording", () => {
+  it("shows the upload limit and keeps the meter flat until recording", () => {
     const { container } = render(<RecorderUploader maxAudioBytes={104_857_600} maxAudioDurationSeconds={600} onSubmit={vi.fn()} />);
-    expect(screen.getByText(/Uses your microphone\. Recording stops after 10 minutes\./)).toBeTruthy();
     expect(screen.getByText("WAV, MP3, M4A or WebM, up to 100 MB.")).toBeTruthy();
-    expect(screen.getByText("The level meter moves while you record.")).toBeTruthy();
+    expect(screen.queryByText(/Uses your microphone|level meter moves while/)).toBeNull();
     const bars = [...container.querySelectorAll<HTMLElement>('[aria-hidden="true"] > span')];
     expect(bars.length).toBeGreaterThan(20);
     expect(bars.every((bar) => bar.style.height === "0%")).toBe(true);

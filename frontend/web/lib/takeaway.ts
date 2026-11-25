@@ -6,8 +6,10 @@
 // measured values, and every line says which of the two it came from. There is
 // no overall score, and no claim about improvement over earlier attempts.
 
+import { pauseReplayStart, type MomentKind } from "@/lib/markers";
 import { minimumSpeakingSeconds, rubric, type RubricMetric } from "@/lib/rubric";
 import { compareToTarget, metricDisplay, targetText } from "@/lib/targets";
+import { wordTimes } from "@/lib/transcript";
 import type { AnalysisMetrics, RecordingReview } from "@/lib/types";
 
 export type Source = "coaching" | "measurements";
@@ -33,7 +35,10 @@ export type Takeaway = {
   note?: string;
 };
 
-export type Evidence = { at: number; label: string; detail?: string };
+// `at` and `end` are the event's own timestamps from the payload. A pause also
+// has `playFrom`, the start of the word before it; replayStart() in
+// lib/markers.ts turns either into where playback begins.
+export type Evidence = { at: number; end: number; kind: MomentKind; playFrom?: number; label: string; detail?: string };
 
 type Scored = { metric: RubricMetric; score: number };
 
@@ -144,21 +149,24 @@ export function buildEvidence(review: RecordingReview, metrics?: AnalysisMetrics
       source: "coaching",
       items: moments.map((moment) => ({
         at: moment.start_seconds,
+        end: moment.end_seconds,
+        kind: moment.kind,
         label: `${moment.kind === "strength" ? "Strength" : "Try this"} · “${moment.text}”`,
         detail: moment.observation,
       })),
     };
   }
   if (!metrics) return { items: [] };
+  const words = wordTimes(review.transcript.items);
   const pauses = metrics.pauses
     .filter((pause) => pause.inside_sentence !== false)
     .map((pause) => ({ ...pause, seconds: pause.duration_seconds ?? pause.end_seconds - pause.start_seconds }))
     .sort((a, b) => b.seconds - a.seconds)
     .slice(0, MEASURED_EVIDENCE)
-    .map((pause): Evidence => ({ at: pause.start_seconds, label: `Pause inside a sentence, ${pause.seconds.toFixed(1)} s`, detail: "One of the longest" }));
+    .map((pause): Evidence => ({ at: pause.start_seconds, end: pause.end_seconds, kind: "pause", playFrom: pauseReplayStart(pause.start_seconds, words), label: `Pause inside a sentence, ${pause.seconds.toFixed(1)} s`, detail: "One of the longest" }));
   const fillers = metrics.filler_occurrences
     .slice(0, MEASURED_EVIDENCE)
-    .map((filler): Evidence => ({ at: filler.start_seconds, label: `Filler “${filler.filler}”`, detail: "Among the first" }));
+    .map((filler): Evidence => ({ at: filler.start_seconds, end: filler.end_seconds, kind: "filler", label: `Filler “${filler.filler}”`, detail: "Among the first" }));
   const items = [...fillers, ...pauses].sort((a, b) => a.at - b.at);
   return { items, source: items.length ? "measurements" : undefined };
 }

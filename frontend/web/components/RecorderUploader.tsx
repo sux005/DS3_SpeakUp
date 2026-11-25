@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { buttonClass } from "@/components/Button";
 import { liveFeedback } from "@/lib/live-feedback";
 
-export type RecorderStatus = "idle" | "countdown" | "recording" | "ready";
+export type RecorderStatus = "idle" | "countdown" | "recording" | "paused" | "ready";
 
 type SpeechResult = { isFinal: boolean; 0: { transcript: string } };
 type SpeechRecognitionSession = {
@@ -21,6 +21,7 @@ type SpeechRecognitionBrowser = Window & {
   SpeechRecognition?: new () => SpeechRecognitionSession;
   webkitSpeechRecognition?: new () => SpeechRecognitionSession;
 };
+type PaceSample = { second: number; wpm: number };
 
 type RecorderUploaderProps = {
   maxAudioBytes: number;
@@ -45,11 +46,56 @@ const SKIP_RECORD_AGAIN_CONFIRMATION = "speakup-skip-record-again-confirmation";
 const silence = () => Array<number>(METER_BARS).fill(0);
 const joinTranscript = (left: string, right: string) => [left.trim(), right.trim()].filter(Boolean).join(" ");
 
+function PaceTrend({ samples }: { samples: PaceSample[] }) {
+  if (samples.length === 0) {
+    return null;
+  }
+
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+  const x = (second: number) => first.second === last.second ? 300 : ((second - first.second) / (last.second - first.second)) * 600;
+  const y = (wpm: number) => 84 - ((Math.max(100, Math.min(180, wpm)) - 100) / 80) * 68;
+
+  return (
+    <div className="mt-4 border-t border-night-line pt-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <p className="font-mono text-xs uppercase text-mint">Pace trend</p>
+        </div>
+        <span className="font-mono text-xs text-mint">{formatDuration(first.second)}–{formatDuration(last.second)}</span>
+      </div>
+      <div className="mt-3 rounded-lg border border-night-line bg-night/20 p-3">
+        <svg className="block h-24 w-full" viewBox="0 0 600 100" preserveAspectRatio="none" role="img" aria-label={samples.length === 1 ? `Pace trend started at ${first.wpm} words per minute, with a target of 135 to 155` : `Pace trend from ${first.wpm} to ${last.wpm} words per minute, with a target of 135 to 155`}>
+          <rect x="0" y={y(155)} width="600" height={y(135) - y(155)} className="fill-mint/15" />
+          <line x1="0" x2="600" y1={y(155)} y2={y(155)} className="stroke-mint/45" strokeDasharray="4 5" vectorEffect="non-scaling-stroke" />
+          <line x1="0" x2="600" y1={y(135)} y2={y(135)} className="stroke-mint/45" strokeDasharray="4 5" vectorEffect="non-scaling-stroke" />
+          {samples.length === 1 && <line x1="294" x2="306" y1={y(first.wpm)} y2={y(first.wpm)} strokeWidth="5" strokeLinecap="round" vectorEffect="non-scaling-stroke" className={first.wpm < 135 ? "stroke-peach" : first.wpm > 155 ? "stroke-rose" : "stroke-mint"} />}
+          {samples.slice(1).map((sample, index) => {
+            const previous = samples[index];
+            return <line key={sample.second} x1={x(previous.second)} y1={y(previous.wpm)} x2={x(sample.second)} y2={y(sample.wpm)} strokeWidth="3" strokeLinecap="round" vectorEffect="non-scaling-stroke" className={sample.wpm < 135 ? "stroke-peach" : sample.wpm > 155 ? "stroke-rose" : "stroke-mint"} />;
+          })}
+        </svg>
+        <div className="mt-1 flex justify-between font-mono text-xs text-mint/80" aria-hidden="true"><span>{formatDuration(first.second)}</span><span>Time →</span><span>{formatDuration(last.second)}</span></div>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-mint"><span><span className="mr-1 text-peach">●</span>Below</span><span><span className="mr-1 text-mint">●</span>Target</span><span><span className="mr-1 text-rose">●</span>Above</span></div>
+    </div>
+  );
+}
+
 function extensionFor(file: File | Blob) {
   if (file.type.includes("webm")) return "webm";
   if (file.type.includes("mp4")) return "m4a";
   if (file.type.includes("mpeg") || file.type.includes("mp3")) return "mp3";
   return "wav";
+}
+
+function recordingStartMessage(error: unknown) {
+  const name = error instanceof DOMException ? error.name : "";
+  if (name === "NotAllowedError" || name === "SecurityError") return "Microphone permission was denied. Allow access in your browser and try again.";
+  if (name === "NotReadableError" || name === "AbortError") return "The microphone is unavailable or in use. Check your input device and try again.";
+  if (name === "InvalidStateError") return "The microphone disconnected before recording began. Check your input device and try again.";
+  if (name === "NotSupportedError") return "This browser could not start audio recording. Try another browser or upload a file.";
+  return "Recording could not start. Check your microphone and try again, or upload a file.";
 }
 
 export function RecorderUploader({
@@ -64,11 +110,14 @@ export function RecorderUploader({
   const [selected, setSelected] = useState<File | Blob | null>(null);
   const [filename, setFilename] = useState("");
   const [recording, setRecording] = useState(false);
+  const [paused, setPaused] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [resuming, setResuming] = useState(false);
   const [confirmRecordAgain, setConfirmRecordAgain] = useState(false);
   const [doNotShowAgain, setDoNotShowAgain] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [paceHistory, setPaceHistory] = useState<PaceSample[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -77,6 +126,8 @@ export function RecorderUploader({
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef(0);
+  const pausedAtRef = useRef<number | null>(null);
+  const totalPausedMsRef = useRef(0);
   // Live microphone level. Only ever filled from the real audio stream.
   const [levels, setLevels] = useState<number[]>(silence);
   const [metering, setMetering] = useState(false);
@@ -84,6 +135,7 @@ export function RecorderUploader({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const [finalTranscript, setFinalTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
+  const transcriptRef = useRef("");
   const [transcriptNotice, setTranscriptNotice] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognitionSession | null>(null);
   const recordingActiveRef = useRef(false);
@@ -104,23 +156,24 @@ export function RecorderUploader({
   }, [confirmRecordAgain]);
 
   useEffect(() => {
-    if (!recording) return;
+    if (!recording || paused) return;
     const timer = window.setInterval(() => {
-      const seconds = Math.floor((Date.now() - startedAtRef.current) / 1000);
+      const seconds = activeSeconds();
       setElapsed(seconds);
+      recordPaceSample(seconds, transcriptRef.current);
       if (seconds >= maxAudioDurationSeconds) recorderRef.current?.stop();
     }, 250);
     return () => window.clearInterval(timer);
-  }, [maxAudioDurationSeconds, recording]);
+  }, [maxAudioDurationSeconds, recording, paused]);
 
-  const status: RecorderStatus = recording ? "recording" : preparing || countdown !== null ? "countdown" : selected ? "ready" : "idle";
+  const status: RecorderStatus = recording ? paused ? "paused" : "recording" : preparing || countdown !== null ? "countdown" : selected ? "ready" : "idle";
   useEffect(() => {
     onStatusChange?.(status);
   }, [onStatusChange, status]);
 
   useEffect(() => {
     const analyser = analyserRef.current;
-    if (!recording || !analyser) return;
+    if (!recording || paused || !analyser) return;
     const samples = new Uint8Array(analyser.fftSize);
     const timer = window.setInterval(() => {
       // Stopping clears the meter straight away; a reading that lands just after must not redraw a bar.
@@ -132,7 +185,11 @@ export function RecorderUploader({
       setLevels((previous) => [...previous.slice(1), loudness]);
     }, METER_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [recording]);
+  }, [recording, paused]);
+
+  function activeSeconds() {
+    return Math.floor(((pausedAtRef.current ?? Date.now()) - startedAtRef.current - totalPausedMsRef.current) / 1000);
+  }
 
   function stopMeter() {
     void audioContextRef.current?.close().catch(() => undefined);
@@ -159,11 +216,24 @@ export function RecorderUploader({
 
   function clearTranscript() {
     recognitionRef.current = null;
+    transcriptRef.current = "";
     setFinalTranscript("");
     setInterimTranscript("");
     setTranscriptNotice(null);
+    setPaceHistory([]);
     sessionBaseRef.current = "";
     latestFinalRef.current = "";
+  }
+
+  function recordPaceSample(second: number, transcript: string) {
+    const wpm = liveFeedback(transcript, second).pace;
+    if (wpm === null) return;
+    setPaceHistory((previous) => {
+      const last = previous.at(-1);
+      if (last?.second === second && last.wpm === wpm) return previous;
+      const sample = { second, wpm };
+      return last?.second === second ? [...previous.slice(0, -1), sample] : [...previous, sample];
+    });
   }
 
   function stopTranscription() {
@@ -204,7 +274,10 @@ export function RecorderUploader({
       const finalText = joinTranscript(sessionBaseRef.current, finalParts.join(" "));
       latestFinalRef.current = finalText;
       setFinalTranscript(finalText);
-      setInterimTranscript(interimParts.join(" ").trim());
+      const interimText = interimParts.join(" ").trim();
+      setInterimTranscript(interimText);
+      transcriptRef.current = joinTranscript(finalText, interimText);
+      recordPaceSample(activeSeconds(), transcriptRef.current);
     };
     recognition.onerror = (event) => {
       if (recognitionRef.current !== recognition) return;
@@ -216,6 +289,8 @@ export function RecorderUploader({
       if (recognitionRef.current !== recognition) return;
       sessionBaseRef.current = latestFinalRef.current;
       setInterimTranscript("");
+      transcriptRef.current = latestFinalRef.current;
+      recordPaceSample(activeSeconds(), transcriptRef.current);
       if (!recordingActiveRef.current || !transcriptionEnabledRef.current) return;
       restartTimerRef.current = window.setTimeout(() => {
         restartTimerRef.current = null;
@@ -273,6 +348,51 @@ export function RecorderUploader({
     selectAudio(file, file.name);
   }
 
+  function createRecorder(stream: MediaStream, mimeType?: string) {
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    chunksRef.current = [];
+    recorderRef.current = recorder;
+    recorder.ondataavailable = (event) => event.data.size && chunksRef.current.push(event.data);
+    recorder.onstop = () => {
+      if (countdownTimerRef.current !== null) window.clearTimeout(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+      pendingRef.current = false;
+      setCountdown(null);
+      setResuming(false);
+      stopTranscription();
+      const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
+      stream.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+      recorderRef.current = null;
+      stopMeter();
+      setRecording(false);
+      setPaused(false);
+      pausedAtRef.current = null;
+      if (validate(blob)) {
+        selectAudio(blob, `speakup-recording-${new Date().toISOString().replace(/[:.]/g, "-")}.${extensionFor(blob)}`, true);
+      }
+    };
+    return recorder;
+  }
+
+  function startMeter(stream: MediaStream) {
+    const AudioContextClass = window.AudioContext
+      ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) return;
+    try {
+      const context = new AudioContextClass();
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 1024;
+      context.createMediaStreamSource(stream).connect(analyser);
+      audioContextRef.current = context;
+      analyserRef.current = analyser;
+      setMetering(true);
+    } catch {
+      audioContextRef.current = null;
+      analyserRef.current = null;
+    }
+  }
+
   async function startRecording() {
     if (pendingRef.current || recording) return;
     setError(null);
@@ -282,8 +402,10 @@ export function RecorderUploader({
     }
     pendingRef.current = true;
     setPreparing(true);
+    let microphoneReady = false;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      microphoneReady = true;
       if (!mountedRef.current) {
         stream.getTracks().forEach((track) => track.stop());
         return;
@@ -292,37 +414,14 @@ export function RecorderUploader({
         MediaRecorder.isTypeSupported(type),
       );
       streamRef.current = stream;
-      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-      chunksRef.current = [];
-      recorderRef.current = recorder;
-      recorder.ondataavailable = (event) => event.data.size && chunksRef.current.push(event.data);
-      recorder.onstop = () => {
-        stopTranscription();
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
-        stream.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
-        recorderRef.current = null;
-        stopMeter();
-        setRecording(false);
-        if (validate(blob)) {
-          selectAudio(blob, `speakup-recording-${new Date().toISOString().replace(/[:.]/g, "-")}.${extensionFor(blob)}`, true);
-        }
-      };
-      // The meter is optional: recording works the same in browsers without Web Audio.
-      const AudioContextClass = window.AudioContext
-        ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (AudioContextClass) {
-        try {
-          const context = new AudioContextClass();
-          const analyser = context.createAnalyser();
-          analyser.fftSize = 1024;
-          context.createMediaStreamSource(stream).connect(analyser);
-          audioContextRef.current = context;
-          analyserRef.current = analyser;
-        } catch {
-          audioContextRef.current = null;
-          analyserRef.current = null;
-        }
+      let chosenMimeType = mimeType;
+      let recorder: MediaRecorder;
+      try {
+        recorder = createRecorder(stream, chosenMimeType);
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "NotSupportedError" && mimeType)) throw error;
+        chosenMimeType = undefined;
+        recorder = createRecorder(stream);
       }
       setPreparing(false);
       setCountdown(3);
@@ -336,33 +435,49 @@ export function RecorderUploader({
           }
           countdownTimerRef.current = null;
           setCountdown(null);
+          let startError: unknown = null;
           try {
             recorder.start();
-            startedAtRef.current = Date.now();
-            setElapsed(0);
-            if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
-            previewUrlRef.current = null;
-            setPreviewUrl(null);
-            setSelected(null);
-            setFilename("");
-            clearTranscript();
-            setMetering(Boolean(analyserRef.current));
-            recordingActiveRef.current = true;
-            pendingRef.current = false;
-            setRecording(true);
-            startTranscription();
-          } catch {
+          } catch (error) {
+            startError = error;
+            if (error instanceof DOMException && error.name === "NotSupportedError" && chosenMimeType) {
+              try {
+                createRecorder(stream).start();
+                startError = null;
+              } catch (fallbackError) {
+                startError = fallbackError;
+              }
+            }
+          }
+          if (startError) {
             stream.getTracks().forEach((track) => track.stop());
             streamRef.current = null;
             recorderRef.current = null;
             pendingRef.current = false;
             stopMeter();
-            setError("Recording could not start. Try again or upload a file instead.");
+            setError(recordingStartMessage(startError));
+            return;
           }
+          startedAtRef.current = Date.now();
+          pausedAtRef.current = null;
+          totalPausedMsRef.current = 0;
+          setElapsed(0);
+          setPaused(false);
+          if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+          previewUrlRef.current = null;
+          setPreviewUrl(null);
+          setSelected(null);
+          setFilename("");
+          clearTranscript();
+          startMeter(stream);
+          recordingActiveRef.current = true;
+          pendingRef.current = false;
+          setRecording(true);
+          startTranscription();
         }, 1000);
       };
       tick(3);
-    } catch {
+    } catch (error) {
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
       recorderRef.current = null;
@@ -371,23 +486,91 @@ export function RecorderUploader({
       setPreparing(false);
       setCountdown(null);
       setRecording(false);
-      setError("Microphone access was unavailable. Check the browser permission or upload a file instead.");
+      setError(error instanceof DOMException || microphoneReady
+        ? recordingStartMessage(error)
+        : "Microphone access was unavailable. Check the browser permission or upload a file instead.");
     }
   }
 
   function stopRecording() {
-    if (recorderRef.current?.state === "recording") recorderRef.current.stop();
+    if (recorderRef.current?.state === "recording" || recorderRef.current?.state === "paused") recorderRef.current.stop();
+  }
+
+  function pauseRecording() {
+    const recorder = recorderRef.current;
+    if (recorder?.state !== "recording") return;
+    try {
+      recorder.pause();
+    } catch {
+      setError("Recording could not be paused. Try again or stop this take.");
+      return;
+    }
+    pausedAtRef.current = Date.now();
+    setElapsed(activeSeconds());
+    sessionBaseRef.current = transcriptRef.current;
+    latestFinalRef.current = transcriptRef.current;
+    setFinalTranscript(transcriptRef.current);
+    setInterimTranscript("");
+    stopTranscription();
+    recognitionRef.current = null;
+    stopMeter();
+    setPaused(true);
+  }
+
+  function resumeRecording() {
+    if (pendingRef.current || recorderRef.current?.state !== "paused") return;
+    pendingRef.current = true;
+    setResuming(true);
+    setCountdown(3);
+    const tick = (remaining: number) => {
+      countdownTimerRef.current = window.setTimeout(() => {
+        if (!pendingRef.current || !mountedRef.current) return;
+        if (remaining > 1) {
+          setCountdown(remaining - 1);
+          tick(remaining - 1);
+          return;
+        }
+        countdownTimerRef.current = null;
+        pendingRef.current = false;
+        setCountdown(null);
+        setResuming(false);
+        finishResume();
+      }, 1000);
+    };
+    tick(3);
+  }
+
+  function finishResume() {
+    const recorder = recorderRef.current;
+    if (recorder?.state !== "paused") return;
+    try {
+      recorder.resume();
+    } catch {
+      setError("Recording could not resume. You can stop and keep this take.");
+      return;
+    }
+    totalPausedMsRef.current += Date.now() - (pausedAtRef.current ?? Date.now());
+    pausedAtRef.current = null;
+    setError(null);
+    if (streamRef.current) startMeter(streamRef.current);
+    recordingActiveRef.current = true;
+    setPaused(false);
+    startTranscription();
   }
 
   function cancelCountdown() {
     pendingRef.current = false;
     if (countdownTimerRef.current !== null) window.clearTimeout(countdownTimerRef.current);
     countdownTimerRef.current = null;
+    setCountdown(null);
+    if (recording && paused) {
+      setResuming(false);
+      return;
+    }
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     recorderRef.current = null;
     stopMeter();
-    setCountdown(null);
   }
 
   function requestRecordAgain() {
@@ -436,28 +619,23 @@ export function RecorderUploader({
     }
   }
 
-  const maxMinutes = Math.round(maxAudioDurationSeconds / 60);
   const maxMegabytes = Math.round(maxAudioBytes / 1024 / 1024);
   const hint = "text-sm text-muted on-dark:text-cream/80";
   const recordedAudio = selected !== null && !(selected instanceof File);
-  const confirmedFeedback = liveFeedback(finalTranscript, elapsed);
-  const interimFeedback = liveFeedback(interimTranscript, elapsed);
   const feedback = liveFeedback(joinTranscript(finalTranscript, interimTranscript), elapsed);
-  const hasRecognizedWords = feedback.spokenWords + feedback.fillerCount > 0;
-  const provisionalFillers = Math.max(0, feedback.fillerCount - confirmedFeedback.fillerCount);
   const paceText = feedback.pace === null ? recording ? "Collecting speech…" : "Not enough speech to estimate pace" : feedback.pace < 135 ? "Below target pace" : feedback.pace > 155 ? "Above target pace" : "Within target pace";
-  const pacePosition = feedback.pace === null ? 0 : Math.max(2, Math.min(98, (feedback.pace / 200) * 100));
-  const fillerPosition = feedback.fillersPer100Words === null ? 0 : Math.max(2, Math.min(98, (feedback.fillersPer100Words / 8) * 100));
+  const pacePosition = feedback.pace === null ? 0 : Math.max(0, Math.min(100, ((feedback.pace - 80) / 120) * 100));
+  const paceMarkerColor = feedback.pace !== null && feedback.pace > 155 ? "bg-rose ring-rose" : feedback.pace !== null && feedback.pace >= 135 ? "bg-mint ring-mint" : "bg-peach ring-peach";
 
   return (
     <section className="flex w-full flex-col gap-5" aria-label={live ? "Recording upload" : "Demo recording upload"}>
       {/* Each control sits with the limits that apply to it. */}
       <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
-        <div className="flex flex-col items-start gap-2">
-          <button type="button" className={buttonClass("accent")} disabled={submitting || disabled || preparing} onClick={countdown !== null ? cancelCountdown : recording ? stopRecording : recordedAudio ? requestRecordAgain : startRecording}>
-            {preparing ? "Opening microphone…" : countdown !== null ? "Cancel countdown" : recording ? "■ Stop recording" : recordedAudio ? "● Record again" : "● Record audio"}
+        <div className="flex flex-wrap items-start gap-2">
+          <button type="button" className={buttonClass("accent")} disabled={submitting || disabled || preparing} onClick={recording ? stopRecording : countdown !== null ? cancelCountdown : recordedAudio ? requestRecordAgain : startRecording}>
+            {preparing ? "Opening microphone…" : recording ? "■ Stop recording" : countdown !== null ? "Cancel countdown" : recordedAudio ? "● Record again" : "● Record audio"}
           </button>
-          <p className={hint}>Uses your microphone. Recording stops after {maxMinutes} {maxMinutes === 1 ? "minute" : "minutes"}. Live words may be processed by your browser’s speech service.</p>
+          {recording && <button type="button" className={buttonClass("secondary")} disabled={submitting || disabled} onClick={resuming ? cancelCountdown : paused ? resumeRecording : pauseRecording}>{resuming ? "Cancel countdown" : paused ? "▶ Resume recording" : "Ⅱ Pause recording"}</button>}
         </div>
         <div className="flex flex-col items-start gap-2">
           <label className={buttonClass("secondary")}>
@@ -486,7 +664,7 @@ export function RecorderUploader({
             Don’t show again
           </label>
           <div className="mt-6 flex flex-wrap justify-end gap-3">
-            <button type="button" className={buttonClass("secondary")} onClick={() => setConfirmRecordAgain(false)}>Keep recording</button>
+            <button type="button" className={buttonClass("secondary")} onClick={() => setConfirmRecordAgain(false)}>Keep this take</button>
             <button type="button" className={buttonClass("accent")} onClick={confirmNewRecording}>Record again</button>
           </div>
         </dialog>
@@ -495,13 +673,13 @@ export function RecorderUploader({
       {countdown !== null && (
         <div className="flex items-center gap-4 rounded-2xl border-2 border-peach bg-night-soft px-5 py-4 text-cream" role="status" aria-live="assertive">
           <span className="font-display text-6xl font-bold text-peach" aria-hidden="true">{countdown}</span>
-          <span>Recording starts in {countdown}…</span>
+          <span>Recording {resuming ? "resumes" : "starts"} in {countdown}…</span>
         </div>
       )}
 
       {/* The meter is flat until a real microphone stream feeds it. */}
-      <div className="flex flex-col gap-1.5">
-        <div className="flex h-12 items-center gap-[3px]" aria-hidden="true">
+      <div>
+        <div className="flex h-12 items-center gap-[3px]" aria-hidden="true" data-testid="microphone-level-meter">
           {levels.map((level, index) => (
             <span
               key={index}
@@ -510,54 +688,49 @@ export function RecorderUploader({
             />
           ))}
         </div>
-        <p className={hint}>{metering ? "Live level from your microphone." : "The level meter moves while you record."}</p>
       </div>
 
-      <p className="flex items-center gap-2 font-mono text-sm text-teal on-dark:text-mint" aria-live="polite">
-        {recording && <span aria-hidden="true" className="recording-dot size-2.5 shrink-0 rounded-full bg-[#ff6b5e]" />}
-        <span>{recording ? `RECORDING ${formatDuration(elapsed)} / ${formatDuration(maxAudioDurationSeconds)}` : countdown !== null ? `STARTING IN ${countdown}` : preparing ? "OPENING MICROPHONE" : selected ? `READY · ${filename}` : live ? "READY TO ANALYZE · Audio is sent after you submit" : "DEMO ONLY · Nothing is sent to AWS"}</span>
-      </p>
+      {countdown === null && <p className="flex items-center gap-2 font-mono text-sm text-teal on-dark:text-mint" aria-live="polite">
+        {recording && !paused && <span aria-hidden="true" className="recording-dot size-2.5 shrink-0 rounded-full bg-[#ff6b5e]" />}
+        <span>{recording ? `${paused ? "PAUSED" : "RECORDING"} ${formatDuration(elapsed)} / ${formatDuration(maxAudioDurationSeconds)}` : preparing ? "OPENING MICROPHONE" : selected ? `READY · ${filename}` : live ? "READY TO ANALYZE · Audio is sent after you submit" : "DEMO ONLY · Nothing is sent to AWS"}</span>
+      </p>}
       {(recording || finalTranscript || interimTranscript || transcriptNotice) && (
         <section className="flex min-w-0 flex-col gap-3" aria-label="Live transcript">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="font-display text-xl font-bold text-cream">Transcript</h3>
             <span className="rounded-lg border-2 border-night-line px-2.5 py-1 font-mono text-xs text-mint">
-              {recording ? "LIVE" : "RECORDED"}
+              {paused ? "PAUSED" : recording ? "LIVE" : "RECORDED"}
             </span>
           </div>
           <div className="overflow-hidden rounded-2xl border-2 border-night-line">
             <div className="flex min-h-28 flex-col gap-2 bg-night-soft px-4 py-3 sm:flex-row sm:gap-4">
               <span className="w-24 shrink-0 pt-1 font-mono text-xs text-peach">
-                {formatDuration(elapsed)} · {recording ? "LIVE" : "CAPTURED"}
+                {formatDuration(elapsed)} · {paused ? "PAUSED" : recording ? "LIVE" : "CAPTURED"}
               </span>
               <p className="min-w-0 whitespace-pre-wrap text-[17px] leading-relaxed text-mint" aria-live="polite">
-                {finalTranscript || interimTranscript ? <>{confirmedFeedback.fillerCount ? confirmedFeedback.words.map((part, index) => <span key={index} className={part.filler ? "font-semibold text-rose" : undefined}>{part.text}</span>) : finalTranscript}{finalTranscript && interimTranscript ? " " : ""}<span className="text-cream/65">{interimFeedback.fillerCount ? interimFeedback.words.map((part, index) => <span key={index} className={part.filler ? "font-semibold text-rose" : undefined}>{part.text}</span>) : interimTranscript}</span></> : recording ? "Listening for speech…" : "No live words were captured."}
+                {finalTranscript || interimTranscript ? <>{finalTranscript}{finalTranscript && interimTranscript ? " " : ""}<span className="text-cream/65">{interimTranscript}</span></> : paused ? "Recording paused." : recording ? "Listening for speech…" : "No live words were captured."}
               </p>
             </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2" aria-label="Live speech estimates">
-            <div className="rounded-xl border-2 border-night-line bg-night-soft p-4">
-              <p className="font-mono text-xs uppercase text-mint">Filler words · live estimate</p>
-              <p className="mt-1 font-display text-3xl font-bold text-cream" aria-label={hasRecognizedWords ? `${feedback.fillerCount} estimated filler words` : "Filler estimate unavailable"}>{hasRecognizedWords ? feedback.fillerCount : "—"}</p>
-              <div className="relative my-3 h-2 rounded-full bg-night-line" role="presentation">
-                <span className="absolute inset-y-0 left-0 w-1/4 rounded-full bg-mint/70" />
-                {hasRecognizedWords && <span className="absolute -top-1 size-4 -translate-x-1/2 rounded-full border-2 border-night-soft bg-rose" style={{ left: `${fillerPosition}%` }} />}
-              </div>
-              <p className="text-sm text-mint">{feedback.fillersPer100Words === null ? "Waiting for recognized words" : `${feedback.fillersPer100Words.toFixed(1)} per 100 spoken words`} · target under 2</p>
-              {provisionalFillers > 0 && <p className="mt-1 text-xs text-cream/70">Includes {provisionalFillers} provisional {provisionalFillers === 1 ? "filler" : "fillers"}</p>}
+          <div className="rounded-xl border-2 border-night-line bg-night-soft p-4" aria-label="Live speaking pace">
+            <p className="font-mono text-xs uppercase text-mint">Speaking pace · live estimate</p>
+            <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <p className="font-display text-3xl font-bold text-cream" aria-label={feedback.pace === null ? "Pace estimate unavailable" : `Estimated pace ${feedback.pace} words per minute`}>{feedback.pace ?? "—"} <span className="font-sans text-sm font-normal">WPM</span></p>
+              <p className="text-sm text-mint" aria-live="polite">{paceText}</p>
+              {feedback.pace !== null && elapsed < 15 && <span className="rounded-full border border-peach/50 px-2 py-0.5 font-mono text-xs text-peach">EARLY ESTIMATE</span>}
             </div>
-            <div className="rounded-xl border-2 border-night-line bg-night-soft p-4">
-              <p className="font-mono text-xs uppercase text-mint">Speaking pace · live estimate</p>
-              <p className="mt-1 font-display text-3xl font-bold text-cream" aria-label={feedback.pace === null ? "Pace estimate unavailable" : `Estimated pace ${feedback.pace} words per minute`}>{feedback.pace ?? "—"} <span className="font-sans text-sm font-normal">WPM</span></p>
-              <div className="relative my-3 h-2 rounded-full bg-night-line" role="presentation">
-                <span className="absolute inset-y-0 rounded-full bg-mint/70" style={{ left: "67.5%", width: "10%" }} />
-                {feedback.pace !== null && <span className="absolute -top-1 size-4 -translate-x-1/2 rounded-full border-2 border-night-soft bg-peach" style={{ left: `${pacePosition}%` }} />}
+            <div className="mt-5 px-2" role="img" aria-label={feedback.pace === null ? "Pace scale from 80 to 200 words per minute; target is 135 to 155; waiting for an estimate" : `Pace scale from 80 to 200 words per minute; target is 135 to 155; current estimate is ${feedback.pace}`}>
+              <div className="relative h-4 rounded-full bg-night-line">
+                <span className="absolute inset-y-0 rounded-full bg-mint/70" style={{ left: "45.83%", width: "16.67%" }} />
+                {feedback.pace !== null && <span className={`absolute top-1/2 size-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-night-soft ring-2 ${paceMarkerColor}`} style={{ left: `${pacePosition}%` }} />}
               </div>
-              <p className="text-sm text-mint">{paceText} · target 135–155 WPM</p>
+              <div className="relative mt-2 h-4 font-mono text-xs text-mint/80" aria-hidden="true"><span className="absolute left-0">80</span><span className="absolute -translate-x-1/2" style={{ left: "45.83%" }}>135</span><span className="absolute -translate-x-1/2" style={{ left: "62.5%" }}>155</span><span className="absolute right-0">200+</span></div>
+              <div className="mt-2 flex justify-between text-xs text-mint" aria-hidden="true"><span>Slower</span><span>Target 135–155 WPM</span><span>Faster</span></div>
             </div>
+            <PaceTrend samples={paceHistory} />
           </div>
           {transcriptNotice && <p className="text-sm text-peach" role="status">{transcriptNotice}</p>}
-          <p className="text-xs text-cream/70">Live estimates include words still changing in your browser. Browser recognition may miss filler sounds; your scored review uses the submitted audio.</p>
+          <p className="text-xs text-cream/70">This pace estimate includes words still changing in your browser. Your scored review uses the submitted audio.</p>
         </section>
       )}
       {error && <p className="text-sm font-semibold text-rust on-dark:text-peach" role="alert">{error}</p>}

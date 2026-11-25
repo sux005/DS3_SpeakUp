@@ -2,15 +2,16 @@ import { describe, expect, it } from "vitest";
 import { rubric } from "@/lib/rubric";
 import { buildEvidence, buildNextStep, buildTakeaway, lowestScored } from "@/lib/takeaway";
 import { compareToTarget, targetText } from "@/lib/targets";
-import type { AnalysisMetrics, RecordingReview } from "@/lib/types";
+import type { AnalysisMetrics, Pause, RecordingReview } from "@/lib/types";
 import demoAnalysis from "@/data/demo/analysis.json";
+import { summaryMetrics } from "../fixtures";
 
 const demo = demoAnalysis.data.metrics as AnalysisMetrics;
 const transcript = { text: "", items: [] };
 const scores = (rate: number | null, fillers: number | null, pauses: number | null): AnalysisMetrics =>
   ({ ...demo, rubric_scores: { speaking_rate: rate, filler_words: fillers, pauses_inside_sentences: pauses } });
-const uncoached = (metrics?: AnalysisMetrics): RecordingReview => ({ recording_id: "r1", transcript, analysis: metrics, feedback: null });
-const coached = (feedback: NonNullable<RecordingReview["feedback"]>): RecordingReview => ({ recording_id: "r1", transcript, analysis: demo, feedback });
+const uncoached = (metrics?: AnalysisMetrics): RecordingReview => ({ recording_id: "r1", transcript, summary_metrics: summaryMetrics(), analysis: metrics, feedback: null });
+const coached = (feedback: NonNullable<RecordingReview["feedback"]>): RecordingReview => ({ recording_id: "r1", transcript, summary_metrics: summaryMetrics(), analysis: demo, feedback });
 
 describe("target helpers", () => {
   it("quotes the rubric's own score-4 wording", () => {
@@ -141,7 +142,7 @@ describe("next step", () => {
 describe("evidence", () => {
   it("lists the coach's moments when there are any", () => {
     const review = coached({ feedback: "x", moments: [{ id: "m1", start_seconds: 3, end_seconds: 4, text: "so", kind: "strength", observation: "Clear.", next_step: "Repeat." }] });
-    expect(buildEvidence(review, demo)).toEqual({ source: "coaching", items: [{ at: 3, label: "Strength · “so”", detail: "Clear." }] });
+    expect(buildEvidence(review, demo)).toEqual({ source: "coaching", items: [{ at: 3, end: 4, kind: "strength", label: "Strength · “so”", detail: "Clear." }] });
   });
 
   it("otherwise lists real filler and pause times in order", () => {
@@ -151,14 +152,21 @@ describe("evidence", () => {
     expect(items.map((item) => item.at)).toEqual([...items.map((item) => item.at)].sort((a, b) => a - b));
     expect(items[0].label).toBe(`Filler “${demo.filler_occurrences[0].filler}”`);
     expect(items.filter((item) => item.label.startsWith("Pause inside a sentence"))).toHaveLength(3);
+    // Each item keeps the event's own start and end, straight from the analysis.
+    for (const item of items.filter((entry) => entry.kind === "pause")) {
+      expect(demo.pauses.some((pause) => pause.start_seconds === item.at && pause.end_seconds === item.end)).toBe(true);
+    }
+    expect(items.filter((item) => item.kind === "filler")).toHaveLength(3);
   });
 
   it("uses a pause's own start and end when no duration is given, and skips natural pauses", () => {
+    // Older payloads can leave out duration_seconds and inside_sentence, which
+    // the API type now requires, so these pauses are cast on purpose.
     const metrics: AnalysisMetrics = { ...demo, filler_occurrences: [], pauses: [
-      { start_seconds: 1, end_seconds: 2.5 },
-      { start_seconds: 5, end_seconds: 9, inside_sentence: false },
+      { start_seconds: 1, end_seconds: 2.5 } as Pause,
+      { start_seconds: 5, end_seconds: 9, inside_sentence: false } as Pause,
     ] };
-    expect(buildEvidence(uncoached(), metrics).items).toEqual([{ at: 1, label: "Pause inside a sentence, 1.5 s", detail: "One of the longest" }]);
+    expect(buildEvidence(uncoached(), metrics).items).toEqual([{ at: 1, end: 2.5, kind: "pause", playFrom: 0, label: "Pause inside a sentence, 1.5 s", detail: "One of the longest" }]);
   });
 
   it("is empty without measurements or events", () => {

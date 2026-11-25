@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Project, Recording, RecordingReview } from "@/lib/types";
+import { pause, summaryMetrics } from "../fixtures";
 
 const harness = vi.hoisted(() => ({
   params: { recordingId: "recording-1" },
@@ -105,7 +106,7 @@ describe("live recording status and results", () => {
           { type: "pronunciation", start_time: "2", end_time: "2.5", alternatives: [{ content: "hello" }] },
           { type: "punctuation", alternatives: [{ content: "." }] },
         ] },
-        analysis: { duration_seconds: 4, words_per_minute: 120, fillers_per_100_words: 2, pauses_per_speaking_minute: 1, rubric_scores: { speaking_rate: 3, filler_words: 2, pauses_inside_sentences: 3 }, filler_occurrences: [{ start_seconds: 1, end_seconds: 1.5, filler: "Um" }], pauses: [], long_pauses: [] },
+        analysis: { ...summaryMetrics({ duration_seconds: 4, fillers_per_100_words: 2, pauses_per_speaking_minute: 1, rubric_scores: { speaking_rate: 3, filler_words: 2, pauses_inside_sentences: 3 } }), filler_occurrences: [{ start_seconds: 1, end_seconds: 1.5, filler: "Um" }], pauses: [], long_pauses: [] },
         feedback: { feedback: "Good opening.", moments: [{ id: "m1", start_seconds: 1, end_seconds: 1.5, text: "Slow down", kind: "improve", observation: "The filler interrupts the opening.", next_step: "Pause before starting." }] },
       },
     };
@@ -127,7 +128,7 @@ describe("live recording status and results", () => {
       "recording-1": {
         recording_id: "recording-1",
         transcript: { text: "Um, hello.", items: [] },
-        analysis: { duration_seconds: 4, words_per_minute: 120, fillers_per_100_words: 2, pauses_per_speaking_minute: 1, rubric_scores: { speaking_rate: 3, filler_words: 2, pauses_inside_sentences: 3 }, filler_occurrences: [{ start_seconds: 1, end_seconds: 1.5, filler: "Um" }], pauses: [{ start_seconds: 2, end_seconds: 3, inside_sentence: true }], long_pauses: [{ start_seconds: 2, end_seconds: 3 }] },
+        analysis: { ...summaryMetrics({ duration_seconds: 4, fillers_per_100_words: 2, pauses_per_speaking_minute: 1, rubric_scores: { speaking_rate: 3, filler_words: 2, pauses_inside_sentences: 3 } }), filler_occurrences: [{ start_seconds: 1, end_seconds: 1.5, filler: "Um" }], pauses: [pause(2, 3)], long_pauses: [pause(2, 3)] },
         feedback: { feedback: "No moments yet.", moments: [] },
       },
     };

@@ -17,9 +17,25 @@ describe("preserved AWS API contract helpers", () => {
     await a.getArtifact("jwt", "r/1", "analysis");
     await a.getDownloadUrl("jwt", "r/1");
     await a.getAccountLimits("jwt");
+    await a.getReview("jwt", "r/1");
     expect(fetcher.mock.calls[0][1].headers.Authorization).toBe("Bearer jwt");
     expect(fetcher.mock.calls[1][0]).toContain("a%2Fb/recordings");
     expect(fetcher.mock.calls[3][0]).toContain("r%2F1/artifacts/analysis");
+    expect(fetcher.mock.calls[6][0]).toBe("https://example.test/recordings/r%2F1/review");
+  });
+  it("uses the fixed example routes with authenticated, encoded requests", async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({ recordings: [], download_url: "https://download.test" }));
+    vi.stubGlobal("fetch", fetcher);
+    const a = await api();
+    await a.getExamples("jwt");
+    await a.getExampleRecording("jwt", "example/strong");
+    await a.getExampleDownloadUrl("jwt", "example/strong");
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+      "https://example.test/examples",
+      "https://example.test/examples/example%2Fstrong",
+      "https://example.test/examples/example%2Fstrong/download",
+    ]);
+    expect(fetcher.mock.calls.every(([, init]) => init.headers.Authorization === "Bearer jwt")).toBe(true);
   });
   it("creates projects and normalizes completed reviews", async () => {
     const fetcher = vi.fn()

@@ -1,109 +1,187 @@
 # SpeakUp
 
-SpeakUp is a DS3 public-speaking diagnostics platform. Its backend stores
-original recordings without rewriting them during processing, prepares speech
-for analysis, produces timestamped transcripts and speech metrics, and stores
-versioned coaching feedback in private AWS resources. The Next.js frontend
-in [`frontend/web`](frontend/web/README.md) supports sample-data and
-development API modes. Its development guest bridge is unavailable in
-production; deployed sign-in and a browser-to-backend smoke test remain open.
+SpeakUp is a DS3 public-speaking coach. A student records or uploads a practice
+talk, and SpeakUp scores three things on a 0 to 4 scale: speaking rate, filler
+words, and pauses inside sentences. It then shows a timestamped transcript with
+the fillers and pauses marked, plus written coaching feedback.
 
-## AWS payload API
+**Status:** the AWS backend is deployed for development. The web app in
+`frontend/web` runs on sample data and is not connected to the live API yet.
 
-Backend workflows use `src.aws_payload.SpeakUpPayloadStore` for projects,
-recordings, uploads, audio reads, versioned JSON artifacts, playback URLs, and
-recoverable deletion. S3 stores audio and large payloads; DynamoDB stores
-owner-scoped metadata, lifecycle state, summary metrics, and compact S3
-references. See [the API guide](docs/aws-payload-api.md) and
-[package README](src/aws_payload/README.md). The
-[complete package reference](docs/aws-payload-package-reference.md) documents
-every supported function, model, parameter, return value, and exception.
+## How it works
 
-Build the four zip-based Lambda artifacts (`api`, `processor`,
-`workflow_failure`, and `maintenance`) with:
+![SpeakUp pipeline](docs/flowchart/speakup_flowchart.png)
+
+1. The browser uploads the original recording straight to a private S3 bucket.
+   The original is never changed.
+2. The S3 upload event starts a Step Functions workflow.
+3. **Audio prep** (Lambda container): converts the file to 48 kHz mono and
+   removes background noise with DeepFilterNet3.
+4. **Transcription:** Amazon Transcribe (en-US) returns the words with
+   timestamps and punctuation.
+5. **Scoring:** plain Python code in `src/scoring/` counts words per minute,
+   fillers and pauses, then scores them with the rubric in
+   [`src/scoring/rubrics/speaking-2026-10-31.csv`](src/scoring/rubrics/speaking-2026-10-31.csv).
+6. **Feedback:** Amazon Bedrock writes structured coaching (an overview, four
+   categories and timestamped moments) from the scores. It only runs when the
+   stack is deployed with `EnableBedrockFeedback=true`. See
+   [docs/bedrock-upload-pipeline.md](docs/bedrock-upload-pipeline.md).
+7. Results are saved to S3 and DynamoDB, and the web app reads them through
+   API Gateway after the user signs in with Cognito.
+
+Step by step detail: [docs/full-pipeline-walkthrough.md](docs/full-pipeline-walkthrough.md).
+
+## Models and why we picked them
+
+| Step | Model | Why |
+| --- | --- | --- |
+| Noise cleanup | DeepFilterNet3 | Removes background noise while keeping speech intact, and runs on CPU inside Lambda |
+| Speech to text | Amazon Transcribe (en-US) | Keeps um and uh in the transcript and gives word timestamps and punctuation. Caught 87.6% of hand-labeled um/uh in our test, vs about 10% for plain Whisper. See [below](#speech-to-text-transcribe-vs-crisperwhisper) for why we did not switch to CrisperWhisper |
+| Pause detection | A quiet stretch of 0.3 s or more (energy), or Silero VAD hearing no speech at a Transcribe word gap | Silero also catches pauses filled with laughter, clapping or breathing, which are not quiet. A pause counts against the score unless it comes after a period, question mark, exclamation mark or comma. A pause right after um/uh, or a comma pause before repeated words ("by saving, saving money"), still counts. Falls back to Transcribe word gaps when the audio-prep step has no pause data |
+| Feedback | Amazon Bedrock: Nova Lite (`converse` mode) or `openai.gpt-oss-20b` through the Mantle endpoint (`mantle-chat` mode) | Runs in our Region (`us-east-2`). Mantle was added because the dev account hit Bedrock Runtime's daily token limit. The scores come from code, so the model only writes the wording |
+
+### Speech to text: Transcribe vs CrisperWhisper
+
+CrisperWhisper is a Whisper model tuned to write filler words, so we tested
+whether it would score speech better than Transcribe. We are keeping Transcribe.
+
+**Fillers.** We used the 8 test episodes of the public PodcastFillers dataset
+(first 20 minutes each), where 830 um/uh were labeled by hand. A label counts as
+caught when the model writes um/uh within 0.35 s of it.
+
+| Model | Labeled um/uh caught | um/uh written | Written with no label nearby |
+| --- | --- | --- | --- |
+| Amazon Transcribe | 87.6% | 820 | 11% |
+| CrisperWhisper 2.0 turbo | 92.2% | 908 | 15% |
+| CrisperWhisper 2.0 small / medium / large | 92.3 to 93.1% | 933 to 971 | 16 to 19% |
+| Whisper with a verbatim prompt (4 episodes) | 82.8% | 406 (436 labeled) | 11% |
+
+CrisperWhisper catches about 5 points more of the labeled fillers, but it also
+writes more um/uh with no label nearby, so its total runs high (908 or more vs
+830). Transcribe's total is closer, and the filler score is based on the total.
+Some unlabeled um/uh may be real fillers the labelers skipped, so the last
+column is an upper bound on false alarms.
+
+**Pauses and WPM.** On 220 hand-labeled pauses, CrisperWhisper's punctuation
+agreed with our labels 85 to 86% of the time, the same as Transcribe (86%).
+Seven open punctuation models gave 81 to 87%, which is within noise. Word counts
+were within about 1.5% of Transcribe's, so WPM would barely change.
+
+**Why we did not switch.** The filler gain is small and comes with more extra
+fillers. CrisperWhisper 2.0 is licensed for non-commercial research only and
+would need its own GPU hosting, while Transcribe already runs in the pipeline.
+
+The research behind every rubric cutoff, the filler word list, the pause rules
+and the Bedrock prompt is in [docs/research/](docs/research/README.md). Start
+with [RUBRIC_README.md](docs/research/RUBRIC_README.md).
+
+## Setup
+
+You only need the steps for the part you are working on.
+
+| I want to... | Steps |
+| --- | --- |
+| Run the tests or work on scoring and the API code | 1, 2, 3 |
+| Work on the web app | 1, 4 |
+| Run noise cleanup on my own audio | 1, 5 |
+| Run a recording through the real AWS pipeline | 1, 2, 6, 7 |
+| Deploy or change AWS resources | 1, 2, 6, then [infra/README.md](infra/README.md) |
+
+### 1. Install the tools and clone the repo
+
+You need Git, plus:
+
+- **Python 3.13** for the main code and tests
+- **Python 3.11** only for noise cleanup (DeepFilterNet needs it)
+- **Node.js 20.9 or newer** only for the web app
+- **AWS CLI 2.32 or newer** only for AWS work
+
+On macOS with Homebrew:
 
 ```bash
-python scripts/build_lambda_packages.py
+brew install git python@3.13 python@3.11 node awscli
 ```
 
-Run the local test suite with an ignored temporary directory:
+On Windows, install the same tools from their websites. Then:
+
+```bash
+git clone https://github.com/sux005/DS3_SpeakUp.git
+cd DS3_SpeakUp
+```
+
+### 2. Set up Python and run the tests
+
+macOS and Linux:
+
+```bash
+python3.13 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements-dev.txt
+cp .env.development.example .env.development
+```
+
+Windows PowerShell:
+
+```powershell
+py -3.13 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements-dev.txt
+Copy-Item .env.development.example .env.development
+```
+
+Run the tests:
 
 ```bash
 python -m pytest -q --basetemp .test-tmp -p no:cacheprovider
 ```
 
-## Repository structure
+Everything should pass. The tests do not need AWS, audio files or model downloads.
 
-```text
-.
-├── README.md
-├── .env.development.example
-├── .gitignore
-├── requirements.txt
-├── requirements-dev.txt
-├── docs/                    # API contracts and design notes
-├── infra/                   # CloudFormation and Lambda handlers
-├── scripts/                 # Packaging, migrations, and local QA
-├── src/
-│   ├── audio/               # Audio preparation
-│   ├── aws_payload/         # Backend storage and lifecycle API
-│   └── transcription/       # Optional local ASR
-├── tests/
-├── notebooks/
-│   └── README.md
-├── frontend/
-│   └── README.md
-├── data/
-│   ├── raw/
-│   └── processed/
-├── results/
-└── models/
+`.env.development` holds resource names, not passwords. Never put AWS keys in it.
+
+### 3. Score a transcript on your computer
+
+The same scoring code the AWS pipeline uses can run on any transcript with word
+timestamps (raw Amazon Transcribe JSON, a SpeakUp transcript, or local Whisper
+output):
+
+```bash
+python scripts/calculate_wpm.py frontend/sample-payloads/transcript.json
+python scripts/count_fillers.py frontend/sample-payloads/transcript.json
 ```
 
-`frontend/web/` contains the Next.js app, browser tests, and sample payloads.
-The backend HTTP contract is in
-[docs/aws-payload-api.md](docs/aws-payload-api.md); deployment and migration
-instructions are in [infra/README.md](infra/README.md).
+The sample transcript is only five words long, so it prints
+`"rubric_status": "insufficient_speech"` and no score. Use a real transcript to
+get scores.
 
-## Quick start
+To make a transcript from your own audio without AWS, install the optional
+Whisper model and see [Local transcription](#local-transcription-and-accuracy-review):
 
-1. Create a virtual environment:
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   ```
-2. Install dependencies (use `requirements-dev.txt` for the optional Moto tests):
-   ```bash
-   pip install -r requirements-dev.txt
-   ```
-3. Copy the example environment file:
-   ```bash
-   cp .env.development.example .env.development
-   ```
-   On Windows PowerShell, use `Copy-Item .env.development.example .env.development`.
-   The development example contains the deployed stack's non-secret resource identifiers.
-   `.env.development` and `.env.production` are ignored by Git; only their `.example`
-   schemas belong on GitHub. The production example remains blank until `speakup-prod`
-   is deployed, so development resources cannot be used accidentally in production.
+```bash
+pip install -r requirements-transcription.txt
+```
 
-   Do not place AWS access keys in an env file. For local AWS CLI access, use the
-   short-lived `speakup` profile documented in `infra/README.md`.
-4. Run the local tests with the command above. Live AWS tests require explicit
-   opt-in and credentials; ordinary test runs do not contact AWS.
+### 4. Run the web app
 
-## Audio preparation
+```bash
+cd frontend/web
+npm install
+npm run dev
+```
 
-SpeakUp includes a distortion-gated, model-driven speech preparation pipeline.
-Version 2 sends full-band 48 kHz mono audio to DeepFilterNet3 without fixed high-pass,
-hum-notch, or presence-EQ denoising. The learned output is selected first when it
-passes the speech-preservation gate; a conservative dry/model blend and the normalized
-reference remain safety fallbacks. The original recording is never overwritten.
+Open http://localhost:3000. It uses the sample data in `frontend/web/data/`, so
+no AWS is needed. The `/login` page is a placeholder and lets anyone in.
 
-The official DeepFilterNet native runtime requires CPython 3.11. For local
-model-backed audio work, create a dedicated 3.11 environment and install the
-self-contained model requirements. Do not combine them with the Python 3.13
-development requirements. On macOS, install Python 3.11 first with
-`brew install python@3.11` when it is not already available.
+The results page plays a demo talk that is not in the repo, because we don't
+commit audio. Without it the page still works and shows a "No audio file found"
+note. To add it, see "Demo audio" in [frontend/web/README.md](frontend/web/README.md). Screens and file layout are in
+[frontend/web/README.md](frontend/web/README.md), and the API it will call is in
+[docs/aws-payload-api.md](docs/aws-payload-api.md).
+
+### 5. Run noise cleanup on your own audio
+
+DeepFilterNet needs its own Python 3.11 environment. Keep it separate from `.venv`.
 
 macOS and Linux:
 
@@ -112,6 +190,7 @@ python3.11 -m venv .venv-audio-v2
 source .venv-audio-v2/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements-audio-model.txt
+python -m src.audio.preprocess path/to/recording.wav results/prepared
 ```
 
 Windows PowerShell:
@@ -119,114 +198,106 @@ Windows PowerShell:
 ```powershell
 py -3.11 -m venv .venv-audio-v2
 .\.venv-audio-v2\Scripts\python -m pip install -r requirements-audio-model.txt
+.\.venv-audio-v2\Scripts\python -m src.audio.preprocess path\to\recording.wav results\prepared
 ```
 
-After activation, run the same platform-neutral commands on macOS, Linux, or
-Windows:
+The output files are explained in [Audio preparation](#audio-preparation).
+`results/` is ignored by Git, so your audio stays on your computer.
+
+### 6. Get AWS access
+
+Ask the project lead for your own AWS sign-in. Never share logins or create
+access keys. Then:
 
 ```bash
-python -m src.audio.preprocess path/to/recording.wav results/prepared
+aws login --profile speakup-dev
+aws sts get-caller-identity --profile speakup-dev
 ```
 
-Generate the reproducible synthetic before/after example with:
+Use Region `us-east-2` for every command. Details and troubleshooting:
+[docs/team-aws-access.md](docs/team-aws-access.md).
+
+### 7. Run a recording through the real pipeline
+
+With `.venv` active and AWS access working:
 
 ```bash
-python scripts/generate_audio_prep_example.py
+python scripts/run_live_pipeline.py path/to/recording.wav
 ```
 
-The output directory contains `reference.wav`, `enhanced_model.wav`,
-`enhanced_blended.wav`, `diagnostic.wav`, a legacy `enhanced.wav` alias, and
-`report.json`. The report records the pipeline version, exact model and runtime
-configuration, speech-preservation measurements, warnings, and which signal passed
-the distortion-aware transcription gate.
+The script makes a test user, uploads the file the same way the web app will,
+waits for the workflow to finish and saves a log of every step. Add
+`--log path/to/log.jsonl` to choose where the log goes.
 
-For local QA with the private `data/raw/SPEAKUP 1.mp4` through `SPEAKUP 6.mp4`
-recordings, activate `.venv-audio-v2` and run
-`python scripts/run_real_audio_qa.py`.
-The command writes one
-ignored `results/real_audio_qa/<clip>/` directory per source file. Each
-`report.json` records the source filename and SHA-256 of the exact input bytes.
-The runner skips identical source bytes within a batch and reuses a prior
-result only when its report matches the source and processing configuration and
-all expected artifacts exist. Changed inputs or incomplete outputs are rerun.
-The six-file end-to-end test below checks the same source files using temporary
-outputs. Generated QA artifacts remain ignored by Git.
+### Setup problems
 
-## Local transcription and accuracy review
+Most install problems on Mac (PyTorch, DeepFilterNet, missing Python versions,
+Docker on Apple Silicon) are covered in [docs/macos-setup.md](docs/macos-setup.md).
 
-Install the optional local ASR dependency with
-`pip install -r requirements-transcription.txt`, then run
-`python scripts/transcribe_local.py`.
-The default `small.en` model downloads once into the ignored `models/` directory.
-The command reads the six original MP4 files and writes one ignored
-`results/local_transcripts/<clip>/transcript.json` per file. Each automatic
-transcript contains the source SHA-256, model details, full text, segments, and
-word start/end times. It is a hypothesis, not verified ground truth.
+## Repository structure
 
-Run `python scripts/create_review_templates.py` to prefill ignored
-`data/references/SPEAKUP x.json` files with the automatic transcript and its
-word-timestamped segments. Existing reviewed text is preserved. To measure
-transcription accuracy, listen to each source recording, correct the reference
-`text` to the exact words heard, and change `review_status` to `reviewed`:
-
-```json
-{
-  "source_sha256": "copy the hash from the automatic transcript",
-  "review_status": "reviewed",
-  "text": "the exact words confirmed by listening to the recording"
-}
+```text
+.
+├── docs/
+│   ├── research/            # Why the rubric, models and prompt are what they are
+│   ├── flowchart/           # Pipeline diagram
+│   └── *.md                 # API contract, pipeline walkthrough, AWS and setup guides
+├── frontend/
+│   ├── sample-payloads/     # Example API responses
+│   └── web/                 # Next.js web app
+├── infra/                   # CloudFormation templates and Lambda handlers
+├── scripts/                 # Local scoring, QA, packaging and live pipeline runs
+├── src/
+│   ├── audio/               # Audio prep and noise cleanup
+│   ├── aws_payload/         # Storage and recording lifecycle code for S3 and DynamoDB
+│   ├── scoring/             # Rubric, fillers, pauses and the rubric CSV
+│   └── transcription/       # Optional local Whisper transcription
+├── tests/
+├── notebooks/
+├── results/                 # Local outputs, ignored by Git
+└── models/                  # Downloaded model files, ignored by Git
 ```
 
-Run the comparison after review:
+## Docs
+
+| Doc | What it covers |
+| --- | --- |
+| [docs/full-pipeline-walkthrough.md](docs/full-pipeline-walkthrough.md) | Every step from upload to results, and which file does it |
+| [docs/aws-payload-api.md](docs/aws-payload-api.md) | API routes and response shapes for the frontend |
+| [frontend/sample-payloads/](frontend/sample-payloads/README.md) | Example response for every API route |
+| [docs/aws-payload-package-reference.md](docs/aws-payload-package-reference.md) | Every function in `src/aws_payload` |
+| [docs/rubric-csv-format.md](docs/rubric-csv-format.md) | How to edit the rubric CSV |
+| [docs/research/](docs/research/README.md) | Rubric, filler, pause and prompt research |
+| [infra/README.md](infra/README.md) | Deploying, Lambda packages, the audio image, costs and cleanup |
+| [docs/team-aws-access.md](docs/team-aws-access.md) | Getting AWS access |
+| [docs/sign-in-process.md](docs/sign-in-process.md) | How sign-in works |
+| [docs/bedrock-upload-pipeline.md](docs/bedrock-upload-pipeline.md) | The Bedrock feedback step, its modes and how to turn it on |
+| [docs/research/noise_cancellation_ab.md](docs/research/noise_cancellation_ab.md) | How to compare raw and cleaned audio |
+| [docs/macos-setup.md](docs/macos-setup.md) | Mac setup and fixes |
+| [docs/AGENTS.md](docs/AGENTS.md) | Repo guide for AI coding tools |
+
+
+## Audio preparation
+
+The audio-prep step sends 48 kHz mono audio to DeepFilterNet3. It uses the
+cleaned audio when it passes a speech-preservation check, and otherwise falls
+back to a dry/cleaned blend or the plain normalized audio. The original
+recording is never overwritten.
+
+Set up `.venv-audio-v2` as in [setup step 5](#5-run-noise-cleanup-on-your-own-audio), then:
 
 ```bash
-python scripts/check_transcript_accuracy.py \
-  "results/local_transcripts/SPEAKUP 1/transcript.json" \
-  "data/references/SPEAKUP 1.json"
+python scripts/generate_audio_prep_example.py   # synthetic before/after example
+python scripts/run_real_audio_qa.py             # private data/raw/SPEAKUP 1-6.mp4 clips
 ```
 
-The checker rejects references whose source hash differs. Review word timestamps
-by playing the matching time ranges in the original audio, for example
-`ffplay -ss 10 -t 5 -autoexit "data/raw/SPEAKUP 1.mp4"`. Model word
-probabilities alone do not establish transcription accuracy. The reviewed JSON
-is the reference for rubric evaluation and must be updated deliberately when the
-source recording changes.
+The example writes `reference.wav`, `enhanced_model.wav`, `enhanced_blended.wav`,
+`diagnostic.wav` and a `report.json` that records the model settings, the
+speech-preservation checks and which signal was picked. Real-clip QA goes to
+`results/real_audio_qa/<clip>/` (ignored by Git) and are only rerun when the
+input or settings change.
 
-### WPM and filler metrics
-
-Run the same deterministic rubric calculation used by the AWS processor against
-raw Amazon Transcribe JSON, a stored SpeakUp transcript payload, or the local
-Faster Whisper transcript format:
-
-```bash
-python scripts/calculate_wpm.py path/to/transcript.json
-python scripts/count_fillers.py path/to/transcript.json
-```
-
-Both commands print JSON and require word timestamps. WPM follows the finalized
-rubric definition, so scored filler tokens are excluded from `word_count`. The
-calculator loads score bands from
-[`src/scoring/rubrics/speaking-2026-10-31.csv`](src/scoring/rubrics/speaking-2026-10-31.csv),
-whose minimal runtime schema is documented in
-[`docs/rubric-csv-format.md`](docs/rubric-csv-format.md).
-
-### Local test commands
-
-After installing `requirements.txt` and `requirements-transcription.txt` in the
-active Python environment, run the fast unit suite with `python -m pytest -q`.
-The model-backed end-to-end test is opt-in because it processes all six private
-clips and downloads the `small.en` model on first use:
-
-```bash
-SPEAKUP_RUN_LOCAL_E2E=1 python -m pytest -q tests/test_local_audio_e2e.py
-```
-
-This local test runs audio preparation, transcription, and review-template
-generation from each raw file. It validates source hashes, output formats, and
-word timestamp bounds. Spoken-word accuracy still requires the human-reviewed
-reference files and `check_transcript_accuracy.py`.
-
-Create a level-matched listening example with:
+To make a level-matched A/B listening file:
 
 ```bash
 python scripts/create_audio_ab_example.py \
@@ -234,106 +305,49 @@ python scripts/create_audio_ab_example.py \
   results/prepared/ab_example.wav
 ```
 
-The legacy RNNoise backend is not required by the default pipeline. Developers
-who explicitly need it can install `requirements-rnnoise.txt`; its pinned macOS
-wheel requires macOS 15 or newer. See [the macOS setup guide](docs/macos-setup.md)
-for the complete supported workflow and troubleshooting notes.
+The old RNNoise backend is optional (`requirements-rnnoise.txt`, macOS 15 or newer).
 
-## Repository guidelines
+## Local transcription and accuracy review
 
-- Keep notebooks for exploration and visualization.
-- Put reusable logic in src so notebooks stay readable.
-- Do not commit secrets, API keys, or large data files.
-- Use clear filenames and short, documented functions.
-- Add tests for any core logic that will be reused.
-
-## Git and GitHub workflow for DS3 projects
-
-Using Git and GitHub well is just as important as writing good code. A clean workflow makes collaboration easier and helps the project stay organized.
-
-### 1. Use GitHub Issues for tracking work
-
-Create an Issue for each task, bug, experiment, or feature request. Keep each issue focused and include:
-
-- a short title
-- a clear description of the work
-- acceptance criteria if relevant
-- labels such as bug, enhancement, documentation, or blocked
-
-Example workflow:
-- one issue for data cleaning
-- one issue for model training
-- one issue for documentation updates
-
-### 2. Use branches to separate work
-
-Each person or feature should usually work in its own branch. This prevents people from overwriting each other's changes.
-
-Common branch commands:
+This uses local Whisper (`small.en`), not Transcribe, so you can test without AWS.
 
 ```bash
-git branch
-git checkout -b feature/my-task
-git checkout main
-git branch -d feature/my-task
+pip install -r requirements-transcription.txt
+python scripts/transcribe_local.py          # writes results/local_transcripts/<clip>/transcript.json
+python scripts/create_review_templates.py   # prefills data/references/SPEAKUP x.json
 ```
 
-What they mean:
-- `git branch` shows existing branches
-- `git checkout -b feature/my-task` creates and switches to a new branch
-- `git checkout main` switches back to the main branch
-- `git branch -d feature/my-task` deletes a branch after it is merged
-
-### 3. Use pull requests to merge code into main
-
-When work is complete, open a Pull Request (PR) from your branch into `main`. A PR is the place to review changes, discuss issues, and confirm everything is ready.
-
-Important rule:
-- Only project managers or mentors should approve pull requests.
-- Students should contribute code, but approvals should be handled by the designated maintainers.
-
-### 4. Basic Git commands and what they mean
+A model transcript is a guess, not ground truth. To check accuracy, listen to
+the recording, fix the `text` in the reference file and set
+`"review_status": "reviewed"`, then compare:
 
 ```bash
-git clone <repo-url>
-git status
-git add <file>
-git add .
-git commit -m "Describe your change"
-git push origin <branch-name>
-git log
-git merge <branch-name>
-git rebase <branch-name>
+python scripts/check_transcript_accuracy.py \
+  "results/local_transcripts/SPEAKUP 1/transcript.json" \
+  "data/references/SPEAKUP 1.json"
 ```
 
-What they mean:
-- `git clone` copies a repository from GitHub to your local machine
-- `git status` shows which files changed and what branch you are on
-- `git add` stages files for commit
-- `git commit` saves staged changes with a message
-- `git push` uploads your local commits to GitHub
-- `git log` shows recent commit history
-- `git merge` combines another branch into your current branch
-- `git rebase` reapplies your commits on top of another branch and can help keep history cleaner
+The checker rejects a reference whose source hash does not match. To check word
+timestamps, play that stretch of audio, for example
+`ffplay -ss 10 -t 5 -autoexit "data/raw/SPEAKUP 1.mp4"`.
 
-### 5. Recommended team habits
+`calculate_wpm.py` and `count_fillers.py` (setup step 3) work on these
+transcripts too. Filler words are left out of the WPM word count, and the score
+bands come from the rubric CSV ([format](docs/rubric-csv-format.md)).
 
-- Pull the latest changes before starting work
-- Keep commits small and descriptive
-- Avoid committing large data files or secrets
-- Open a PR early for feedback, not only at the end
-- Resolve merge conflicts carefully and communicate with the team
-
-### 6. Example workflow
+The full local test is opt-in because it runs all six private clips and
+downloads `small.en` the first time:
 
 ```bash
-git checkout main
-git pull origin main
-git checkout -b feature/data-cleaning
-git status
-git add .
-git commit -m "Add initial data cleaning script"
-git push origin feature/data-cleaning
+SPEAKUP_RUN_LOCAL_E2E=1 python -m pytest -q tests/test_local_audio_e2e.py
 ```
 
-Then open a Pull Request on GitHub and wait for approval from the appropriate project manager or mentor.
+## Contributing
+
+- Make an Issue for each task or bug, and work on your own branch
+  (`git checkout -b feature/my-task`).
+- Pull `main` before you start, keep commits small, and open a pull request
+  into `main` early so people can comment.
+- Only the project managers or mentors approve and merge pull requests.
+- Put reusable code in `src/` and add tests for it. Keep notebooks for exploring.
+- Never commit secrets, API keys, audio or large data files.

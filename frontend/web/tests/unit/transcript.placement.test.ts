@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { activeSentenceIndex, placePauses, type Sentence } from "@/lib/transcript";
+import { pause as pauseOf } from "../fixtures";
 
 const word = (text: string, start: number, end: number) => ({ text, start, end, filler: false });
 
@@ -24,27 +25,27 @@ describe("activeSentenceIndex", () => {
 
 describe("placePauses", () => {
   it("places a pause after the word it follows, inside a sentence", () => {
-    const pause = { start_seconds: 1.4, end_seconds: 2, inside_sentence: true };
+    const pause = pauseOf(1.4, 2);
     const placement = placePauses(sentences, [pause]);
     expect(placement.afterWord.get("0:0")).toEqual([pause]);
     expect(placement.afterSentence.size).toBe(0);
   });
 
   it("places a pause after a sentence's last word between sentences", () => {
-    const pause = { start_seconds: 3, end_seconds: 4, inside_sentence: false };
+    const pause = pauseOf(3, 4, false);
     const placement = placePauses(sentences, [pause]);
     expect(placement.afterSentence.get(0)).toEqual([pause]);
     expect(placement.afterWord.size).toBe(0);
   });
 
   it("tolerates small rounding differences and groups pauses at the same spot", () => {
-    const first = { start_seconds: 2.37, end_seconds: 2.5 };
-    const second = { start_seconds: 2.38, end_seconds: 2.5 };
+    const first = pauseOf(2.37, 2.5);
+    const second = pauseOf(2.38, 2.5);
     expect(placePauses(sentences, [first, second]).afterWord.get("0:1")).toEqual([first, second]);
   });
 
   it("skips pauses before any word", () => {
-    const placement = placePauses(sentences, [{ start_seconds: 0, end_seconds: 0.8 }, { start_seconds: 1.2, end_seconds: 1.3 }]);
+    const placement = placePauses(sentences, [pauseOf(0, 0.8), pauseOf(1.2, 1.3)]);
     expect(placement.afterWord.size + placement.afterSentence.size).toBe(0);
   });
 });

@@ -146,9 +146,11 @@ For the local frontend demo, use Node.js 20.9 or newer and run `npm ci` in
 Playwright. It supports sample data and a development API bridge; the bridge
 requires guest mode and is disabled in production. Transcript review uses
 timed words with filler highlighting, filters, and click-to-seek playback.
-Recording, countdown, preview, retake confirmation, and provisional live speech
-estimates run in the browser. Live-mode page load still reads session, projects,
-and limits; **Start presentation with audio** triggers project creation and audio
+Recording, the single start/resume countdown, Pause / Resume, preview, retake
+confirmation, and provisional live transcript and pace run in the browser. Pause
+freezes active recording time; the live filler estimate is no longer shown.
+Live-mode page load still reads session, projects, and limits;
+**Start presentation with audio** triggers project creation and audio
 upload. Browser speech recognition may use a vendor service. The retake prompt
 preference is browser `localStorage`, not backend account state.
 
@@ -165,16 +167,29 @@ access uses the short-lived `speakup` profile.
 - Run local six-clip QA with duplicate skipping:
   activate `.venv-audio-v2`, then run
   `python scripts/run_real_audio_qa.py`
+- Compare existing Whisper or Transcribe raw/enhanced transcript files with
+  `python scripts/compare_noise_cancellation.py <raw.json> <enhanced.json>`.
+  Add `--reference-text <reviewed.txt>` before interpreting either condition as
+  more accurate.
+- Run a local Whisper A/B transcription with
+  `python scripts/transcribe_noise_cancellation_pair.py <raw-audio> <enhanced-audio> --output-dir <dir>`.
 - Build Lambda packages: `python scripts/build_lambda_packages.py`
 - Calculate transcript WPM: `python scripts/calculate_wpm.py <transcript.json>`
 - Count transcript fillers: `python scripts/count_fillers.py <transcript.json>`
+- Run a bounded, content-safe Bedrock Runtime availability check with
+  `python scripts/smoke_test_bedrock.py` after signing in to the `speakup-dev`
+  profile. The deployed pipeline may instead use the signed Bedrock Mantle
+  endpoint selected by the `BedrockInferenceMode` stack parameter.
 - Launch notebooks: `jupyter lab notebooks/`
 - Validate locally: `python -m pytest -q --basetemp .test-tmp -p no:cacheprovider`
 - Validate the frontend from `frontend/web/`: `npm run lint` and
-  `npm run test:all` (coverage-gated unit/integration tests, production build,
-  and Playwright browser tests). `npm run test:e2e` alone requires a prior
-  `npm run build`. In environments that restrict Turbopack worker ports,
-  use `npx next build --webpack` for the production-build check.
+  `NEXT_PUBLIC_SPEAKUP_API_URL= npm run test:all` (coverage-gated
+  unit/integration tests, demo-mode production build, and Playwright browser
+  tests). `npm run test:e2e` alone requires a prior demo-mode build. If
+  `.env.local` sets the live bridge URL, explicitly clear it for demo browser
+  tests. In environments that restrict Turbopack worker ports, use
+  `npx next build --webpack` for a compilation check; this webpack fallback
+  does not apply the project's Turbopack Tailwind loader for visual checks.
 - Opt-in deployed workflow smoke test: set `SPEAKUP_LIVE_E2E=1`,
   `SPEAKUP_E2E_API_URL`, `SPEAKUP_E2E_JWT`, and `SPEAKUP_E2E_WAV_PATH` to a
   non-private spoken-English WAV, then run
@@ -292,7 +307,12 @@ See `docs/aws-payload-api.md` for the storage contract and staged GSI migration,
 `docs/aws-payload-package-reference.md` for the complete function-level Python
 reference, `docs/aws-api-file-flowchart.md` for the editable AWS API file and
 runtime dependency map, `src/aws_payload/README.md` for a concise API overview, and
-`infra/README.md` for packaging, deployment, cost, and cleanup.
-`docs/research/README.md` indexes the research behind the rubric cutoffs,
-implemented acoustic pause method, and Bedrock prompt. Live Transcribe behavior
-still needs an authenticated end-to-end check in the development stack.
+`infra/README.md` for packaging, deployment, cost, and cleanup. See
+`docs/sign-in-process.md` for app-user and developer authentication and
+`docs/bedrock-upload-pipeline.md` for Bedrock diagnosis and end-to-end
+verification. `docs/research/README.md` indexes the
+research behind the rubric cutoffs, the proposed pause method, and the Bedrock
+prompt. The development pipeline has completed live Amazon Transcribe runs. Its
+Bedrock Runtime quota remains unavailable, so the deployed `speakup-dev` stack
+enables feedback through the separately quota-managed Bedrock Mantle endpoint.
+Preserve `BedrockInferenceMode=mantle-chat` when updating that stack.

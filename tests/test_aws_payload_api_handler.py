@@ -194,6 +194,47 @@ def test_upload_route_rejects_recording_id_that_breaks_idempotency(monkeypatch):
     assert response["statusCode"] == 400
 
 
+def test_delete_route_uses_jwt_owner_partition_not_request_body(monkeypatch):
+    """A client-supplied owner must never select the deletion partition."""
+
+    module = load_handler_module()
+    calls = []
+    recording = Recording(
+        "user-1", "project-1", "recording-1", "2026-01-01T00:00:00Z",
+        "2026-01-01T00:00:00Z", status=RecordingStatus.UPLOADED,
+    )
+
+    class Store:
+        class Recordings:
+            def get(self, user_id, recording_id, *, include_deleted):
+                calls.append(("get", user_id, recording_id, include_deleted))
+                assert user_id == "user-1"
+                return recording.as_item()
+
+        recordings = Recordings()
+
+        def soft_delete(self, user_id, recording_id, *, expected_revision):
+            calls.append(("delete", user_id, recording_id, expected_revision))
+            assert user_id == "user-1"
+            return recording
+
+    monkeypatch.setattr(module, "payloads", lambda: Store())
+    response = module.handler(
+        authenticated_event(
+            "DELETE /recordings/{recordingId}",
+            body=json.dumps({"user_id": "user-2"}),
+            path={"recordingId": "recording-1"},
+        ),
+        None,
+    )
+
+    assert response["statusCode"] == 200
+    assert calls == [
+        ("get", "user-1", "recording-1", True),
+        ("delete", "user-1", "recording-1", 0),
+    ]
+
+
 def test_api_rejects_malformed_body_and_noninteger_page_limit(monkeypatch):
     module = load_handler_module()
     monkeypatch.setattr(module, "payloads", lambda: SimpleNamespace())

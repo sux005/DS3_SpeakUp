@@ -15,8 +15,9 @@ describe("live speech estimates", () => {
     expect(liveFeedback("I do. You know the answer?", 30).fillerCount).toBe(1);
   });
 
-  it("withholds pace until there is enough finalized speech", () => {
-    expect(liveFeedback("One two three four five", 14).pace).toBeNull();
-    expect(liveFeedback("One two three four five", 15).pace).toBe(20);
+  it("starts a provisional pace after five seconds and five recognized words", () => {
+    expect(liveFeedback("One two three four five", 4).pace).toBeNull();
+    expect(liveFeedback("One two three four", 5).pace).toBeNull();
+    expect(liveFeedback("One two three four five", 5).pace).toBe(60);
   });
 });

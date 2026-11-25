@@ -7,6 +7,7 @@
 
 import { ButtonLink } from "@/components/Button";
 import { Mascot } from "@/components/Mascot";
+import { replayStart } from "@/lib/markers";
 import { formatClock } from "@/lib/recordings";
 import { buildEvidence, buildNextStep, buildTakeaway, type Source, type TakeawayLine } from "@/lib/takeaway";
 import type { AnalysisMetrics, RecordingReview } from "@/lib/types";
@@ -18,6 +19,45 @@ const sourceLabel: Record<Source, string> = {
 
 function PlayIcon() {
   return <svg aria-hidden="true" viewBox="0 0 10 12" className="mr-1.5 inline-block h-2.5 w-2 fill-current align-baseline"><path d="M0 0l10 6-10 6z" /></svg>;
+}
+
+function CoachingText({ text }: { text: string }) {
+  return <>{text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => part.startsWith("**") && part.endsWith("**")
+    ? <strong key={index}>{part.slice(2, -2)}</strong>
+    : part)}</>;
+}
+
+function CoachingNotes({ text }: { text: string }) {
+  const blocks = text.trim().split(/\n\s*\n/);
+  return <div className="mt-4 flex flex-col gap-4 text-[15px] leading-relaxed text-ink">
+    {blocks.map((block, blockIndex) => {
+      const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+      if (lines[0]?.startsWith("|")) {
+        const rows = lines.map((line) => line.split("|").slice(1, -1).map((cell) => cell.trim()))
+          .filter((row) => row.length > 1 && !row.every((cell) => /^[-:]+$/.test(cell)));
+        const headings = rows[0] ?? [];
+        return <div key={blockIndex} className="grid gap-3 md:grid-cols-2">
+          {rows.slice(1).map((row, rowIndex) => <div key={rowIndex} className="rounded-xl border border-line bg-card p-4">
+            <h4 className="font-bold"><CoachingText text={row[1] ?? row[0] ?? ""} /></h4>
+            {row.slice(2).map((cell, cellIndex) => <p key={cellIndex} className="mt-2">
+              <span className="font-semibold">{headings[cellIndex + 2] ?? "Detail"}: </span><CoachingText text={cell} />
+            </p>)}
+          </div>)}
+        </div>;
+      }
+      const heading = /^\*\*(.+)\*\*$/.exec(lines[0] ?? "");
+      const content = heading ? lines.slice(1) : lines;
+      const list = content.length > 0 && content.every((line) => /^(?:- |\d+\. )/.test(line));
+      const items = content.map((line) => line.replace(/^(?:- |\d+\. )/, ""));
+      return <div key={blockIndex}>
+        {heading && <h3 className="mb-2 font-display text-lg font-bold">{heading[1]}</h3>}
+        {list ? /^\d+\. /.test(content[0])
+          ? <ol className="ml-5 list-decimal space-y-1.5">{items.map((item, index) => <li key={index}><CoachingText text={item} /></li>)}</ol>
+          : <ul className="ml-5 list-disc space-y-1.5">{items.map((item, index) => <li key={index}><CoachingText text={item} /></li>)}</ul>
+          : content.map((line, index) => <p key={index}><CoachingText text={line} /></p>)}
+      </div>;
+    })}
+  </div>;
 }
 
 function Line({ line, canSeek, onSeek }: { line: TakeawayLine; canSeek: boolean; onSeek: (seconds: number) => void }) {
@@ -58,18 +98,24 @@ export function Takeaway({ review, metrics, canSeek, onSeek }: {
   onSeek: (seconds: number) => void;
 }) {
   const takeaway = buildTakeaway(review, metrics);
+  const detailedCoaching = review.feedback?.feedback && /\n|\*\*/.test(review.feedback.feedback)
+    ? review.feedback.feedback : null;
   return (
     <section aria-labelledby="takeaway-heading" className="flex w-full gap-5 rounded-3xl bg-pale p-5 sm:gap-7 sm:p-7">
       <Mascot state="results" className="hidden w-24 shrink-0 self-end sm:block md:w-28" sizes="192px" />
       <div className="flex min-w-0 flex-1 flex-col gap-4">
         <h2 id="takeaway-heading" className="font-display text-2xl font-bold text-ink">Your takeaway</h2>
-        {takeaway.overview.map((text) => <p key={text} className="text-[17px] text-ink">{text}</p>)}
+        {takeaway.overview.filter((text) => text !== detailedCoaching).map((text) => <p key={text} className="text-[17px] text-ink">{text}</p>)}
         {(takeaway.strength || takeaway.priority) && (
           <div className="grid gap-3 md:grid-cols-2">
             {takeaway.strength && <Line line={takeaway.strength} canSeek={canSeek} onSeek={onSeek} />}
             {takeaway.priority && <Line line={takeaway.priority} canSeek={canSeek} onSeek={onSeek} />}
           </div>
         )}
+        {detailedCoaching && <details className="rounded-xl border border-line bg-card p-4">
+          <summary className="cursor-pointer font-semibold text-teal">Read detailed coaching</summary>
+          <CoachingNotes text={detailedCoaching} />
+        </details>}
         {takeaway.note && <p className="text-ink">{takeaway.note}</p>}
         {!takeaway.coached && (
           <p role="status" className="text-sm text-muted">
@@ -82,12 +128,17 @@ export function Takeaway({ review, metrics, canSeek, onSeek }: {
   );
 }
 
-/** Moments to replay, for the dark review panel. Each one plays from its time. */
+/**
+ * Moments to replay, for the dark review panel. Each one plays from its time,
+ * except a pause, which plays from the start of the word before it so the
+ * silence can be heard. The second argument to onSeek is the event's own time,
+ * for finding its sentence.
+ */
 export function EvidenceList({ review, metrics, canSeek, onSeek }: {
   review: RecordingReview;
   metrics?: AnalysisMetrics;
   canSeek: boolean;
-  onSeek: (seconds: number) => void;
+  onSeek: (seconds: number, eventAt?: number) => void;
 }) {
   const { items, source } = buildEvidence(review, metrics);
   return (
@@ -103,8 +154,8 @@ export function EvidenceList({ review, metrics, canSeek, onSeek }: {
               <button
                 type="button"
                 disabled={!canSeek}
-                onClick={() => onSeek(item.at)}
-                aria-label={`Play from ${formatClock(item.at)}: ${item.label}`}
+                onClick={() => onSeek(replayStart(item), item.at)}
+                aria-label={`Play from ${formatClock(replayStart(item))}: ${item.label}`}
                 className="press min-h-8 cursor-pointer rounded-lg border-2 border-night-line px-2 font-mono text-xs text-mint hover:border-mint disabled:cursor-default disabled:opacity-60 disabled:hover:border-night-line"
               >
                 <PlayIcon />{formatClock(item.at)}

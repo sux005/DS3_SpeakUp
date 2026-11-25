@@ -196,11 +196,8 @@ export default function Home() {
               .
             </p>
           )}
-          <p className="text-sm text-muted">
-            {signedOut ? "Sign in to save your recordings and scores to your SpeakUp account."
-              : live ? "Recordings sync to your SpeakUp account."
-              : "Local demo data stays in this browser. AWS sign-in and sync are not connected."}
-          </p>
+          {signedOut ? <p className="text-sm text-muted">Sign in to save your recordings and scores to your SpeakUp account.</p>
+            : !live && <p className="text-sm text-muted">Local demo data stays in this browser. AWS sign-in and sync are not connected.</p>}
         </div>
       </div>
     </main>
