@@ -41,6 +41,35 @@ uses Cognito Essentials with refresh-token rotation, requires TOTP MFA, enables
 Cognito deletion protection, and enables DynamoDB point-in-time recovery. Set the
 real production frontend origin before deploying a production stack.
 
+### Google sign-in (optional, off by default)
+
+Google sign-in is off until `GoogleClientId` is set. To turn it on for a development stack:
+
+1. In Google Cloud Console, create an OAuth client of type "Web application".
+2. Store the client secret in Secrets Manager as JSON with the key `client_secret`,
+   for example in a secret named `speakup/dev/google-oauth`. It never goes in a parameter or the repo.
+3. Deploy with `GoogleClientId=<id>.apps.googleusercontent.com` and
+   `GoogleClientSecretName=speakup/dev/google-oauth`.
+4. Read the `CognitoDomain` output. It is the stack name plus a short ID taken from the
+   stack, for example `speakup-dev-1a2b3c4d.auth.us-east-2.amazoncognito.com`, and never
+   contains the account ID.
+5. Back in Google Cloud Console, add `https://<CognitoDomain>/oauth2/idpresponse` as an
+   authorized redirect URI. Google sign-in fails until this matches.
+6. Copy `CognitoDomain` to the frontend as `NEXT_PUBLIC_COGNITO_DOMAIN`.
+
+This adds a Cognito hosted sign-in domain, a Google identity provider, and the
+authorization code flow (with PKCE in the browser) on the existing app client. The
+callback is `<CorsAllowedOrigin>/auth/callback`. Cognito creates a separate user the
+first time someone signs in with Google, so a Google account and an email-password
+account with the same address are two different SpeakUp users. A production stack
+refuses `GoogleClientId` for now: Google users skip the TOTP MFA that production
+requires, so the team needs to decide how MFA applies to them first.
+
+Before deleting a stack that had Google sign-in on, remove its
+`https://<CognitoDomain>/oauth2/idpresponse` redirect URI from the Google OAuth client
+(or delete the client). Deleting the stack frees its Cognito domain name, and anyone
+could then claim it. While Google still lists it, Google sends sign-ins there.
+
 ## API routes
 
 `GET /health` is public. All other routes require a Cognito JWT:

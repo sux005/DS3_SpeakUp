@@ -18,6 +18,7 @@ import {
   loadRecordingReview,
   reserveAndUploadRecording,
 } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { useDemoStore } from "@/lib/demo-store";
 import type { Project, Recording, RecordingReview } from "@/lib/types";
 
@@ -64,7 +65,18 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [limits, setLimits] = useState<Limits>(limitsFallback);
   const retryKeys = useRef(new WeakMap<Blob, string>());
 
-  const run = useCallback(<T,>(operation: (token: string) => Promise<T>): Promise<T> => operation(""), []);
+  const { configured: accounts, ready: authReady, user, getAccessToken } = useAuth();
+  const owner = user?.sub ?? null;
+
+  // With accounts set up, every call carries the signed-in person's Cognito access token
+  // and the deployed API scopes data to them. Without accounts, the token stays empty and
+  // the local development guest bridge supplies a guest identity instead.
+  const run = useCallback(async <T,>(operation: (token: string) => Promise<T>): Promise<T> => {
+    if (!accounts) return operation("");
+    const token = await getAccessToken();
+    if (!token) throw new Error("Sign in to load your presentations.");
+    return operation(token);
+  }, [accounts, getAccessToken]);
 
   const listAll = useCallback(async <T,>(load: (cursor?: string) => Promise<{ items: T[]; next_cursor?: string }>) => {
     const items: T[] = [];
@@ -81,13 +93,36 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!live) return;
+    if (!live || !authReady) return;
     let active = true;
-    queueMicrotask(() => { if (active) setReady(false); });
+    // Signed out with accounts set up: nothing to load until someone signs in.
+    if (accounts && !owner) {
+      queueMicrotask(() => {
+        if (!active) return;
+        setProjects([]);
+        setRecordings([]);
+        setReviews({});
+        setAudioUrls({});
+        setError(null);
+        setReady(true);
+      });
+      return () => { active = false; };
+    }
+    queueMicrotask(() => {
+      if (!active) return;
+      // A different person may have signed in: drop everything cached for the last person.
+      setProjects([]);
+      setRecordings([]);
+      setReviews({});
+      setAudioUrls({});
+      setReady(false);
+    });
     const load = async () => {
       try {
-        const session = await fetch(`${process.env.NEXT_PUBLIC_SPEAKUP_API_URL}/session`, { cache: "no-store" });
-        if (!session.ok) throw new Error("The local analysis session could not start.");
+        if (!accounts) {
+          const session = await fetch(`${process.env.NEXT_PUBLIC_SPEAKUP_API_URL}/session`, { cache: "no-store" });
+          if (!session.ok) throw new Error("The local analysis session could not start.");
+        }
         const [allProjects, nextLimits, examples] = await Promise.all([
           listAll((cursor) => run((jwt) => getProjects(jwt, cursor))),
           run(getAccountLimits),
@@ -112,7 +147,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     };
     void load();
     return () => { active = false; };
-  }, [run, listAll]);
+  }, [run, listAll, accounts, authReady, owner]);
 
   const createProject = useCallback(async (title: string, description: string) => {
     try {
