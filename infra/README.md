@@ -57,6 +57,17 @@ Google sign-in is off until `GoogleClientId` is set. To turn it on for a develop
    authorized redirect URI. Google sign-in fails until this matches.
 6. Copy `CognitoDomain` to the frontend as `NEXT_PUBLIC_COGNITO_DOMAIN`.
 
+Two redirect addresses are involved, and only one goes in Google Cloud:
+
+| Address | Where it goes | Who sets it |
+| --- | --- | --- |
+| `https://<CognitoDomain>/oauth2/idpresponse` | Google OAuth client, "Authorized redirect URIs" | You, in step 5 |
+| `<CorsAllowedOrigin>/auth/callback` (the site's own page) | Cognito app client | The stack, from `CorsAllowedOrigin` |
+
+So when the site moves to a hosted URL, redeploy with `CorsAllowedOrigin=<that URL>`.
+The Google client does not change. Only one site origin works at a time, so a stack
+pointed at the hosted site no longer accepts Google sign-in from `localhost`.
+
 This adds a Cognito hosted sign-in domain, a Google identity provider, and the
 authorization code flow (with PKCE in the browser) on the existing app client. The
 callback is `<CorsAllowedOrigin>/auth/callback`. Cognito creates a separate user the
