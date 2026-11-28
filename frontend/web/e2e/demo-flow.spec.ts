@@ -66,8 +66,7 @@ test.describe("fixture-backed presentation navigation", () => {
       Object.defineProperty(window, "webkitSpeechRecognition", { configurable: true, value: undefined });
     });
     await startWithCleanDemo(page);
-    await page.getByRole("link", { name: "Open presentation" }).click();
-    await page.getByRole("link", { name: "+ New attempt" }).click();
+    await page.goto(`/projects/${projectId}/new`);
     await page.getByRole("button", { name: "● Record audio" }).click();
     await expect(page.getByText("Recording starts in 3…")).toBeVisible();
     await expect(page.getByRole("button", { name: "Ⅱ Pause recording" })).toBeVisible({ timeout: 5_000 });
@@ -172,13 +171,27 @@ test.describe("analysis and review states", () => {
   test("replays a pause from the word before it, in a real audio element", async ({ page }) => {
     // The public speech fixture is absent in a fresh checkout. Serve local PCM
     // so Chromium can seek and play without relying on the optional demo clip.
-    await page.route("**/demo/sample-take.mp3", (route) =>
-      route.fulfill({ contentType: "audio/wav", body: silentAudio(22) }),
-    );
+    const wav = silentAudio(22);
+    await page.route("**/demo/sample-take.mp3", (route) => {
+      const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range ?? "");
+      if (!range) return route.fulfill({ contentType: "audio/wav", body: wav });
+      const first = Number(range[1]);
+      const last = range[2] ? Math.min(Number(range[2]), wav.length - 1) : wav.length - 1;
+      return route.fulfill({
+        status: 206,
+        contentType: "audio/wav",
+        headers: {
+          "accept-ranges": "bytes",
+          "content-range": `bytes ${first}-${last}/${wav.length}`,
+        },
+        body: wav.subarray(first, last + 1),
+      });
+    });
     await startWithCleanDemo(page);
     await page.goto(`/recordings/${completeRecordingId}`);
     const listen = page.getByRole("region", { name: "Listen back" });
     const position = () => page.evaluate(() => document.querySelector("audio")!.currentTime);
+    await expect.poll(() => page.locator("audio").evaluate((audio: HTMLAudioElement) => audio.seekable.length)).toBeGreaterThan(0);
 
     // This pause runs from 15.16 s to 15.67 s in the seeded analysis, right
     // after the word "um" (14.69 to 15.16 s).
