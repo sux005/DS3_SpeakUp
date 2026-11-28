@@ -116,6 +116,7 @@ Parameters:
 
 Conditions:
   IsProduction: !Equals [!Ref Environment, prod]
+  IsDevelopment: !Equals [!Ref Environment, dev]
   HasAlarmTopic: !Not [!Equals [!Ref AlarmTopicArn, '']]
   HasGoogleSignIn: !Not [!Equals [!Ref GoogleClientId, '']]
 
@@ -551,6 +552,13 @@ Resources:
                 Effect: Allow
                 Action: states:StartExecution
                 Resource: !Ref ProcessingStateMachine
+              - !If
+                - IsDevelopment
+                - Sid: StartLiveTranscription
+                  Effect: Allow
+                  Action: transcribe:StartStreamTranscriptionWebSocket
+                  Resource: '*'
+                - !Ref AWS::NoValue
               - Sid: InspectProcessingExecution
                 Effect: Allow
                 Action: states:DescribeExecution
@@ -1093,6 +1101,14 @@ Resources:
   CreateUploadRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties: {ApiId: !Ref HttpApi, RouteKey: 'POST /uploads', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}'}
+  CreateTranscriptionStreamRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Condition: IsDevelopment
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: issues short-lived Transcribe session URLs for the development recorder
+        must: [Require the same Cognito JWT authorizer as other protected routes]
+    Properties: {ApiId: !Ref HttpApi, RouteKey: 'POST /transcription-streams', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}'}
   ListProjectRecordingsRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties: {ApiId: !Ref HttpApi, RouteKey: 'GET /projects/{projectId}/recordings', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}'}

@@ -91,6 +91,7 @@ could then claim it. While Google still lists it, Google sends sign-ins there.
 - `GET /examples/{exampleId}/review`, `/analysis`, and `/download`
 - `GET /projects`
 - `POST /uploads`
+- `POST /transcription-streams`
 - `GET /projects/{projectId}/recordings`
 - `GET /recordings/{recordingId}`
 - `GET /recordings/{recordingId}/artifacts/{artifactType}`
@@ -189,6 +190,18 @@ oversized audio, denied microphone permission, cancelled recordings, and the
 signed upload and review flow. Backend tests cover owner-scoped download; the
 live browser QA suite mocks AWS and the development guest bridge is intended for
 local verification only.
+
+## Live transcription rollout
+
+The stack exposes the session route only when `Environment=dev`. Deploy the
+API ZIP and template together so the JWT-protected session route and
+Transcribe permission reach AWS with the handler. The web build can then enable
+`NEXT_PUBLIC_SPEAKUP_AWS_STREAMING=1` along with the API and Cognito settings.
+The session URL expires after 60 seconds and must never be logged or persisted.
+Verify one authenticated stream and pause/resume on the hosted HTTPS origin
+before the rehearsal. When streaming is unavailable, users can still record
+and submit for batch analysis. Rebuild with the setting unset to disable AWS
+streaming in the recorder.
 
 ## Current upload and processing workflow
 

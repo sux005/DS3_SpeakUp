@@ -1,6 +1,8 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RecorderUploader } from "@/components/RecorderUploader";
+import * as auth from "@/lib/auth";
+import * as awsTranscription from "@/lib/live-transcription";
 
 type ResultHandler = (event: {
   resultIndex: number;
@@ -101,6 +103,55 @@ describe("RecorderUploader live transcript", () => {
     Reflect.deleteProperty(HTMLDialogElement.prototype, "close");
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it("starts the signed-in AWS stream after the countdown and aborts it on pause", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SPEAKUP_AWS_STREAMING", "1");
+    vi.spyOn(auth, "useAuth").mockReturnValue({
+      user: { sub: "speaker", email: "speaker@example.test", google: false },
+      getAccessToken: async () => "test-access-token",
+    } as ReturnType<typeof auth.useAuth>);
+    const abort = vi.fn();
+    const stop = vi.fn().mockResolvedValue(undefined);
+    const start = vi.spyOn(awsTranscription, "startLiveTranscription").mockImplementation(async (options) => {
+      options.onStateChange("streaming");
+      options.onSnapshot({
+        finalText: "Opening line",
+        partialText: "continues",
+        transcript: "Opening line continues",
+        wordCount: 3,
+        wordsPerMinute: null,
+      });
+      return { abort, stop };
+    });
+    render(<RecorderUploader live maxAudioBytes={1024} maxAudioDurationSeconds={30} onSubmit={vi.fn()} />);
+    expect(start).not.toHaveBeenCalled();
+    await beginRecording();
+    expect(start).toHaveBeenCalledWith(expect.objectContaining({ accessToken: "test-access-token" }));
+    expect(FakeRecognition.instances).toHaveLength(0);
+    expect(screen.getByText("continues")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /pause recording/i }));
+    expect(abort).toHaveBeenCalledOnce();
+    expect(start.mock.calls[0][0].signal?.aborted).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /resume recording/i }));
+    await act(async () => { vi.advanceTimersByTime(3000); });
+    expect(start).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("button", { name: /stop recording/i }));
+    expect(stop).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText("Preview selected audio")).toBeTruthy();
+  });
+
+  it("keeps signed-out practice recording without opening a live session", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SPEAKUP_AWS_STREAMING", "1");
+    const start = vi.spyOn(awsTranscription, "startLiveTranscription");
+    render(<RecorderUploader live allowUpload={false} maxAudioBytes={1024} maxAudioDurationSeconds={30} onSubmit={vi.fn()} />);
+    await beginRecording();
+    expect(start).not.toHaveBeenCalled();
+    expect(FakeRecognition.instances).toHaveLength(0);
+    expect(screen.getByText(/sign in before recording/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /stop recording/i }));
+    expect(screen.getByLabelText("Preview selected audio")).toBeTruthy();
   });
 
   it("shows 3, 2, 1 before starting the recorder and transcript", async () => {

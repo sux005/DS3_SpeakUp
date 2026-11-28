@@ -74,6 +74,28 @@ async function renderStore() {
   return render(<LiveProvider><Probe /></LiveProvider>);
 }
 
+describe("standalone sign-in", () => {
+  it("shows the shared email and Google form without a modal", async () => {
+    auth.value.googleEnabled = true;
+    const { default: LoginPage } = await import("@/app/login/page");
+    render(<LoginPage />);
+    expect(screen.getByRole("heading", { level: 1, name: "Sign in" })).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("button", { name: "Continue with Google" })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "pat@example.com" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "test-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(auth.value.signIn).toHaveBeenCalledWith("pat@example.com", "test-password"));
+  });
+
+  it("shows a link back to presentations after sign-in", async () => {
+    auth.value.user = { sub: "user-1", email: "pat@example.com" };
+    const { default: LoginPage } = await import("@/app/login/page");
+    render(<LoginPage />);
+    expect(screen.getByRole("link", { name: "Go to presentations" }).getAttribute("href")).toBe("/");
+  });
+});
+
 describe("live store with accounts", () => {
   it("loads nothing while signed out", async () => {
     await renderStore();

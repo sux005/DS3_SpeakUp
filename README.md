@@ -12,7 +12,8 @@ AWS through a local guest session, or connected to AWS with real accounts
 
 ## Using SpeakUp
 
-1. **Sign in.** Press **SIGN IN** in the top-right corner. Use your email and a
+1. **Sign in.** Press **SIGN IN** in the top-right corner or open `/login`.
+   Use your email and a
    password, or **Continue with Google** when it is turned on. New accounts get
    a 6-digit code by email to confirm. Your presentations and scores are saved
    to your account, so you can come back and see how you improve.
@@ -21,8 +22,9 @@ AWS through a local guest session, or connected to AWS with real accounts
    MP3, M4A, WebM or Ogg).
 3. **Record.** A 3-2-1 countdown starts the recording. While you talk you see a
    live transcript and a rough speaking pace. You can pause, resume, listen
-   back, or record again before you send it. Nothing is uploaded until you press
-   **Start presentation with audio**.
+   back, or record again before you send it. The app uploads the saved audio
+   when you press **Start presentation with audio**. A live speech service may
+   receive microphone audio while you record to show the live transcript.
 4. **Wait for the analysis.** The page shows each step as it finishes. Press
    **See results** when it is done.
 5. **Read your results.** You get a 0 to 4 score for speaking rate, filler
@@ -32,9 +34,11 @@ AWS through a local guest session, or connected to AWS with real accounts
 6. **Practice again.** Press **New attempt** on the same presentation. Once two
    attempts are scored, charts show how each score changed.
 
-The live transcript and pace come from your browser while you record and are
-only a guide. Your scores come from the uploaded audio after it goes through
-the pipeline below.
+You can also start with **PRACTICE** for a two-minute warm-up. Sign in before
+recording to use the live transcript when AWS streaming is enabled. If you
+already recorded a warm-up while signed out, use email sign-in to keep it.
+Google sign-in leaves the recording page. The saved scores come from analysis
+of the submitted audio. Live text and pace are estimates to use while speaking.
 
 ## How it works
 

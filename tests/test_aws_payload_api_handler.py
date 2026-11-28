@@ -5,6 +5,10 @@ import json
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
+
+from botocore.credentials import Credentials
+from botocore.exceptions import NoCredentialsError
 
 from src.aws_payload.errors import OwnershipViolationError, PayloadNotFoundError
 from src.aws_payload.models import PayloadType, Project, Recording, RecordingStatus, UploadIntent
@@ -43,6 +47,78 @@ def test_protected_route_requires_authenticated_subject():
     module = load_handler_module()
     response = module.handler({"routeKey": "GET /projects"}, None)
     assert response["statusCode"] == 401
+
+
+def test_transcription_stream_route_is_authenticated_and_skips_payload_storage(monkeypatch):
+    module = load_handler_module()
+    monkeypatch.setattr(
+        module,
+        "payloads",
+        lambda: (_ for _ in ()).throw(AssertionError("stream setup must not load storage")),
+    )
+    monkeypatch.setattr(
+        module,
+        "_streaming_session",
+        lambda: {
+            "websocket_url": "wss://transcribe.example/stream?signature=redacted",
+            "expires_at": "2026-11-19T12:00:00Z",
+            "language_code": "en-US",
+            "media_encoding": "pcm",
+            "sample_rate_hz": 16000,
+            "session_id": "session-1",
+        },
+    )
+    response = module.handler(
+        authenticated_event("POST /transcription-streams"), None
+    )
+    assert response["statusCode"] == 201
+    assert response["headers"]["cache-control"] == "no-store"
+    assert json.loads(response["body"])["sample_rate_hz"] == 16000
+
+
+def test_transcribe_websocket_url_is_short_lived_and_uses_temporary_credentials(monkeypatch):
+    module = load_handler_module()
+    monkeypatch.setenv("AWS_REGION", "us-east-2")
+    monkeypatch.setattr(
+        module,
+        "aws_session",
+        lambda: SimpleNamespace(
+            get_credentials=lambda: Credentials("ACCESS", "secret", "session-token")
+        ),
+    )
+    url = module._transcribe_websocket_url(
+        "12345678-1234-1234-1234-123456789abc"
+    )
+    parsed = urlparse(url)
+    query = parse_qs(parsed.query)
+    assert parsed.scheme == "wss"
+    assert parsed.netloc == "transcribestreaming.us-east-2.amazonaws.com:8443"
+    assert parsed.path == "/stream-transcription-websocket"
+    assert query["language-code"] == ["en-US"]
+    assert query["media-encoding"] == ["pcm"]
+    assert query["sample-rate"] == ["16000"]
+    assert query["enable-partial-results-stabilization"] == ["true"]
+    assert query["partial-results-stability"] == ["medium"]
+    assert query["X-Amz-Expires"] == ["60"]
+    assert query["X-Amz-Security-Token"] == ["session-token"]
+    assert query["X-Amz-SignedHeaders"] == ["host"]
+    assert "secret" not in url
+
+
+def test_transcription_stream_credential_failure_is_a_safe_503(monkeypatch):
+    module = load_handler_module()
+    monkeypatch.setattr(
+        module,
+        "_streaming_session",
+        lambda: (_ for _ in ()).throw(NoCredentialsError()),
+    )
+    response = module.handler(
+        authenticated_event("POST /transcription-streams"), None
+    )
+    assert response["statusCode"] == 503
+    assert json.loads(response["body"]) == {
+        "message": "Backend temporarily unavailable"
+    }
 
 
 def test_account_limits_is_frontend_ready(monkeypatch):

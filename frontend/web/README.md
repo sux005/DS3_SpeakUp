@@ -44,11 +44,15 @@ Add `NEXT_PUBLIC_COGNITO_DOMAIN` (the stack output `CognitoDomain`) to show **Co
 
 Without the Cognito values, nothing changes: the guest bridge or the local preview works as before, and no sign-in button shows. Passwords go straight from the browser to Cognito (SRP). MFA, password reset and the production stack are not handled yet. Code: `lib/auth.tsx`, `lib/google-sign-in.ts`, `components/AccountButton.tsx`, `components/SignInDialog.tsx`, `app/auth/callback/page.tsx`.
 
+The standalone `/login` page uses the same form as the account popup.
+
 ### Recording and submission boundary
 
 On **New presentation** and **New attempt**, opening the form, microphone setup, the 3–2–1 countdown, recording, pausing, resuming, previewing, cancelling, and recording again stay in the browser. The form scrolls into view when opened. **Pause recording** freezes the active recording timer and level meter and stops the current live speech-recognition session. **Resume recording** shows the same single top 3–2–1 countdown before capture and live recognition continue in the same take; cancelling that countdown keeps the take paused. Stopping during the countdown saves the paused take. The configured duration limit counts active recording time, not time spent paused. After a recorded take, **Record again** asks for confirmation; the current take remains available through microphone setup and the countdown, then is replaced when the new recording starts. Confirming with **Don’t show again** stores only `speakup-skip-record-again-confirmation=true` in this browser's `localStorage`. Cancelling does not save that choice. The preference survives reloads on this browser profile, is not account-scoped, and is removed by clearing site data.
 
-Browser `SpeechRecognition` supplies the live transcript and a provisional speaking-pace estimate after at least five seconds and five recognized words. Interim words can change, so the pace trend is only a guide. Recognition may use a browser vendor's speech service before submission. Browser recognition does not determine rubric scores; the scored review comes from the submitted audio and the backend's timed transcript and analysis. The live UI does not display a filler estimate.
+Set `NEXT_PUBLIC_SPEAKUP_AWS_STREAMING=1` at build time after deploying the AWS session route. Signed-in users then send microphone audio directly to Amazon Transcribe while recording. Pause ends the stream, and resume starts a fresh session. Signed-out practice still records and can be submitted after sign-in. Without the setting the recorder uses browser `SpeechRecognition` where available, which may send audio to the browser vendor.
+
+The live text and pace are provisional, and the recorder can still save and submit a take if the stream fails. The scored review uses the submitted audio and the backend's timed transcript. Live filler counts are omitted.
 
 In live mode, the page makes read-only `/session`, `/projects`, `/account/limits`, and existing-recording requests to load account data. Recorder interactions add no SpeakUp API requests. **Start presentation with audio** is the explicit write boundary on both the home form and the live New attempt page: it creates a project when needed, reserves an upload, and PUTs the audio to the signed S3 URL. In demo mode, submission saves to the browser preview rather than AWS.
 

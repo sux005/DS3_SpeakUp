@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { buttonClass } from "@/components/Button";
 import { NeedsConfirmationError, PASSWORD_RULES, friendlyAuthError, useAuth } from "@/lib/auth";
 
@@ -12,7 +12,8 @@ const textButton = "cursor-pointer font-semibold text-mint underline underline-o
 
 // The sign-in popup: sign in, create an account, or enter the emailed code.
 // Opened from the account button in the nav, or by any action that needs an account.
-export function SignInDialog() {
+export function SignInDialog({ inline = false }: { inline?: boolean }) {
+  const titleId = useId();
   const { signIn, signUp, confirmSignUp, resendCode, closeSignIn, googleEnabled, startGoogleSignIn, signInHasPendingAction } = useAuth();
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
@@ -28,6 +29,7 @@ export function SignInDialog() {
 
   // Focus the first field, close on Escape, and give focus back to whatever opened the popup.
   useEffect(() => {
+    if (inline) return;
     const opener = document.activeElement as HTMLElement | null;
     panel.current?.querySelector<HTMLInputElement>("input")?.focus();
     const onKey = (event: KeyboardEvent) => {
@@ -38,7 +40,7 @@ export function SignInDialog() {
       document.removeEventListener("keydown", onKey);
       opener?.focus?.();
     };
-  }, [closeSignIn]);
+  }, [closeSignIn, inline]);
 
   function switchMode(target: Mode) {
     setMode(target);
@@ -96,17 +98,21 @@ export function SignInDialog() {
   const submitLabel = mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Confirm";
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-night/60 p-4" onMouseDown={(event) => {
-      if (event.target === event.currentTarget) closeSignIn();
+    <div className={inline ? "mx-auto w-full max-w-md" : "fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-night/60 p-4"} onMouseDown={(event) => {
+      if (!inline && event.target === event.currentTarget) closeSignIn();
     }}>
-      <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="sign-in-title" data-surface="dark"
+      <div ref={panel} role={inline ? undefined : "dialog"} aria-modal={inline ? undefined : true} aria-labelledby={titleId} data-surface="dark"
         className="relative flex w-full max-w-md flex-col gap-5 rounded-3xl border-2 border-outline bg-night p-7 md:p-8">
-        <button type="button" aria-label="Close" onClick={closeSignIn}
-          className="absolute top-4 right-4 cursor-pointer rounded-full px-2 text-2xl leading-none text-cream/80 hover:text-cream">
-          ×
-        </button>
+        {!inline && (
+          <button type="button" aria-label="Close" onClick={closeSignIn}
+            className="absolute top-4 right-4 cursor-pointer rounded-full px-2 text-2xl leading-none text-cream/80 hover:text-cream">
+            ×
+          </button>
+        )}
         <div className="flex flex-col gap-2 pr-6">
-          <h2 id="sign-in-title" className="font-display text-3xl font-bold text-cream">{heading}</h2>
+          {inline
+            ? <h1 id={titleId} className="font-display text-3xl font-bold text-cream">{heading}</h1>
+            : <h2 id={titleId} className="font-display text-3xl font-bold text-cream">{heading}</h2>}
           <p className="text-[16px] text-cream/85">
             {mode === "confirm" ? "Check your inbox for a 6-digit code." : "An account keeps your recordings and scores so you can track your progress."}
           </p>

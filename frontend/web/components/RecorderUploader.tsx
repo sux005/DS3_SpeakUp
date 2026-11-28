@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { buttonClass } from "@/components/Button";
+import { useAuth } from "@/lib/auth";
 import { liveFeedback } from "@/lib/live-feedback";
+import { startLiveTranscription, type LiveTranscriptionController } from "@/lib/live-transcription";
 
 export type RecorderStatus = "idle" | "countdown" | "recording" | "paused" | "ready";
 
@@ -110,6 +112,8 @@ export function RecorderUploader({
   live = false,
   allowUpload = true,
 }: RecorderUploaderProps) {
+  const { user, getAccessToken } = useAuth();
+  const awsStreamingEnabled = live && process.env.NEXT_PUBLIC_SPEAKUP_AWS_STREAMING === "1";
   const [selected, setSelected] = useState<File | Blob | null>(null);
   const [filename, setFilename] = useState("");
   const [recording, setRecording] = useState(false);
@@ -141,6 +145,10 @@ export function RecorderUploader({
   const transcriptRef = useRef("");
   const [transcriptNotice, setTranscriptNotice] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognitionSession | null>(null);
+  const awsTranscriptRef = useRef<{
+    abort: AbortController;
+    controller?: LiveTranscriptionController;
+  } | null>(null);
   const recordingActiveRef = useRef(false);
   const sessionBaseRef = useRef("");
   const latestFinalRef = useRef("");
@@ -150,6 +158,12 @@ export function RecorderUploader({
   const pendingRef = useRef(false);
   const mountedRef = useRef(true);
   const confirmationDialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => () => {
+    awsTranscriptRef.current?.abort.abort();
+    awsTranscriptRef.current?.controller?.abort();
+    awsTranscriptRef.current = null;
+  }, [user?.sub]);
 
   useEffect(() => {
     const dialog = confirmationDialogRef.current;
@@ -218,6 +232,9 @@ export function RecorderUploader({
   }, []);
 
   function clearTranscript() {
+    awsTranscriptRef.current?.abort.abort();
+    awsTranscriptRef.current?.controller?.abort();
+    awsTranscriptRef.current = null;
     recognitionRef.current = null;
     transcriptRef.current = "";
     setFinalTranscript("");
@@ -239,15 +256,75 @@ export function RecorderUploader({
     });
   }
 
-  function stopTranscription() {
+  function stopTranscription(flush = false) {
     recordingActiveRef.current = false;
     transcriptionEnabledRef.current = false;
     if (restartTimerRef.current !== null) window.clearTimeout(restartTimerRef.current);
     restartTimerRef.current = null;
     try { recognitionRef.current?.stop(); } catch { /* Recognition may already have ended. */ }
+    const aws = awsTranscriptRef.current;
+    if (!aws) return;
+    if (flush && aws.controller) {
+      void aws.controller.stop().catch(() => aws.controller?.abort());
+    } else {
+      awsTranscriptRef.current = null;
+      aws.abort.abort();
+      aws.controller?.abort();
+    }
+  }
+
+  async function startAwsTranscription(mediaStream: MediaStream) {
+    if (!user) {
+      setTranscriptNotice("Sign in before recording to use the live transcript. You can still record and submit this take.");
+      return;
+    }
+    const session: NonNullable<typeof awsTranscriptRef.current> = { abort: new AbortController() };
+    awsTranscriptRef.current = session;
+    const base = sessionBaseRef.current;
+    const stillCurrent = () => awsTranscriptRef.current === session && !session.abort.signal.aborted;
+    const unavailable = () => {
+      if (stillCurrent()) {
+        setTranscriptNotice("Live transcription is unavailable. You can still submit this recording for analysis.");
+      }
+    };
+    setTranscriptNotice("Connecting to live transcription…");
+    try {
+      const accessToken = await getAccessToken();
+      if (!stillCurrent()) return;
+      if (!accessToken) {
+        unavailable();
+        return;
+      }
+      const controller = await startLiveTranscription({
+        accessToken,
+        mediaStream,
+        signal: session.abort.signal,
+        onError: unavailable,
+        onStateChange: (state) => {
+          if (state === "streaming" && stillCurrent()) setTranscriptNotice(null);
+        },
+        onSnapshot: ({ finalText, partialText }) => {
+          if (!stillCurrent()) return;
+          const combined = joinTranscript(base, finalText);
+          latestFinalRef.current = combined;
+          transcriptRef.current = joinTranscript(combined, partialText);
+          setFinalTranscript(combined);
+          setInterimTranscript(partialText);
+          if (recordingActiveRef.current) recordPaceSample(activeSeconds(), transcriptRef.current);
+        },
+      });
+      if (stillCurrent()) session.controller = controller;
+      else controller.abort();
+    } catch {
+      unavailable();
+    }
   }
 
   function startTranscription() {
+    if (awsStreamingEnabled && streamRef.current) {
+      void startAwsTranscription(streamRef.current);
+      return;
+    }
     const browser = window as SpeechRecognitionBrowser;
     const SpeechRecognitionClass = browser.SpeechRecognition ?? browser.webkitSpeechRecognition;
     if (!SpeechRecognitionClass) {
@@ -362,7 +439,7 @@ export function RecorderUploader({
       pendingRef.current = false;
       setCountdown(null);
       setResuming(false);
-      stopTranscription();
+      stopTranscription(true);
       const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
       stream.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -658,6 +735,10 @@ export function RecorderUploader({
         </div>}
       </div>
 
+      {awsStreamingEnabled && user && (
+        <p className={hint}>While you record, Amazon Transcribe receives microphone audio for live text and pace.</p>
+      )}
+
       {confirmRecordAgain && (
         <dialog ref={confirmationDialogRef} onClose={() => setConfirmRecordAgain(false)} onCancel={() => setConfirmRecordAgain(false)} aria-labelledby="record-again-title" aria-describedby="record-again-description" className="m-auto w-[min(92vw,28rem)] rounded-2xl border-2 border-outline bg-card p-6 text-ink shadow-xl backdrop:bg-night/70">
           <h3 id="record-again-title" className="font-display text-2xl font-bold">Record again?</h3>
@@ -695,7 +776,7 @@ export function RecorderUploader({
 
       {countdown === null && <p className="flex items-center gap-2 font-mono text-sm text-teal on-dark:text-mint" aria-live="polite">
         {recording && !paused && <span aria-hidden="true" className="recording-dot size-2.5 shrink-0 rounded-full bg-[#ff6b5e]" />}
-        <span>{recording ? `${paused ? "PAUSED" : "RECORDING"} ${formatDuration(elapsed)} / ${formatDuration(maxAudioDurationSeconds)}` : preparing ? "OPENING MICROPHONE" : selected ? `READY · ${filename}` : live ? "READY TO ANALYZE · Audio is sent after you submit" : "DEMO ONLY · Nothing is sent to AWS"}</span>
+        <span>{recording ? `${paused ? "PAUSED" : "RECORDING"} ${formatDuration(elapsed)} / ${formatDuration(maxAudioDurationSeconds)}` : preparing ? "OPENING MICROPHONE" : selected ? `READY · ${filename}` : live ? "READY TO ANALYZE · Saved audio uploads on submit" : "DEMO ONLY · Nothing is sent to AWS"}</span>
       </p>}
       {(recording || finalTranscript || interimTranscript || transcriptNotice) && (
         <section className="flex min-w-0 flex-col gap-3" aria-label="Live transcript">

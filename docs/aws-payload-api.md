@@ -32,6 +32,7 @@ select an AWS project, Region, bucket, table, index, or raw object path.
 | `POST /projects` | Creates owner-scoped metadata. |
 | `GET /projects` | Lists projects with an opaque cursor. |
 | `POST /uploads` | Reserves a recording and returns a conditional pre-signed PUT. |
+| `POST /transcription-streams` | Returns a short-lived, no-store Amazon Transcribe WebSocket session for a signed-in recorder. |
 | `GET /projects/{projectId}/recordings` | Lists newest recordings via the owner GSI. |
 | `GET /recordings/{recordingId}` | Strongly reads visible metadata. |
 | `GET /recordings/{recordingId}/artifacts/{artifactType}` | Owner-checks and returns public `transcript`, `analysis`, or `feedback` data from S3. |
@@ -42,6 +43,12 @@ select an AWS project, Region, bucket, table, index, or raw object path.
 | `DELETE /recordings/{recordingId}` | Soft-deletes with a 30-day recovery window. |
 | `POST /recordings/{recordingId}/restore` | Restores a recoverable recording. |
 | `DELETE /recordings/{recordingId}/permanent` | Purges all object versions after exact-ID confirmation. |
+
+`POST /transcription-streams` returns HTTP 201 and the fields `websocket_url`,
+`expires_at`, `language_code`, `media_encoding`, `sample_rate_hz`, and
+`session_id`. Connect within 60 seconds and stream mono 16 kHz PCM directly
+to Amazon Transcribe. Treat the URL like a credential. The session creates no
+SpeakUp recording and does not start batch analysis.
 
 The example routes use a fixed server-side allowlist of two completed QA recordings.
 They expose `example-strong` and `example-improve` under the synthetic
