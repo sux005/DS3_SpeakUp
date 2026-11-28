@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from functools import lru_cache
 import hashlib
@@ -16,8 +17,10 @@ import uuid
 
 import boto3
 from boto3.dynamodb.conditions import Attr
+from botocore.auth import SigV4QueryAuth
+from botocore.awsrequest import AWSRequest
 from botocore.config import Config
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
 
 from src.aws_payload import PayloadType, Recording, RecordingStatus, SpeakUpPayloadStore
 from src.aws_payload.checksum import sha256_base64_to_hex
@@ -37,6 +40,11 @@ from src.aws_payload.policy import ACTIVE_WORKFLOW_STATUSES
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.INFO)
+
+_TRANSCRIBE_LANGUAGE_CODE = "en-US"
+_TRANSCRIBE_MEDIA_ENCODING = "pcm"
+_TRANSCRIBE_SAMPLE_RATE_HZ = 16_000
+_TRANSCRIBE_URL_TTL_SECONDS = 60
 
 _ORIGINAL_OBJECT_KEY = re.compile(
     r"^users/(?P<user_id>[A-Za-z0-9_-]{1,64})/projects/"
@@ -87,6 +95,59 @@ def workflow_client() -> Any:
             user_agent_appid="speakup-api/1.0",
         ),
     )
+
+
+@lru_cache(maxsize=1)
+def aws_session() -> boto3.Session:
+    """Reuse the credential provider chain used to sign streaming sessions."""
+
+    return boto3.Session()
+
+
+def _transcribe_websocket_url(session_id: str) -> str:
+    """Return a short-lived SigV4 URL for one browser-to-Transcribe stream."""
+
+    region = os.environ.get("AWS_REGION", "us-east-2")
+    credentials = aws_session().get_credentials()
+    if credentials is None:
+        raise NoCredentialsError()
+    endpoint = (
+        f"https://transcribestreaming.{region}.amazonaws.com:8443/"
+        "stream-transcription-websocket"
+    )
+    query = (
+        f"language-code={_TRANSCRIBE_LANGUAGE_CODE}"
+        f"&media-encoding={_TRANSCRIBE_MEDIA_ENCODING}"
+        f"&sample-rate={_TRANSCRIBE_SAMPLE_RATE_HZ}"
+        f"&session-id={session_id}"
+        "&enable-partial-results-stabilization=true"
+        "&partial-results-stability=medium"
+    )
+    request = AWSRequest(method="GET", url=f"{endpoint}?{query}")
+    SigV4QueryAuth(
+        credentials.get_frozen_credentials(),
+        "transcribe",
+        region,
+        expires=_TRANSCRIBE_URL_TTL_SECONDS,
+    ).add_auth(request)
+    return str(request.url).replace("https://", "wss://", 1)
+
+
+def _streaming_session() -> dict[str, Any]:
+    """Create the public metadata for one authenticated live transcript stream."""
+
+    session_id = str(uuid.uuid4())
+    expires_at = datetime.now(timezone.utc) + timedelta(
+        seconds=_TRANSCRIBE_URL_TTL_SECONDS
+    )
+    return {
+        "websocket_url": _transcribe_websocket_url(session_id),
+        "expires_at": expires_at.isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "language_code": _TRANSCRIBE_LANGUAGE_CODE,
+        "media_encoding": _TRANSCRIBE_MEDIA_ENCODING,
+        "sample_rate_hz": _TRANSCRIBE_SAMPLE_RATE_HZ,
+        "session_id": session_id,
+    }
 
 
 @lru_cache(maxsize=1)
@@ -528,6 +589,8 @@ def _dispatch(event: dict[str, Any]) -> dict[str, Any]:
     body = body_of(event)
     if body is None:
         raise PayloadValidationError("Request body must be a JSON object")
+    if route == "POST /transcription-streams":
+        return reply(201, _streaming_session(), headers={"cache-control": "no-store"})
     store = payloads()
 
     if route == "GET /examples":
@@ -822,4 +885,7 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 ),
             },
         )
+        return reply(503, {"message": "Backend temporarily unavailable"})
+    except BotoCoreError:
+        LOGGER.exception("AWS credential provider failed for backend request")
         return reply(503, {"message": "Backend temporarily unavailable"})

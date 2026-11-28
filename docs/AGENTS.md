@@ -151,7 +151,9 @@ confirmation, and provisional live transcript and pace run in the browser. Pause
 freezes active recording time; the live filler estimate is no longer shown.
 Live-mode page load still reads session, projects, and limits;
 **Start presentation with audio** triggers project creation and audio
-upload. Browser speech recognition may use a vendor service. The retake prompt
+upload. With `NEXT_PUBLIC_SPEAKUP_AWS_STREAMING=1`, the authenticated recorder
+uses a short-lived AWS Transcribe WebSocket session. Otherwise browser speech
+recognition may use a vendor service. The retake prompt
 preference is browser `localStorage`, not backend account state.
 
 Use `.env.production.example` as the production schema after the production

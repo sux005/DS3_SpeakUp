@@ -9,6 +9,7 @@ import { Mascot } from "@/components/Mascot";
 import { HomeSkeleton } from "@/components/LoadingSkeleton";
 import { FernCluster, Perch, ValleyBackdrop } from "@/components/Scenery";
 import { RecorderUploader } from "@/components/RecorderUploader";
+import { useAuth, useRequireSignIn } from "@/lib/auth";
 import { useAppStore } from "@/lib/live-store";
 import { EXAMPLE_PROJECT_ID } from "@/lib/api";
 import { formatDate, formatTake, getTakes } from "@/lib/recordings";
@@ -28,6 +29,9 @@ function latestAttempt(take: Take) {
 export default function Home() {
   const router = useRouter();
   const { projects, recordings, reviews, createProject, createRecording, limits, ready, error, live } = useAppStore();
+  const { configured: accounts, user } = useAuth();
+  const requireSignIn = useRequireSignIn();
+  const signedOut = accounts && !user;
   const exampleProject = projects.find((project) => project.project_id === EXAMPLE_PROJECT_ID);
   // A finished, scored take to point newcomers at, when one exists.
   const scored = recordings.find((recording) => recording.status === "COMPLETE" && reviews[recording.recording_id]?.analysis);
@@ -80,9 +84,12 @@ export default function Home() {
             <p className="text-[17px] text-ink">
               Record a talk, read it back as a transcript, and see your pace, filler words and pauses, with feedback for your next take.
             </p>
-            <Button variant={recent ? "secondary" : "primary"} disabled={!ready} aria-expanded={creating} aria-controls="new-presentation" onClick={() => setCreating((value) => !value)}>
-              {creating ? "Cancel" : "+ New presentation"}
-            </Button>
+            <div className="flex flex-wrap gap-3">
+              <Button variant={recent ? "secondary" : "primary"} disabled={!ready} aria-expanded={creating} aria-controls="new-presentation" onClick={() => creating ? setCreating(false) : requireSignIn(() => setCreating(true))}>
+                {creating ? "Cancel" : "+ New presentation"}
+              </Button>
+              {!firstVisit && <ButtonLink variant="secondary" href="/practice">2-minute practice</ButtonLink>}
+            </div>
           </div>
           <Perch className={`absolute right-2 bottom-[44px] sm:right-6 lg:right-8 ${firstVisit ? "w-[270px] md:w-[400px] lg:w-[480px]" : "w-[250px] md:w-[340px] lg:w-[420px]"}`}>
             {firstVisit && (
@@ -115,6 +122,15 @@ export default function Home() {
           </section>
         )}
 
+        {firstVisit && (
+          <section aria-labelledby="warm-up-heading" className="relative z-10 flex w-full flex-col items-start gap-3 rounded-2xl border-2 border-outline bg-card p-6 md:p-7">
+            <p className="label">New here? Start with a warm-up</p>
+            <h2 id="warm-up-heading" className="font-display text-2xl font-bold text-ink">Give a 2-minute practice speech</h2>
+            <p className="max-w-2xl text-muted">We’ll give you an easy topic and a few points to talk about. Your score becomes the starting point that later practice is compared against.</p>
+            <ButtonLink href="/practice">Try a 2-minute practice speech</ButtonLink>
+          </section>
+        )}
+
         {exampleProject && (
           <section aria-labelledby="examples-heading" className="relative z-10 w-full rounded-2xl border-2 border-outline bg-card p-6 md:p-7">
             <p className="label">Explore before you record</p>
@@ -129,8 +145,8 @@ export default function Home() {
           {error && <p className="text-sm text-rust" role="alert">{error}</p>}
           {!ready ? <HomeSkeleton label={live ? "Loading presentations…" : "Loading local presentations…"} /> : !recent ? (
             <div className="flex flex-col gap-1">
-              <p className="text-lg font-semibold text-ink">No presentations yet.</p>
-              <p className="text-muted">Create one to start practicing.</p>
+              <p className="text-lg font-semibold text-ink">{signedOut ? "Sign in to see your presentations." : "No presentations yet."}</p>
+              <p className="text-muted">{signedOut ? "Your recordings and scores are saved to your account, so you can track progress over time." : "Create one to start practicing."}</p>
             </div>
           ) : (
             <>
@@ -192,7 +208,8 @@ export default function Home() {
               .
             </p>
           )}
-          {!live && <p className="text-sm text-muted">Local demo data stays in this browser. AWS sign-in and sync are not connected.</p>}
+          {signedOut ? <p className="text-sm text-muted">Sign in to save your recordings and scores to your SpeakUp account.</p>
+            : !live && <p className="text-sm text-muted">Local demo data stays in this browser. AWS sign-in and sync are not connected.</p>}
         </div>
       </div>
     </main>

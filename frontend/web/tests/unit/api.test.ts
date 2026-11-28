@@ -7,6 +7,28 @@ async function api() {
 }
 const response = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status });
 describe("preserved AWS API contract helpers", () => {
+  it("requests a streaming session with the access token and abort signal", async () => {
+    const session = {
+      websocket_url: "wss://stream.example.test",
+      expires_at: "2026-11-27T23:59:00Z",
+      language_code: "en-US",
+      media_encoding: "pcm",
+      sample_rate_hz: 16000,
+      session_id: "session-1",
+    };
+    const fetcher = vi.fn().mockResolvedValue(response(session, 201));
+    vi.stubGlobal("fetch", fetcher);
+    const signal = new AbortController().signal;
+    const a = await api();
+    await expect(a.createTranscriptionStream("access-token", signal)).resolves.toEqual(session);
+    expect(fetcher).toHaveBeenCalledWith("https://example.test/transcription-streams", {
+      method: "POST",
+      body: "{}",
+      headers: { Authorization: "Bearer access-token", "Content-Type": "application/json" },
+      signal,
+    });
+  });
+
   it("sends authenticated requests and encodes recording/project identifiers", async () => {
     const fetcher = vi.fn().mockResolvedValue(response({ items: [] }));
     vi.stubGlobal("fetch", fetcher);

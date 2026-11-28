@@ -6,6 +6,25 @@ const processingRecordingId = "ec4bb4c2-f423-5f06-86b7-5ee814c4b598";
 const failedRecordingId = "63c7255c-c5fd-5d77-86c2-b9ad4ec15498";
 const storageKey = "speakup-frontend-demo-v1";
 
+function silentAudio(seconds: number) {
+  const sampleRate = 8_000;
+  const bytes = sampleRate * seconds * 2;
+  const wav = Buffer.alloc(44 + bytes);
+  wav.write("RIFF", 0);
+  wav.writeUInt32LE(36 + bytes, 4);
+  wav.write("WAVEfmt ", 8);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20); // PCM
+  wav.writeUInt16LE(1, 22); // Mono
+  wav.writeUInt32LE(sampleRate, 24);
+  wav.writeUInt32LE(sampleRate * 2, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write("data", 36);
+  wav.writeUInt32LE(bytes, 40);
+  return wav;
+}
+
 async function startWithCleanDemo(page: Page) {
   await page.addInitScript((key) => window.localStorage.removeItem(key), storageKey);
   await page.goto("/");
@@ -47,8 +66,7 @@ test.describe("fixture-backed presentation navigation", () => {
       Object.defineProperty(window, "webkitSpeechRecognition", { configurable: true, value: undefined });
     });
     await startWithCleanDemo(page);
-    await page.getByRole("link", { name: "Open presentation" }).click();
-    await page.getByRole("link", { name: "+ New attempt" }).click();
+    await page.goto(`/projects/${projectId}/new`);
     await page.getByRole("button", { name: "● Record audio" }).click();
     await expect(page.getByText("Recording starts in 3…")).toBeVisible();
     await expect(page.getByRole("button", { name: "Ⅱ Pause recording" })).toBeVisible({ timeout: 5_000 });
@@ -151,10 +169,29 @@ test.describe("analysis and review states", () => {
   // Regression: a pause chosen in Moments to replay used to start playing at
   // the instant the pause began, so the silence was over before it was heard.
   test("replays a pause from the word before it, in a real audio element", async ({ page }) => {
+    // The public speech fixture is absent in a fresh checkout. Serve local PCM
+    // so Chromium can seek and play without relying on the optional demo clip.
+    const wav = silentAudio(22);
+    await page.route("**/demo/sample-take.mp3", (route) => {
+      const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range ?? "");
+      if (!range) return route.fulfill({ contentType: "audio/wav", body: wav });
+      const first = Number(range[1]);
+      const last = range[2] ? Math.min(Number(range[2]), wav.length - 1) : wav.length - 1;
+      return route.fulfill({
+        status: 206,
+        contentType: "audio/wav",
+        headers: {
+          "accept-ranges": "bytes",
+          "content-range": `bytes ${first}-${last}/${wav.length}`,
+        },
+        body: wav.subarray(first, last + 1),
+      });
+    });
     await startWithCleanDemo(page);
     await page.goto(`/recordings/${completeRecordingId}`);
     const listen = page.getByRole("region", { name: "Listen back" });
     const position = () => page.evaluate(() => document.querySelector("audio")!.currentTime);
+    await expect.poll(() => page.locator("audio").evaluate((audio: HTMLAudioElement) => audio.seekable.length)).toBeGreaterThan(0);
 
     // This pause runs from 15.16 s to 15.67 s in the seeded analysis, right
     // after the word "um" (14.69 to 15.16 s).

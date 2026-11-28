@@ -5,8 +5,40 @@ talk, and SpeakUp scores three things on a 0 to 4 scale: speaking rate, filler
 words, and pauses inside sentences. It then shows a timestamped transcript with
 the fillers and pauses marked, plus written coaching feedback.
 
-**Status:** the AWS backend is deployed for development. The web app in
-`frontend/web` runs on sample data and is not connected to the live API yet.
+**Status:** the AWS backend is deployed for development, and the web app in
+`frontend/web` can run in three ways: on sample data with no AWS, connected to
+AWS through a local guest session, or connected to AWS with real accounts
+(email and password, or Google). See [step 4](#4-run-the-web-app).
+
+## Using SpeakUp
+
+1. **Sign in.** Press **SIGN IN** in the top-right corner or open `/login`.
+   Use your email and a
+   password, or **Continue with Google** when it is turned on. New accounts get
+   a 6-digit code by email to confirm. Your presentations and scores are saved
+   to your account, so you can come back and see how you improve.
+2. **Start a presentation.** Press **+ New presentation**. Give it a title if
+   you want, then record with your microphone or upload an audio file (WAV,
+   MP3, M4A, WebM or Ogg).
+3. **Record.** A 3-2-1 countdown starts the recording. While you talk you see a
+   live transcript and a rough speaking pace. You can pause, resume, listen
+   back, or record again before you send it. The app uploads the saved audio
+   when you press **Start presentation with audio**. A live speech service may
+   receive microphone audio while you record to show the live transcript.
+4. **Wait for the analysis.** The page shows each step as it finishes. Press
+   **See results** when it is done.
+5. **Read your results.** You get a 0 to 4 score for speaking rate, filler
+   words and pauses inside sentences, one strength and one thing to work on,
+   and the transcript with fillers and pauses marked. Click a marker or a
+   sentence to hear that part of your talk.
+6. **Practice again.** Press **New attempt** on the same presentation. Once two
+   attempts are scored, charts show how each score changed.
+
+You can also start with **PRACTICE** for a two-minute warm-up. Sign in before
+recording to use the live transcript when AWS streaming is enabled. If you
+already recorded a warm-up while signed out, use email sign-in to keep it.
+Google sign-in leaves the recording page. The saved scores come from analysis
+of the submitted audio. Live text and pace are estimates to use while speaking.
 
 ## How it works
 
@@ -170,14 +202,43 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000. It uses the sample data in `frontend/web/data/`, so
-no AWS is needed. The `/login` page is a placeholder and lets anyone in.
+Open http://localhost:3000. Pick how it runs:
+
+| Mode | What you need | What happens |
+| --- | --- | --- |
+| Sample data (default) | Nothing | Uses `frontend/web/data/`. Recordings stay in your browser and get no real scores |
+| Live, guest session | AWS access ([step 6](#6-get-aws-access)) | Your local server talks to the dev stack for you. No sign-in |
+| Live, with accounts | The stack's Cognito IDs | People sign in, and each person's recordings are stored under their account |
+
+For the guest session, run this instead of `npm run dev` (it only works on your
+own computer, never in production):
+
+```bash
+AWS_PROFILE=speakup-dev SPEAKUP_DEV_GUEST_MODE=1 NEXT_PUBLIC_SPEAKUP_API_URL=/api/speakup npm run dev
+```
+
+For accounts, put these in `frontend/web/.env.local`. The values come from the
+stack outputs (`UserPoolId`, `UserPoolClientId`, the API URL and, for Google,
+`CognitoDomain`). None of them are secrets:
+
+```bash
+NEXT_PUBLIC_SPEAKUP_API_URL=https://<api-id>.execute-api.us-east-2.amazonaws.com
+NEXT_PUBLIC_COGNITO_USER_POOL_ID=us-east-2_xxxxxxxxx
+NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxx
+# Only when Google sign-in is turned on in the stack:
+NEXT_PUBLIC_COGNITO_DOMAIN=<stack>-<id>.auth.us-east-2.amazoncognito.com
+```
+
+The API only accepts requests from the stack's `CorsAllowedOrigin`
+(`http://localhost:3000` by default), so a hosted copy of the site needs the
+stack redeployed with its URL. Turning on Google sign-in is covered in
+[infra/README.md](infra/README.md#google-sign-in-optional-off-by-default).
 
 The results page plays a demo talk that is not in the repo, because we don't
 commit audio. Without it the page still works and shows a "No audio file found"
-note. To add it, see "Demo audio" in [frontend/web/README.md](frontend/web/README.md). Screens and file layout are in
-[frontend/web/README.md](frontend/web/README.md), and the API it will call is in
-[docs/aws-payload-api.md](docs/aws-payload-api.md).
+note. To add it, see "Demo audio" in [frontend/web/README.md](frontend/web/README.md). Screens, file layout and
+tests are in [frontend/web/README.md](frontend/web/README.md), and the API it
+calls is in [docs/aws-payload-api.md](docs/aws-payload-api.md).
 
 ### 5. Run noise cleanup on your own audio
 

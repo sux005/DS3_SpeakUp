@@ -18,8 +18,10 @@ remain scoped to their owner. A separate voice model has not been specified.
 
 ```mermaid
 flowchart LR
-    Browser[Next.js browser app] -.->|Production sign-in planned| Cognito[Cognito]
+    Browser[Next.js browser app] -->|Sign in| Cognito[Cognito]
     Browser -->|JWT: metadata and reservation| API[API Gateway and API Lambda]
+    Browser -->|JWT: open live session| API
+    Browser <-->|Microphone audio and interim text| Live[Amazon Transcribe Streaming]
     API --> DDB[(DynamoDB metadata)]
     API -->|Short-lived signed PUT URL| Browser
     Browser -->|Original audio bytes| S3[(Private, versioned S3)]
@@ -30,7 +32,7 @@ flowchart LR
     Workflow --> Prep[Audio-prep Lambda]
     Prep --> S3
     Workflow --> Processor[Processor Lambda]
-    Processor --> Transcribe[Amazon Transcribe]
+    Processor --> Transcribe[Amazon Transcribe batch]
     Transcribe --> S3
     Processor --> Scoring[Python metrics and rubric]
     Processor -.->|Optional coaching| Bedrock[Bedrock]
@@ -40,11 +42,9 @@ flowchart LR
 ```
 
 The deployed API validates a Cognito JWT and uses its subject as the owner ID;
-the browser cannot choose another owner in a request. The production browser
-sign-in client is not yet on `main`, so the diagram shows its intended path.
-Local fixture mode does not contact AWS. A development-only guest bridge can
-exercise the backend without exposing AWS credentials to browser code; it is
-disabled in production.
+the browser cannot choose another owner in a request. Local fixture mode does
+not contact AWS. A development-only guest bridge can exercise the backend
+without exposing AWS credentials to browser code; it is disabled in production.
 See [frontend modes](../frontend/web/README.md) and the
 [pipeline walkthrough](full-pipeline-walkthrough.md#current-scope).
 
@@ -73,13 +73,15 @@ See [frontend modes](../frontend/web/README.md) and the
    optional feedback artifacts and returns public fields without internal S3
    keys or workflow identifiers.
 
-The recording form keeps microphone capture, countdown, preview, and retakes
-local until submission. Browser speech recognition provides a provisional live
-transcript and pace estimate; it may process speech through a browser vendor.
-Filler words appear as ordinary text in the live transcript. Filler scores and
-highlights belong to the completed review, which uses the submitted audio and
-timed Transcribe words. The retake confirmation preference is browser
-`localStorage`, not an account setting.
+The recorder keeps the original audio local until submission. With AWS live
+transcription enabled, a signed-in browser calls `POST /transcription-streams`
+when recording starts or resumes. The API returns a Transcribe WebSocket URL
+that expires after 60 seconds if unused. Microphone audio goes directly to
+Transcribe while recording, and the recorder displays interim text and
+estimated pace. Pausing stops the stream. With AWS live transcription disabled,
+the recorder uses browser speech recognition where available, which may use
+the browser vendor's speech service. Filler scores and highlights come from
+the completed batch review.
 
 ## Data and scoring
 
@@ -131,9 +133,10 @@ alone do not establish deployed or production security.
 | --- | --- | --- |
 | A user reads another user's recording | JWT subject and owner-scoped API reads; internal keys are not returned in public responses. | Run authenticated two-user checks against the deployed API. |
 | A signed URL leaks or is reused | URLs expire after 15 minutes; upload headers bind type and checksum, and downloads require an owner check before signing. | Test upload/download boundaries and expiry; never log or persist URLs. |
-| Audio or transcripts reach unintended services or logs | S3 is private; workflow logs omit payloads; browser live recognition and AWS Transcribe/Bedrock are identified processing boundaries. | Explain third-party processing to users and verify the proposed Transcribe opt-out; audit log content without printing user data. |
+| Audio or transcripts reach unintended services or logs | S3 is private, workflow logs omit payloads, and the recorder discloses when live microphone audio goes to a speech service. | Verify the proposed Transcribe opt-out and audit logs without printing user data. |
 | Deployed permissions differ from intended IAM policy | Roles and bucket policy are defined in CloudFormation. | The November 20 IAM simulation reported an Organizations explicit deny; effective runtime permission remains unverified. |
-| Production sign-in bypasses required MFA | Production infrastructure requires TOTP; the production browser sign-in client is not yet on `main`. | Verify a production client against Cognito's MFA flow before enabling authenticated browser use. |
+| Production sign-in weakens required MFA | Production configuration requires TOTP and currently refuses Google sign-in because that path skips it. | Define and verify an MFA policy for Google users before enabling production Google sign-in. |
+| A deleted Cognito domain remains a Google redirect | Deployment instructions require removing its redirect URI before stack deletion. | Include that cleanup in any future stack removal; the domain can be reclaimed. |
 | Retained or deleted recordings persist longer than expected | Stateful resources are retained on stack deletion; lifecycle and purge behavior are documented separately. | Verify retention and permanent version purge in the deployed environment before promising deletion timing. |
 
 ## Validation and rollout
@@ -141,8 +144,26 @@ alone do not establish deployed or production security.
 Run backend tests with
 `python -m pytest -q --basetemp .test-tmp -p no:cacheprovider`. Run frontend
 checks from `frontend/web/` with `npm run lint` and `npm run test:all`.
-Local tests and template checks do not prove a deployed workflow or policy
-posture. The [infrastructure README](../infra/README.md#remaining-security-checks)
-tracks dated development checks and remaining authenticated, read-only, and
-production checks. Authenticated browser-to-backend validation, the
-Organizations IAM deny, and production security review remain open.
+
+1. Confirm the frontend's canonical HTTPS origin. Publish the updated API ZIP
+   as a versioned deployment object, then review the `speakup-dev`
+   CloudFormation change set in `us-east-2`. Set `CorsAllowedOrigin` to the
+   exact origin. Preserve the deployed Bedrock mode, audio image digest, and
+   other unchanged parameters. Include the Google client ID and Secrets
+   Manager reference if enabling Google sign-in.
+2. Build the frontend with the API endpoint and Cognito outputs. For Google,
+   register Cognito's `/oauth2/idpresponse` with Google and verify that
+   CloudFormation sets the site's `/auth/callback` on the Cognito client.
+   Enable AWS live transcription in the frontend build after the session
+   route is deployed.
+3. On the hosted URL, test email and Google sign-in, microphone permission,
+   live text and pace, pause/resume, signed upload, completed review with
+   playback, and account isolation. Use a non-private demo clip and confirm
+   that recording and submission work if the live stream fails.
+4. If the stream cannot pass rehearsal, rebuild with AWS live transcription
+   disabled. If the backend update must be reverted, restore the previous
+   template and versioned artifacts after reviewing the rollback change set.
+
+The [infrastructure README](../infra/README.md#remaining-security-checks)
+tracks remaining deployed checks, including authenticated isolation,
+the Organizations IAM deny, and production security review.

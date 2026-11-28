@@ -7,6 +7,15 @@ const API_URL = process.env.NEXT_PUBLIC_SPEAKUP_API_URL ?? "";
 
 export type ArtifactType = "transcript" | "analysis" | "feedback";
 
+export type TranscriptionStreamSession = {
+  websocket_url: string;
+  expires_at: string;
+  language_code: "en-US";
+  media_encoding: "pcm";
+  sample_rate_hz: number;
+  session_id: string;
+};
+
 export type UploadReservation = {
   recording: Recording;
   recording_id: string;
@@ -73,6 +82,13 @@ async function request<T>(token: string, path: string, init: RequestInit = {}): 
   }
   return body as T;
 }
+
+export const createTranscriptionStream = (token: string, signal?: AbortSignal) =>
+  request<TranscriptionStreamSession>(token, "/transcription-streams", {
+    method: "POST",
+    body: "{}",
+    signal,
+  });
 
 export const getProjects = (token: string, cursor?: string) =>
   request<{ items: Project[]; next_cursor?: string }>(

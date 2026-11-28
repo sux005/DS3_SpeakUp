@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AccountButton } from "@/components/AccountButton";
 import { pageColumn } from "@/components/PageHeading";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -11,9 +12,10 @@ export function SiteNav() {
         </Link>
         <nav className="col-span-2 row-start-2 flex flex-wrap items-center gap-x-6 text-sm font-semibold tracking-wide sm:order-2 sm:basis-auto sm:gap-7">
           <Link href="/" className="nav-link text-ink">MY PRESENTATIONS</Link>
+          <Link href="/practice" className="nav-link text-ink">PRACTICE</Link>
           <Link href="/rubric" className="nav-link text-ink">RUBRIC</Link>
         </nav>
-        <div className="justify-self-end sm:order-3"><ThemeToggle /></div>
+        <div className="flex items-center gap-4 justify-self-end sm:order-3"><AccountButton /><ThemeToggle /></div>
       </div>
     </header>
   );

@@ -23,6 +23,7 @@ def test_http_routes_have_expected_authorization():
         "POST /projects": "JWT",
         "GET /projects": "JWT",
         "POST /uploads": "JWT",
+        "POST /transcription-streams": "JWT",
         "GET /projects/{projectId}/recordings": "JWT",
         "GET /recordings/{recordingId}": "JWT",
         "GET /recordings/{recordingId}/artifacts/{artifactType}": "JWT",
