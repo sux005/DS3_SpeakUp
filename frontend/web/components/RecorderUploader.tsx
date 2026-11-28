@@ -32,6 +32,8 @@ type RecorderUploaderProps = {
   onStatusChange?: (status: RecorderStatus) => void;
   disabled?: boolean;
   live?: boolean;
+  /** Show the "Upload audio" control. The practice speech turns it off so people speak live. */
+  allowUpload?: boolean;
 };
 
 function formatDuration(seconds: number) {
@@ -106,6 +108,7 @@ export function RecorderUploader({
   onStatusChange,
   disabled = false,
   live = false,
+  allowUpload = true,
 }: RecorderUploaderProps) {
   const [selected, setSelected] = useState<File | Blob | null>(null);
   const [filename, setFilename] = useState("");
@@ -630,14 +633,14 @@ export function RecorderUploader({
   return (
     <section className="flex w-full flex-col gap-5" aria-label={live ? "Recording upload" : "Demo recording upload"}>
       {/* Each control sits with the limits that apply to it. */}
-      <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
+      <div className={`grid gap-x-8 gap-y-5 ${allowUpload ? "sm:grid-cols-2" : ""}`}>
         <div className="flex flex-wrap items-start gap-2">
           <button type="button" className={buttonClass("accent")} disabled={submitting || disabled || preparing} onClick={recording ? stopRecording : countdown !== null ? cancelCountdown : recordedAudio ? requestRecordAgain : startRecording}>
             {preparing ? "Opening microphone…" : recording ? "■ Stop recording" : countdown !== null ? "Cancel countdown" : recordedAudio ? "● Record again" : "● Record audio"}
           </button>
           {recording && <button type="button" className={buttonClass("secondary")} disabled={submitting || disabled} onClick={resuming ? cancelCountdown : paused ? resumeRecording : pauseRecording}>{resuming ? "Cancel countdown" : paused ? "▶ Resume recording" : "Ⅱ Pause recording"}</button>}
         </div>
-        <div className="flex flex-col items-start gap-2">
+        {allowUpload && <div className="flex flex-col items-start gap-2">
           <label className={buttonClass("secondary")}>
             ↑ Upload audio
             <input
@@ -652,7 +655,7 @@ export function RecorderUploader({
             />
           </label>
           <p className={hint}>WAV, MP3, M4A or WebM, up to {maxMegabytes} MB.</p>
-        </div>
+        </div>}
       </div>
 
       {confirmRecordAgain && (

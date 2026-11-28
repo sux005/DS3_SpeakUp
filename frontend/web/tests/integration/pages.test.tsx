@@ -136,6 +136,14 @@ describe("home and project routes", () => {
     harness.store.projects = [];
     render(<Home />);
     expect(screen.getByText(/No presentations yet/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Try a 2-minute practice speech" }).getAttribute("href")).toBe("/practice");
+    expect(screen.queryByRole("link", { name: "2-minute practice" })).toBeNull();
+  });
+
+  it("offers the practice speech as a second button once there are presentations", () => {
+    render(<Home />);
+    expect(screen.getByRole("link", { name: "2-minute practice" }).getAttribute("href")).toBe("/practice");
+    expect(screen.queryByText("New here? Start with a warm-up")).toBeNull();
   });
 
   it("toggles the home form and submits a custom titled presentation", async () => {

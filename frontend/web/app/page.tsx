@@ -84,9 +84,12 @@ export default function Home() {
             <p className="text-[17px] text-ink">
               Record a talk, read it back as a transcript, and see your pace, filler words and pauses, with feedback for your next take.
             </p>
-            <Button variant={recent ? "secondary" : "primary"} disabled={!ready} aria-expanded={creating} aria-controls="new-presentation" onClick={() => creating ? setCreating(false) : requireSignIn(() => setCreating(true))}>
-              {creating ? "Cancel" : "+ New presentation"}
-            </Button>
+            <div className="flex flex-wrap gap-3">
+              <Button variant={recent ? "secondary" : "primary"} disabled={!ready} aria-expanded={creating} aria-controls="new-presentation" onClick={() => creating ? setCreating(false) : requireSignIn(() => setCreating(true))}>
+                {creating ? "Cancel" : "+ New presentation"}
+              </Button>
+              {!firstVisit && <ButtonLink variant="secondary" href="/practice">2-minute practice</ButtonLink>}
+            </div>
           </div>
           <Perch className={`absolute right-2 bottom-[44px] sm:right-6 lg:right-8 ${firstVisit ? "w-[270px] md:w-[400px] lg:w-[480px]" : "w-[250px] md:w-[340px] lg:w-[420px]"}`}>
             {firstVisit && (
@@ -116,6 +119,15 @@ export default function Home() {
               maxAudioDurationSeconds={limits.max_audio_duration_seconds}
               submitLabel="Start presentation with audio"
               onSubmit={startPresentation} />
+          </section>
+        )}
+
+        {firstVisit && (
+          <section aria-labelledby="warm-up-heading" className="relative z-10 flex w-full flex-col items-start gap-3 rounded-2xl border-2 border-outline bg-card p-6 md:p-7">
+            <p className="label">New here? Start with a warm-up</p>
+            <h2 id="warm-up-heading" className="font-display text-2xl font-bold text-ink">Give a 2-minute practice speech</h2>
+            <p className="max-w-2xl text-muted">We’ll give you an easy topic and a few points to talk about. Your score becomes the starting point that later practice is compared against.</p>
+            <ButtonLink href="/practice">Try a 2-minute practice speech</ButtonLink>
           </section>
         )}
 
