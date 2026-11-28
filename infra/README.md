@@ -366,8 +366,40 @@ to inspect the organization's policies, so the effective runtime permission
 remains unverified. A production stack named `speakup-prod` was not present in
 this account and Region. Authenticated tests with two Cognito test users are
 still needed for cross-owner reads, signed upload/download boundaries, URL
-expiry, and live deletion and version purge. The remaining checklist is in the
-local `WORK_NOTES.md` file.
+expiry, and live deletion and version purge.
+
+### Security check follow-up (2026-11-26 to 2026-11-27)
+
+Local Python compilation passed with `python -m compileall -q infra src/aws_payload`
+on November 26. On November 27, the project virtual environment passed
+`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q
+tests/test_api_checkpoints.py` (2 tests). The system Python lacks pytest, but
+the project virtual environment has it. Neither `cfn-lint` nor `cfn-guard` was
+installed, so template linting and security-policy evaluation were not run.
+No AWS result was refreshed: `aws sts get-caller-identity --profile speakup
+--region us-east-2` returned `Your session has expired. Please reauthenticate
+using 'aws login'`, before the read-only CloudFormation, S3, IAM, API Gateway,
+and CloudWatch inspections could start.
+The 2026-11-20 deployed findings above therefore remain the latest deployed
+evidence; they were not revalidated by this follow-up.
+
+### Remaining security checks
+
+- Re-authenticate the `speakup` AWS profile, then repeat the read-only checks for
+  the `speakup-dev` stack in `us-east-2`.
+- Resolve the deployed `DataBucketName`, Lambda execution roles, HTTP API ID,
+  and log groups from CloudFormation before querying S3 public-access,
+  encryption, versioning, lifecycle, IAM policy attachment, API authorizer, and
+  CloudWatch retention settings.
+- Resolve the Organizations explicit deny affecting the API role's S3 and
+  DynamoDB permissions, or document the effective runtime behavior with a
+  successful authenticated checkpoint.
+- Run authenticated two-user checks for cross-owner reads, signed upload and
+  download boundaries, URL expiry, deletion, and permanent version purge.
+- Verify Transcribe account access and run the deployed workflow smoke test only
+  with non-private audio after the account restriction is cleared.
+- Add production-specific evidence after a `speakup-prod` deployment exists;
+  current findings are development-account evidence only.
 
 ## Cleanup
 
